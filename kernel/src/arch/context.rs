@@ -43,71 +43,69 @@ pub fn switch_kernel_stack(
 }
 
 // software context switch
-#[naked]
+#[unsafe(naked)]
 extern "sysv64" fn switch_context(next_ctx: &Context, current_ctx: &Context) {
-    unsafe {
-        naked_asm!(
-            // save context
-            "pushfq",
-            "pop qword ptr [rsi + 0x10]", // rflags
-            "mov [rsi + 0x20], cs",
-            "mov [rsi + 0x28], ss",
-            "mov [rsi + 0x30], fs",
-            "mov [rsi + 0x38], gs",
-            "mov [rsi + 0x40], rax",
-            "mov [rsi + 0x48], rbx",
-            "mov [rsi + 0x50], rcx",
-            "mov [rsi + 0x58], rdx",
-            "mov [rsi + 0x60], rdi",
-            "mov [rsi + 0x68], rsi",
-            "lea rax, [rsp + 0x08]", // + stack frame offset
-            "mov [rsi + 0x70], rax", // rsp
-            "mov [rsi + 0x78], rbp",
-            "mov rax, cr3",          // use already saved register
-            "mov [rsi + 0x00], rax", // cr3
-            "mov rax, [rsp]",
-            "mov [rsi + 0x08], rax", // rip
-            "mov [rsi + 0x80], r8",
-            "mov [rsi + 0x88], r9",
-            "mov [rsi + 0x90], r10",
-            "mov [rsi + 0x98], r11",
-            "mov [rsi + 0xa0], r12",
-            "mov [rsi + 0xa8], r13",
-            "mov [rsi + 0xb0], r14",
-            "mov [rsi + 0xb8], r15",
-            "fxsave64 [rsi + 0xc0]", // fpu_context
-            // stack frame
-            "push qword ptr [rdi + 0x28]", // ss
-            "push qword ptr [rdi + 0x70]", // rsp
-            "push qword ptr [rdi + 0x10]", // rflags
-            "push qword ptr [rdi + 0x20]", // cs
-            "push qword ptr [rdi + 0x08]", // rip
-            // restore context
-            "fxrstor64 [rdi + 0xc0]", // fpu_context
-            "mov rax, [rdi + 0x00]",
-            "mov cr3, rax", // cr3
-            "mov rax, [rdi + 0x30]",
-            "mov fs, ax", // fs
-            "mov rax, [rdi + 0x38]",
-            "mov gs, ax", // gs
-            "mov rax, [rdi + 0x40]",
-            "mov rbx, [rdi + 0x48]",
-            "mov rcx, [rdi + 0x50]",
-            "mov rdx, [rdi + 0x58]",
-            "mov rsi, [rdi + 0x68]",
-            "mov rbp, [rdi + 0x78]",
-            "mov r8, [rdi + 0x80]",
-            "mov r9, [rdi + 0x88]",
-            "mov r10, [rdi + 0x90]",
-            "mov r11, [rdi + 0x98]",
-            "mov r12, [rdi + 0xa0]",
-            "mov r13, [rdi + 0xa8]",
-            "mov r14, [rdi + 0xb0]",
-            "mov r15, [rdi + 0xb8]",
-            "mov rdi, [rdi + 0x60]",
-            "iretq"
-        );
-    }
+    naked_asm!(
+        // save context
+        "pushfq",
+        "pop qword ptr [rsi + 0x10]", // rflags
+        "mov [rsi + 0x20], cs",
+        "mov [rsi + 0x28], ss",
+        "mov [rsi + 0x30], fs",
+        "mov [rsi + 0x38], gs",
+        "mov [rsi + 0x40], rax",
+        "mov [rsi + 0x48], rbx",
+        "mov [rsi + 0x50], rcx",
+        "mov [rsi + 0x58], rdx",
+        "mov [rsi + 0x60], rdi",
+        "mov [rsi + 0x68], rsi",
+        "lea rax, [rsp + 0x08]", // + stack frame offset
+        "mov [rsi + 0x70], rax", // rsp
+        "mov [rsi + 0x78], rbp",
+        "mov rax, cr3",          // use already saved register
+        "mov [rsi + 0x00], rax", // cr3
+        "mov rax, [rsp]",
+        "mov [rsi + 0x08], rax", // rip
+        "mov [rsi + 0x80], r8",
+        "mov [rsi + 0x88], r9",
+        "mov [rsi + 0x90], r10",
+        "mov [rsi + 0x98], r11",
+        "mov [rsi + 0xa0], r12",
+        "mov [rsi + 0xa8], r13",
+        "mov [rsi + 0xb0], r14",
+        "mov [rsi + 0xb8], r15",
+        "fxsave64 [rsi + 0xc0]", // fpu_context
+        // stack frame
+        "push qword ptr [rdi + 0x28]", // ss
+        "push qword ptr [rdi + 0x70]", // rsp
+        "push qword ptr [rdi + 0x10]", // rflags
+        "push qword ptr [rdi + 0x20]", // cs
+        "push qword ptr [rdi + 0x08]", // rip
+        // restore context
+        "fxrstor64 [rdi + 0xc0]", // fpu_context
+        "mov rax, [rdi + 0x00]",
+        "mov cr3, rax", // cr3
+        "mov rax, [rdi + 0x30]",
+        "mov fs, ax", // fs
+        "mov rax, [rdi + 0x38]",
+        "mov gs, ax", // gs
+        "mov rax, [rdi + 0x40]",
+        "mov rbx, [rdi + 0x48]",
+        "mov rcx, [rdi + 0x50]",
+        "mov rdx, [rdi + 0x58]",
+        "mov rsi, [rdi + 0x68]",
+        "mov rbp, [rdi + 0x78]",
+        "mov r8, [rdi + 0x80]",
+        "mov r9, [rdi + 0x88]",
+        "mov r10, [rdi + 0x90]",
+        "mov r11, [rdi + 0x98]",
+        "mov r12, [rdi + 0xa0]",
+        "mov r13, [rdi + 0xa8]",
+        "mov r14, [rdi + 0xb0]",
+        "mov r15, [rdi + 0xb8]",
+        "mov rdi, [rdi + 0x60]",
+        "iretq"
+    );
 }
 
 #[derive(PartialEq, Eq)]

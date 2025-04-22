@@ -32,6 +32,10 @@
 #define FDN_STDOUT 1
 #define FDN_STDERR 2
 
+// sys_exec flags
+#define EXEC_FLAG_NONE 0x0
+#define EXEC_FLAG_DEBUG 0x1
+
 extern int64_t sys_read(int64_t fd, void *buf, int buf_len);
 extern int64_t sys_write(int64_t fd, const char *str, int len);
 extern int64_t sys_open(const char *filepath);
@@ -42,7 +46,7 @@ extern int64_t sys_uname(utsname *buf);
 extern void sys_break();
 extern int64_t sys_stat(int64_t fd, f_stat *buf);
 extern uint64_t sys_uptime();
-extern int64_t sys_exec(const char *args);
+extern int64_t sys_exec(const char *args, uint64_t flags);
 extern int64_t sys_getcwd(char *buf, int buf_len);
 extern int64_t sys_chdir(const char *path);
 extern int64_t sys_create_window(const char *title, uint64_t x_pos, uint64_t y_pos, uint64_t width, uint64_t height);

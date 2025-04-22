@@ -58,8 +58,8 @@ uint64_t sys_uptime() {
     return (uint64_t)syscall(SN_UPTIME, 0, 0, 0, 0, 0);
 }
 
-int64_t sys_exec(const char *args) {
-    return syscall(SN_EXEC, (uint64_t)args, 0, 0, 0, 0);
+int64_t sys_exec(const char *args, uint64_t flags) {
+    return syscall(SN_EXEC, (uint64_t)args, flags, 0, 0, 0);
 }
 
 int64_t sys_getcwd(char *buf, int buf_len) {

@@ -3,7 +3,6 @@
 #![feature(abi_x86_interrupt)]
 #![feature(alloc_error_handler)]
 #![feature(sync_unsafe_cell)]
-#![feature(naked_functions)]
 #![feature(custom_test_frameworks)]
 #![test_runner(test::test_runner)]
 #![reexport_test_harness_main = "test_main"]
@@ -200,7 +199,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
             if splited.len() == 0 || splited[0] == "" {
                 error!("Invalid init app exec args: {:?}", args);
                 break;
-            } else if let Err(err) = fs::exec::exec_elf(&splited[0].into(), &splited[1..]) {
+            } else if let Err(err) = fs::exec::exec_elf(&splited[0].into(), &splited[1..], false) {
                 error!("{:?}", err);
                 break;
             }

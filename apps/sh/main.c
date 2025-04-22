@@ -38,8 +38,8 @@ void exec_cmd(char *cmd) {
     } else if (strcmp(splitted_buf[0], "exit") == 0) {
         exit(0);
     } else if (strcmp(splitted_buf[0], "break") == 0) {
-        // sys_break();
-        __asm__ volatile("int3");
+        sys_break();
+        // __asm__ volatile("int3");
     } else if (strcmp(splitted_buf[0], "exec") == 0) {
         if (cmdargs_len < 2) {
             printf("sh: exec: missing argument\n");
@@ -56,7 +56,7 @@ void exec_cmd(char *cmd) {
             }
         }
 
-        if (sys_exec(args) == -1) {
+        if (sys_exec(args, EXEC_FLAG_DEBUG) == -1) {
             printf("sh: exec: failed to execute\n");
             return;
         }
@@ -81,7 +81,7 @@ void exec_cmd(char *cmd) {
             }
         }
 
-        if (sys_exec(args) == -1) {
+        if (sys_exec(args, EXEC_FLAG_NONE) == -1) {
             printf("sh: exec: failed to execute\n");
             return;
         }

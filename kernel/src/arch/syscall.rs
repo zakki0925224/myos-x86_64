@@ -19,29 +19,27 @@ use crate::{
 use alloc::{boxed::Box, ffi::CString, string::*, vec::Vec};
 use common::{
     graphic_info::PixelFormat,
-    libm::{Stat, Utsname},
+    libc::{Stat, Utsname},
 };
 use core::{arch::naked_asm, slice};
 use log::*;
 
-#[naked]
+#[unsafe(naked)]
 extern "sysv64" fn asm_syscall_handler() {
-    unsafe {
-        naked_asm!(
-            "push rbp",
-            "push rcx",
-            "push r11",
-            "mov rcx, r10", // rcx was updated by syscall instruction
-            "mov rbp, rsp",
-            "and rsp, -16",
-            "call syscall_handler",
-            "mov rsp, rbp",
-            "pop r11",
-            "pop rcx",
-            "pop rbp",
-            "sysretq"
-        );
-    }
+    naked_asm!(
+        "push rbp",
+        "push rcx",
+        "push r11",
+        "mov rcx, r10", // rcx was updated by syscall instruction
+        "mov rbp, rsp",
+        "and rsp, -16",
+        "call syscall_handler",
+        "mov rsp, rbp",
+        "pop r11",
+        "pop rcx",
+        "pop rbp",
+        "sysretq"
+    );
 }
 
 #[no_mangle]
@@ -168,7 +166,8 @@ extern "sysv64" fn syscall_handler(
         // exec syscall
         10 => {
             let args_ptr = arg1 as *const u8;
-            if let Err(err) = sys_exec(args_ptr) {
+            let flags = arg2;
+            if let Err(err) = sys_exec(args_ptr, flags) {
                 error!("syscall: exec: {:?}", err);
                 return -1;
             }
@@ -415,10 +414,13 @@ fn sys_uptime() -> u64 {
     device::local_apic_timer::get_current_ms().unwrap_or(0) as u64
 }
 
-fn sys_exec(args_ptr: *const u8) -> Result<()> {
+// flags: defined libc/syscall.h
+fn sys_exec(args_ptr: *const u8, flags: u64) -> Result<()> {
     let args = unsafe { util::cstring::from_cstring_ptr(args_ptr) };
     let args: Vec<&str> = args.split(' ').collect();
-    fs::exec::exec_elf(&args[0].into(), &args[1..])?;
+
+    let enable_debug = flags & 0x1 != 0;
+    fs::exec::exec_elf(&args[0].into(), &args[1..], enable_debug)?;
 
     Ok(())
 }
