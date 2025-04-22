@@ -9,7 +9,17 @@ use dwarf::Dwarf;
 
 pub mod dwarf;
 
-pub fn user_app_debugger(stack_frame: &InterruptStackFrame, dwarf: &Dwarf) -> Result<()> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DebuggerResult {
+    Continue,
+    Step,
+    Quit,
+}
+
+pub fn user_app_debugger(
+    stack_frame: &InterruptStackFrame,
+    dwarf: &Dwarf,
+) -> Result<DebuggerResult> {
     let ip = stack_frame.ins_ptr;
 
     if let Some(info) = dwarf.find_debug_info_by_ip(ip) {
@@ -67,8 +77,10 @@ pub fn user_app_debugger(stack_frame: &InterruptStackFrame, dwarf: &Dwarf) -> Re
             file_path.unwrap_or("<UNKNOWN>".to_string())
         );
     } else {
-        println!("Debug info not found");
+        println!("0x{:x} in <UNKNOWN> at <UNKNOWN>", ip);
     }
+
+    let result;
 
     loop {
         print!("(dbg) ");
@@ -82,9 +94,18 @@ pub fn user_app_debugger(stack_frame: &InterruptStackFrame, dwarf: &Dwarf) -> Re
         }
 
         match input_s.unwrap().as_str().trim() {
-            "q" => break,
-            "c" => break,
-            "s" => break,
+            "q" => {
+                result = DebuggerResult::Quit;
+                break;
+            }
+            "c" => {
+                result = DebuggerResult::Continue;
+                break;
+            }
+            "s" => {
+                result = DebuggerResult::Step;
+                break;
+            }
             s => {
                 println!("Invalid command: {:?}", s);
                 continue;
@@ -92,5 +113,5 @@ pub fn user_app_debugger(stack_frame: &InterruptStackFrame, dwarf: &Dwarf) -> Re
         }
     }
 
-    Ok(())
+    Ok(result)
 }

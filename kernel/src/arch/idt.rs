@@ -270,12 +270,29 @@ pub fn notify_end_of_int() {
 extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
     info!("int: DEBUG");
 
+    let debugger_result;
+
     if let Some(dwarf) = task::get_running_user_task_dwarf() {
-        if let Err(err) = debug::user_app_debugger(&stack_frame, &dwarf) {
-            error!("int: Error in user_app_debugger: {:?}", err);
+        match debug::user_app_debugger(&stack_frame, &dwarf) {
+            Ok(res) => debugger_result = res,
+            Err(err) => {
+                error!("int: Error in user_app_debugger: {:?}", err);
+                debugger_result = debug::DebuggerResult::Quit;
+            }
         }
     } else {
-        error!("int: No DWARF found for user task");
+        error!("int: No DWARF found for user task, quit debug mode...");
+        debugger_result = debug::DebuggerResult::Quit;
+    }
+
+    match debugger_result {
+        debug::DebuggerResult::Continue => {
+            todo!();
+        }
+        debug::DebuggerResult::Quit => {
+            todo!();
+        }
+        _ => (),
     }
 }
 
