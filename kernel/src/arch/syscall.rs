@@ -300,7 +300,7 @@ fn sys_read(fd: FileDescriptorNumber, buf_addr: VirtualAddress, buf_len: usize) 
             } else if buf_len == 1 {
                 let mut ascii = None;
                 while ascii.is_none() {
-                    if let Ok(c) = crate::arch::disabled_int(|| console::get_ascii()) {
+                    if let Ok(c) = crate::arch::disabled_int(|| console::get_char()) {
                         ascii = Some(c);
                     } else {
                         super::hlt();

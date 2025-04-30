@@ -1,5 +1,4 @@
 use super::scan_code::KeyCode;
-use crate::util::ascii::AsciiCode;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum KeyState {
@@ -19,5 +18,5 @@ pub struct ModifierKeysState {
 pub struct KeyEvent {
     pub code: KeyCode,
     pub state: KeyState,
-    pub ascii: Option<AsciiCode>,
+    pub c: Option<char>,
 }

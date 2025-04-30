@@ -2,7 +2,7 @@ use super::{console, DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     arch::{self, addr::IoPortAddress},
     error::{Error, Result},
-    util::{ascii::AsciiCode, mutex::Mutex},
+    util::mutex::Mutex,
 };
 use alloc::vec::Vec;
 use log::info;
@@ -189,14 +189,7 @@ pub fn poll_normal() -> Result<()> {
         None => return Ok(()),
     };
 
-    let ascii_code = match AsciiCode::from_u8(received_data) {
-        Some(code) => code,
-        None => {
-            return Ok(());
-        }
-    };
-
-    console::input(ascii_code)
+    console::input(received_data as char)
 }
 
 pub fn send_data(data: u8) {

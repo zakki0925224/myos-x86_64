@@ -3,7 +3,7 @@ use crate::{
     error::{Error, Result},
     graphics::{color::*, frame_buf_console},
     theme::GLOBAL_THEME,
-    util::{ascii::AsciiCode, lifo::Lifo, mutex::Mutex},
+    util::{lifo::Lifo, mutex::Mutex},
 };
 use alloc::{boxed::Box, string::String};
 use core::fmt::{self, Write};
@@ -12,7 +12,7 @@ const IO_BUF_LEN: usize = 512;
 const IO_BUF_DEFAULT_VALUE: ConsoleCharacter = ConsoleCharacter {
     back_color: GLOBAL_THEME.io_buf_default_back_color,
     fore_color: GLOBAL_THEME.io_buf_default_fore_color,
-    ascii_code: AsciiCode::Null,
+    c: '\0',
 };
 
 type IoBufferType = Lifo<ConsoleCharacter, IO_BUF_LEN>;
@@ -24,7 +24,7 @@ static mut CONSOLE: Mutex<Console> = Mutex::new(Console::new(true));
 pub struct ConsoleCharacter {
     pub back_color: ColorCode,
     pub fore_color: ColorCode,
-    pub ascii_code: AsciiCode,
+    pub c: char,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -98,17 +98,17 @@ impl Console {
         self.buf_default_value.fore_color = IO_BUF_DEFAULT_VALUE.fore_color;
     }
 
-    pub fn write(&mut self, ascii_code: AsciiCode, buf_type: BufferType) -> Result<()> {
+    pub fn write(&mut self, c: char, buf_type: BufferType) -> Result<()> {
         let buf = match buf_type {
             BufferType::Input => &mut self.input_buf,
             BufferType::Output => &mut self.output_buf,
             BufferType::ErrorOutput => &mut self.err_output_buf,
         };
         let mut value = self.buf_default_value;
-        value.ascii_code = ascii_code;
+        value.c = c;
 
-        match ascii_code {
-            AsciiCode::Backspace | AsciiCode::Delete => {
+        match c {
+            '\x08' /* backspace */ | '\x7f' /* delete */ => {
                 buf.pop()?;
             }
             _ => {
@@ -122,9 +122,9 @@ impl Console {
         if (buf_type == BufferType::Output || buf_type == BufferType::ErrorOutput)
             && self.use_serial_port
         {
-            let data = match ascii_code {
-                AsciiCode::Backspace | AsciiCode::Delete => AsciiCode::Backspace as u8,
-                _ => ascii_code as u8,
+            let data = match c {
+                '\x08' | '\x7f' => '\x08' as u8,
+                _ => c as u8,
             };
 
             // backspace
@@ -150,18 +150,17 @@ impl Console {
         let mut s = String::new();
 
         loop {
-            let ascii_code = match buf.pop() {
-                Ok(value) => value.ascii_code,
+            let c = match buf.pop() {
+                Ok(value) => value.c,
                 Err(_) => break,
             };
-
-            s.push(ascii_code as u8 as char);
+            s.push(c);
         }
 
         s.chars().rev().collect()
     }
 
-    pub fn get_ascii(&mut self, buf_type: BufferType) -> AsciiCode {
+    pub fn get_char(&mut self, buf_type: BufferType) -> char {
         let buf = match buf_type {
             BufferType::Input => &mut self.input_buf,
             BufferType::Output => &mut self.output_buf,
@@ -169,8 +168,8 @@ impl Console {
         };
 
         let ascii_code = match buf.pop() {
-            Ok(value) => value.ascii_code,
-            Err(_) => AsciiCode::Null,
+            Ok(value) => value.c,
+            Err(_) => '\0', // null
         };
 
         ascii_code
@@ -181,16 +180,11 @@ impl fmt::Write for Console {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         let buf_type = BufferType::Output;
         for c in s.chars() {
-            let ascii_code = match AsciiCode::from_u8(c as u8) {
-                Some(c) => c,
-                None => AsciiCode::Null,
-            };
-
             if self.is_full(buf_type) {
                 self.reset_buf(buf_type);
             }
 
-            let _ = self.write(ascii_code, buf_type);
+            let _ = self.write(c, buf_type);
         }
 
         Ok(())
@@ -223,18 +217,18 @@ pub fn clear_input_buf() -> Result<()> {
     Ok(())
 }
 
-pub fn input(ascii_code: AsciiCode) -> Result<()> {
-    let mut ascii_code = ascii_code;
-    if ascii_code == AsciiCode::CarriageReturn {
-        ascii_code = AsciiCode::NewLine;
+pub fn input(c: char) -> Result<()> {
+    let mut c = c;
+    if c == '\r' {
+        c = '\n';
     }
 
-    match ascii_code {
-        AsciiCode::NewLine => {
+    match c {
+        '\n' => {
             println!();
         }
-        code => {
-            print!("{}", code as u8 as char);
+        _ => {
+            print!("{}", c);
         }
     }
 
@@ -244,9 +238,9 @@ pub fn input(ascii_code: AsciiCode) -> Result<()> {
         console.reset_buf(BufferType::Input);
     }
 
-    console.write(ascii_code, BufferType::Input)?;
+    console.write(c, BufferType::Input)?;
 
-    if ascii_code == AsciiCode::NewLine {
+    if c == '\n' {
         console.is_ready_get_line = true;
     }
 
@@ -264,7 +258,7 @@ pub fn get_line() -> Result<Option<String>> {
     }
 }
 
-pub fn get_ascii() -> Result<AsciiCode> {
+pub fn get_char() -> Result<char> {
     let mut console = unsafe { CONSOLE.try_lock() }?;
-    Ok(console.get_ascii(BufferType::Input))
+    Ok(console.get_char(BufferType::Input))
 }

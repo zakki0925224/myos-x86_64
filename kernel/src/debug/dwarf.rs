@@ -6,7 +6,6 @@ use alloc::{collections::BTreeMap, string::String, vec::Vec};
 use common::elf::Elf64;
 
 // https://dwarfstd.org/doc/DWARF5.pdf
-// https://qiita.com/mhiramat/items/8df17f5113434e93ff0c
 
 // 7.5.1 Unit Headers
 #[derive(Debug, Clone, PartialEq, Eq)]

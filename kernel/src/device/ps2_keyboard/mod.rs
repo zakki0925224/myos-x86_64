@@ -135,15 +135,27 @@ impl Ps2KeyboardDriver {
                 alt,
             };
 
-            let ascii_code = match self.mod_keys_state.shift {
-                true => scan_code.on_shift_ascii_code,
-                false => scan_code.ascii_code,
+            let mut c = match self.mod_keys_state.shift {
+                true => scan_code.on_shift_c,
+                false => scan_code.c,
             };
+
+            if c.is_some() && self.mod_keys_state.ctrl {
+                match c.unwrap() as u8 {
+                    0x40..=0x5f => {
+                        c = Some((c.unwrap() as u8 - 0x40) as char);
+                    }
+                    0x60..=0x7f => {
+                        c = Some((c.unwrap() as u8 - 0x60) as char);
+                    }
+                    _ => (),
+                }
+            }
 
             let key_event = KeyEvent {
                 code: key_code,
                 state: key_state,
-                ascii: ascii_code,
+                c,
             };
 
             self.clear_data();
@@ -288,12 +300,12 @@ pub fn poll_normal() -> Result<()> {
         return Ok(());
     }
 
-    let ascii_code = match key_event.ascii {
+    let c = match key_event.c {
         Some(c) => c,
         None => return Ok(()),
     };
 
-    console::input(ascii_code)
+    console::input(c)
 }
 
 pub extern "x86-interrupt" fn poll_int_ps2_kbd_driver() {
