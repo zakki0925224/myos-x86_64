@@ -141,7 +141,7 @@ fn load_kernel(path: &str) -> u64 {
         dest_end = dest_end.max((p.virt_addr + p.mem_size) as usize);
     }
 
-    let pages = (dest_end - dest_start + UEFI_PAGE_SIZE - 1) / UEFI_PAGE_SIZE;
+    let pages = (dest_end - dest_start).div_ceil(UEFI_PAGE_SIZE);
     boot::allocate_pages(
         AllocateType::Address(dest_start as u64),
         MemoryType::LOADER_DATA,
@@ -175,7 +175,7 @@ fn load_initramfs(path: &str) -> (u64, usize) {
 
     file.read(&mut buf).unwrap();
 
-    let pages = (file_size + UEFI_PAGE_SIZE - 1) / UEFI_PAGE_SIZE;
+    let pages = file_size.div_ceil(UEFI_PAGE_SIZE);
     // TODO: want to use virtual address
     let ptr = boot::allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, pages).unwrap();
 

@@ -19,6 +19,12 @@ impl From<&str> for Path {
     }
 }
 
+impl From<&String> for Path {
+    fn from(s: &String) -> Self {
+        Self(s.clone())
+    }
+}
+
 impl Path {
     pub const ROOT: &'static str = "/";
     pub const SEPARATOR: char = '/';

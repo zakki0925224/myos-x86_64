@@ -285,8 +285,7 @@ impl Task {
         };
 
         // stack
-        let stack_mem_frame_info =
-            bitmap::alloc_mem_frame(((stack_size + PAGE_SIZE - 1) / PAGE_SIZE).max(1))?;
+        let stack_mem_frame_info = bitmap::alloc_mem_frame(stack_size.div_ceil(PAGE_SIZE).max(1))?;
         match mode {
             ContextMode::Kernel => stack_mem_frame_info.set_permissions_to_supervisor()?,
             ContextMode::User => stack_mem_frame_info.set_permissions_to_user()?,

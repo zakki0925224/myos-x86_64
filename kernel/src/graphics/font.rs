@@ -1,7 +1,7 @@
 use crate::error::Result;
 
 //PSF font v2
-const FONT_BIN: &'static [u8] = include_bytes!("../../../third-party/font.psf");
+const FONT_BIN: &[u8] = include_bytes!("../../../third-party/font.psf");
 const FONT_MAGIC_NUM: u32 = 0x864ab572;
 const UNICODE_TABLE_SEPARATOR: u8 = 0xff;
 

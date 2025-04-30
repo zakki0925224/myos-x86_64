@@ -20,4 +20,5 @@ impl Default for BootConfig<'_> {
 pub const KERNEL_CONFIG: KernelConfig = KernelConfig {
     init_cwd_path: "/mnt/initramfs",
     init_app_exec_args: Some("/mnt/initramfs/apps/bin/sh /mnt/initramfs/apps/bin"),
+    mouse_pointer_bmp_path: "/mnt/initramfs/sys/mouse_pointer.bmp",
 };

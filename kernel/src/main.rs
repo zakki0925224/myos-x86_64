@@ -24,7 +24,10 @@ mod util;
 #[macro_use]
 extern crate alloc;
 
-use alloc::vec::Vec;
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use arch::*;
 use common::boot_info::BootInfo;
 use fs::{file::bitmap::BitmapImage, vfs};
@@ -187,7 +190,10 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     task::spawn(task_poll_uart).unwrap();
     task::spawn(task_poll_ps2_keyboard).unwrap();
     task::spawn(task_poll_rtl8139).unwrap();
-    task::spawn(poll_ps2_mouse()).unwrap();
+    task::spawn(poll_ps2_mouse(
+        boot_info.kernel_config.mouse_pointer_bmp_path.to_string(),
+    ))
+    .unwrap();
     task::ready().unwrap();
 
     // execute init app
@@ -211,10 +217,10 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     }
 }
 
-async fn poll_ps2_mouse() {
+async fn poll_ps2_mouse(mouse_pointer_bmp_path: String) {
     let mut is_created_mouse_pointer_layer = false;
     let mouse_pointer_bmp_fd = loop {
-        match vfs::open_file(&"/mnt/initramfs/sys/mouse_pointer.bmp".into()) {
+        match vfs::open_file(&((&mouse_pointer_bmp_path).into())) {
             Ok(fd) => break fd,
             Err(e) => {
                 warn!("Failed to open mouse pointer bitmap, Retrying...: {:?}", e);

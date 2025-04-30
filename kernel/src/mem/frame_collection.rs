@@ -65,7 +65,7 @@ impl<T: Copy> DerefMut for FrameVec<T> {
 
 impl<T: Copy> FrameVec<T> {
     pub fn new(capacity: usize) -> Result<Self> {
-        let alloc_len = (size_of::<T>() * capacity + PAGE_SIZE - 1) / PAGE_SIZE;
+        let alloc_len = (size_of::<T>() * capacity).div_ceil(PAGE_SIZE);
         let mem_frame_info = bitmap::alloc_mem_frame(alloc_len)?;
 
         let vec = Self {

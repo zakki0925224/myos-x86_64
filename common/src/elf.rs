@@ -360,7 +360,7 @@ impl<'a> Elf64<'a> {
         section_headers
             .iter()
             .find(|sh| self.get_section_name_from_string_table(sh) == name)
-            .map(|sh| *sh)
+            .copied()
     }
 
     pub fn get_section_name_from_string_table(

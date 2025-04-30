@@ -1,10 +1,10 @@
 #[allow(dead_code)]
 pub trait Testable {
-    fn run(&self) -> ();
+    fn run(&self);
 }
 
 impl<T: Fn()> Testable for T {
-    fn run(&self) -> () {
+    fn run(&self) {
         use crate::{print, println};
 
         print!("{}...", core::any::type_name::<T>());

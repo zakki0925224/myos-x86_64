@@ -433,7 +433,7 @@ impl LinkedListAllocator {
 }
 
 pub fn init_heap() -> Result<()> {
-    let mem_frame_info = bitmap::alloc_mem_frame((HEAP_SIZE + PAGE_SIZE - 1) / PAGE_SIZE)?;
+    let mem_frame_info = bitmap::alloc_mem_frame(HEAP_SIZE.div_ceil(PAGE_SIZE))?;
     let heap_start_virt_addr = mem_frame_info.frame_start_virt_addr()?;
     bitmap::mem_clear(&mem_frame_info)?;
 
