@@ -88,7 +88,7 @@ impl DeviceDriverFunction for UsbBusDriver {
 
             device.read_dev_desc();
 
-            arch::disabled_int(|| device.request_to_get_desc(DescriptorType::Configration, 0))
+            arch::disabled_int(|| device.request_to_get_desc(DescriptorType::Configuration, 0))
                 .map_err(|err| UsbBusDriverError::UsbDeviceError {
                     slot_id,
                     err: Box::new(err),

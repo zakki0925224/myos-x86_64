@@ -21,7 +21,6 @@ use crate::{
     mem::bitmap::{self, MemoryFrameInfo},
 };
 use alloc::vec::Vec;
-use core::mem::size_of;
 
 const RING_BUF_LEN: usize = 16;
 const DEFAULT_CTRL_PIPE_ID: u8 = 1;
@@ -104,81 +103,64 @@ impl UsbDevice {
     }
 
     pub fn read_conf_descs(&mut self) -> Result<()> {
-        let conf_desc_reg: Mmio<Volatile<ConfigurationDescriptor>> = unsafe {
-            Mmio::from_raw(
-                self.conf_desc_buf_mem_info
-                    .frame_start_virt_addr()?
-                    .as_ptr_mut(),
-            )
-        };
-        let conf_desc = conf_desc_reg.as_ref().read();
+        let base_addr = self.conf_desc_buf_mem_info.frame_start_virt_addr()?;
+        let desc_header_reg: Mmio<Volatile<DescriptorHeader>> =
+            unsafe { Mmio::from_raw(base_addr.as_ptr_mut()) };
+        let desc_header = desc_header_reg.as_ref().read();
+        assert_eq!(desc_header.ty, DescriptorType::Configuration); // TODO
 
+        let mut offset = desc_header.length as usize;
         let mut descs = Vec::new();
-        let mut offset = conf_desc.header.length as usize;
-
-        descs.push(Descriptor::Configuration(conf_desc));
 
         loop {
-            let addr = self
-                .conf_desc_buf_mem_info
-                .frame_start_virt_addr()?
-                .offset(offset);
-
             let desc_header_reg: Mmio<Volatile<DescriptorHeader>> =
-                unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
+                unsafe { Mmio::from_raw(base_addr.offset(offset).as_ptr_mut()) };
             let desc_header = desc_header_reg.as_ref().read();
 
             if desc_header.length == 0 {
                 break;
             }
 
-            offset += desc_header.length as usize;
-
-            let desc = match desc_header.ty {
+            match desc_header.ty {
                 DescriptorType::Device => {
                     let dev_desc_reg: Mmio<Volatile<DeviceDescriptor>> =
-                        unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
-                    Descriptor::Device(dev_desc_reg.as_ref().read())
+                        unsafe { Mmio::from_raw(base_addr.offset(offset).as_ptr_mut()) };
+                    let dev_desc = dev_desc_reg.as_ref().read();
+                    descs.push(Descriptor::Device(dev_desc));
                 }
-                DescriptorType::Configration => {
+                DescriptorType::Configuration => {
                     let conf_desc_reg: Mmio<Volatile<ConfigurationDescriptor>> =
-                        unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
-                    Descriptor::Configuration(conf_desc_reg.as_ref().read())
+                        unsafe { Mmio::from_raw(base_addr.offset(offset).as_ptr_mut()) };
+                    let conf_desc = conf_desc_reg.as_ref().read();
+                    descs.push(Descriptor::Configuration(conf_desc));
                 }
                 DescriptorType::Endpoint => {
                     let endpoint_desc_reg: Mmio<Volatile<EndpointDescriptor>> =
-                        unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
-                    Descriptor::Endpoint(endpoint_desc_reg.as_ref().read())
+                        unsafe { Mmio::from_raw(base_addr.offset(offset).as_ptr_mut()) };
+                    let endpoint_desc = endpoint_desc_reg.as_ref().read();
+                    descs.push(Descriptor::Endpoint(endpoint_desc));
                 }
                 DescriptorType::Interface => {
                     let interface_desc_reg: Mmio<Volatile<InterfaceDescriptor>> =
-                        unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
-                    Descriptor::Interface(interface_desc_reg.as_ref().read())
+                        unsafe { Mmio::from_raw(base_addr.offset(offset).as_ptr_mut()) };
+                    let interface_desc = interface_desc_reg.as_ref().read();
+                    descs.push(Descriptor::Interface(interface_desc));
                 }
                 DescriptorType::HumanInterfaceDevice => {
                     let hid_desc_reg: Mmio<Volatile<HumanInterfaceDeviceDescriptor>> =
-                        unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
+                        unsafe { Mmio::from_raw(base_addr.offset(offset).as_ptr_mut()) };
                     let hid_desc = hid_desc_reg.as_ref().read();
-                    let num_descs = hid_desc.num_descs as usize;
-                    let mut class_desc_headers = Vec::new();
-
-                    for i in 0..num_descs {
-                        let addr = addr.offset(size_of::<DescriptorHeader>() * i);
-                        let class_desc_header_reg: Mmio<Volatile<DescriptorHeader>> =
-                            unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
-                        class_desc_headers.push(class_desc_header_reg.as_ref().read());
-                    }
-
-                    Descriptor::HumanInterfaceDevice(hid_desc, class_desc_headers)
+                    descs.push(Descriptor::HumanInterfaceDevice(hid_desc, Vec::new()));
                 }
                 other => {
                     let desc_header_reg: Mmio<Volatile<DescriptorHeader>> =
-                        unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
+                        unsafe { Mmio::from_raw(base_addr.offset(offset).as_ptr_mut()) };
                     let desc_header = desc_header_reg.as_ref().read();
-                    Descriptor::Unsupported((other, desc_header))
+                    descs.push(Descriptor::Unsupported((other, desc_header)));
                 }
-            };
-            descs.push(desc);
+            }
+
+            offset += desc_header.length as usize;
         }
 
         self.conf_descs = descs;
@@ -200,18 +182,18 @@ impl UsbDevice {
     ) -> Result<()> {
         let buf_mem_info = match desc_type {
             DescriptorType::Device => self.dev_desc_buf_mem_info,
-            DescriptorType::Configration => self.conf_desc_buf_mem_info,
+            DescriptorType::Configuration => self.conf_desc_buf_mem_info,
             _ => unimplemented!(),
         };
 
         let setup_value = match desc_type {
             DescriptorType::Device => 0x100,
-            DescriptorType::Configration => (desc_type as u16) << 8 | desc_index as u16,
+            DescriptorType::Configuration => (desc_type as u16) << 8 | desc_index as u16,
             _ => unimplemented!(),
         };
 
         match desc_type {
-            DescriptorType::Configration => self.current_conf_index = desc_index,
+            DescriptorType::Configuration => self.current_conf_index = desc_index,
             _ => (),
         }
 

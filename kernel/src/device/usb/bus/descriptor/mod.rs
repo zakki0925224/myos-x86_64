@@ -20,11 +20,11 @@ pub enum Descriptor {
     Unsupported((DescriptorType, DescriptorHeader)),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum DescriptorType {
     Device = 0x1,
-    Configration = 0x2,
+    Configuration = 0x2,
     String = 0x3,
     Interface = 0x4,
     Endpoint = 0x5,

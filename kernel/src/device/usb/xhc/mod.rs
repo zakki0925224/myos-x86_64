@@ -858,8 +858,6 @@ impl DeviceDriverFunction for XhcDriver {
                     if comp_code == CompletionCode::TrbError {
                         self.device_driver_info.attached = false;
                     }
-
-                    return Ok(());
                 }
 
                 let slot_id = trb.slot_id().unwrap();
