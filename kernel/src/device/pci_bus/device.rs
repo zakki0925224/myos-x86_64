@@ -49,7 +49,7 @@ impl PciDevice {
     fn read_caps_ptr(&self) -> Option<u8> {
         let conf_space_header = self.read_conf_space_header().ok()?;
 
-        if conf_space_header.status.caps_list_available() {
+        if !conf_space_header.status.caps_list_available() {
             return None;
         }
 

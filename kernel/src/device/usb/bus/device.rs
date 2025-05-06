@@ -5,6 +5,7 @@ use super::descriptor::{
 };
 use crate::{
     addr::VirtualAddress,
+    arch::{mmio::Mmio, volatile::Volatile},
     device::{
         self,
         usb::{
@@ -18,7 +19,6 @@ use crate::{
     },
     error::Result,
     mem::bitmap::{self, MemoryFrameInfo},
-    println,
 };
 use alloc::vec::Vec;
 use core::mem::size_of;
@@ -91,19 +91,27 @@ impl UsbDevice {
     }
 
     pub fn read_dev_desc(&mut self) -> Result<()> {
-        self.dev_desc = self
-            .dev_desc_buf_mem_info
-            .frame_start_virt_addr()?
-            .read_volatile();
+        let reg: Mmio<Volatile<DeviceDescriptor>> = unsafe {
+            Mmio::from_raw(
+                self.dev_desc_buf_mem_info
+                    .frame_start_virt_addr()?
+                    .as_ptr_mut(),
+            )
+        };
+        reg.as_ref().read();
 
         Ok(())
     }
 
     pub fn read_conf_descs(&mut self) -> Result<()> {
-        let conf_desc: ConfigurationDescriptor = self
-            .conf_desc_buf_mem_info
-            .frame_start_virt_addr()?
-            .read_volatile();
+        let conf_desc_reg: Mmio<Volatile<ConfigurationDescriptor>> = unsafe {
+            Mmio::from_raw(
+                self.conf_desc_buf_mem_info
+                    .frame_start_virt_addr()?
+                    .as_ptr_mut(),
+            )
+        };
+        let conf_desc = conf_desc_reg.as_ref().read();
 
         let mut descs = Vec::new();
         let mut offset = conf_desc.header.length as usize;
@@ -115,7 +123,10 @@ impl UsbDevice {
                 .conf_desc_buf_mem_info
                 .frame_start_virt_addr()?
                 .offset(offset);
-            let desc_header: DescriptorHeader = addr.read_volatile();
+
+            let desc_header_reg: Mmio<Volatile<DescriptorHeader>> =
+                unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
+            let desc_header = desc_header_reg.as_ref().read();
 
             if desc_header.length == 0 {
                 break;
@@ -124,23 +135,48 @@ impl UsbDevice {
             offset += desc_header.length as usize;
 
             let desc = match desc_header.ty {
-                DescriptorType::Device => Descriptor::Device(addr.read_volatile()),
-                DescriptorType::Configration => Descriptor::Configuration(addr.read_volatile()),
-                DescriptorType::Endpoint => Descriptor::Endpoint(addr.read_volatile()),
-                DescriptorType::Interface => Descriptor::Interface(addr.read_volatile()),
+                DescriptorType::Device => {
+                    let dev_desc_reg: Mmio<Volatile<DeviceDescriptor>> =
+                        unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
+                    Descriptor::Device(dev_desc_reg.as_ref().read())
+                }
+                DescriptorType::Configration => {
+                    let conf_desc_reg: Mmio<Volatile<ConfigurationDescriptor>> =
+                        unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
+                    Descriptor::Configuration(conf_desc_reg.as_ref().read())
+                }
+                DescriptorType::Endpoint => {
+                    let endpoint_desc_reg: Mmio<Volatile<EndpointDescriptor>> =
+                        unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
+                    Descriptor::Endpoint(endpoint_desc_reg.as_ref().read())
+                }
+                DescriptorType::Interface => {
+                    let interface_desc_reg: Mmio<Volatile<InterfaceDescriptor>> =
+                        unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
+                    Descriptor::Interface(interface_desc_reg.as_ref().read())
+                }
                 DescriptorType::HumanInterfaceDevice => {
-                    let hid_desc: HumanInterfaceDeviceDescriptor = addr.read_volatile();
+                    let hid_desc_reg: Mmio<Volatile<HumanInterfaceDeviceDescriptor>> =
+                        unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
+                    let hid_desc = hid_desc_reg.as_ref().read();
                     let num_descs = hid_desc.num_descs as usize;
                     let mut class_desc_headers = Vec::new();
 
                     for i in 0..num_descs {
                         let addr = addr.offset(size_of::<DescriptorHeader>() * i);
-                        class_desc_headers.push(addr.read_volatile());
+                        let class_desc_header_reg: Mmio<Volatile<DescriptorHeader>> =
+                            unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
+                        class_desc_headers.push(class_desc_header_reg.as_ref().read());
                     }
 
                     Descriptor::HumanInterfaceDevice(hid_desc, class_desc_headers)
                 }
-                other => Descriptor::Unsupported((other, addr.read_volatile())),
+                other => {
+                    let desc_header_reg: Mmio<Volatile<DescriptorHeader>> =
+                        unsafe { Mmio::from_raw(addr.as_ptr_mut()) };
+                    let desc_header = desc_header_reg.as_ref().read();
+                    Descriptor::Unsupported((other, desc_header))
+                }
             };
             descs.push(desc);
         }
@@ -231,13 +267,11 @@ impl UsbDevice {
     }
 
     pub fn configure_endpoint(&mut self, endpoint_type: EndpointType) -> Result<()> {
-        let port = device::usb::xhc::find_port_by_slot_id(self.slot_id)?
-            .ok_or(UsbDeviceError::XhcPortNotFoundError)?;
-
         let mut configured_endpoint_dci = self.configured_endpoint_dci.clone();
 
         let device_context = device::usb::xhc::read_device_context(self.slot_id)?.unwrap();
-        let mut input_context = port.read_input_context();
+        let mut input_context =
+            device::usb::xhc::read_port_input_context_by_slot_id(self.slot_id)?.unwrap();
         input_context.device_context.slot_context = device_context.slot_context;
         let mut input_ctrl_context = InputControlContext::default();
         input_ctrl_context.set_add_context_flag(0, true).unwrap();
@@ -280,20 +314,12 @@ impl UsbDevice {
         }
 
         input_context.input_ctrl_context = input_ctrl_context;
-        port.write_input_context(input_context);
+        device::usb::xhc::write_port_input_context_by_slot_id(self.slot_id, input_context)?;
 
         self.configured_endpoint_dci = configured_endpoint_dci;
 
-        let mut config_endpoint_trb = TransferRequestBlock::default();
-        config_endpoint_trb.set_trb_type(TransferRequestBlockType::ConfigureEndpointCommnad);
-        config_endpoint_trb.ctrl_regs = (self.slot_id as u16) << 8;
-        config_endpoint_trb.param = port
-            .input_context_base_virt_addr
-            .get_phys_addr()
-            .unwrap()
-            .get();
-
-        device::usb::xhc::push_cmd_ring(config_endpoint_trb)
+        let trb = device::usb::xhc::generate_config_endpoint_trb(self.slot_id)?;
+        device::usb::xhc::push_cmd_ring(trb)
     }
 
     pub fn configure_endpoint_transfer_ring(&mut self) -> Result<()> {
@@ -348,9 +374,7 @@ impl UsbDevice {
             let data_trb_ptr = transfer_event_trb.param as *const TransferRequestBlock;
             let data_trb = unsafe { data_trb_ptr.read() };
             let data_ptr = data_trb.param as *const InputData;
-            //println!("data_trb: {:p}, data: {:p}", data_trb_ptr, data_ptr);
-            let data = unsafe { data_ptr.read() };
-            println!("{:?}", data);
+            let _ = unsafe { data_ptr.read() };
 
             ring_buf.enqueue().unwrap();
         }

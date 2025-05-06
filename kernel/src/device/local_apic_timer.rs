@@ -2,6 +2,7 @@ use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     acpi,
     addr::VirtualAddress,
+    arch::{self, mmio::Mmio, volatile::Volatile},
     error::Result,
     idt::{self, GateType, InterruptHandler},
     task,
@@ -9,12 +10,6 @@ use crate::{
 };
 use alloc::vec::Vec;
 use log::{debug, info};
-
-const LVT_TIMER_VIRT_ADDR: VirtualAddress = VirtualAddress::new(0xfee00320);
-const INIT_CNT_VIRT_ADDR: VirtualAddress = VirtualAddress::new(0xfee00380);
-const CURR_CNT_VIRT_ADDR: VirtualAddress = VirtualAddress::new(0xfee00390);
-const DIV_CONF_VIRT_ADDR: VirtualAddress = VirtualAddress::new(0xfee003e0);
-const END_OF_INT_REG_ADDR: VirtualAddress = VirtualAddress::new(0xfee000b0);
 
 const DIV_VALUE: DivideValue = DivideValue::By1;
 const INT_INTERVAL_MS: usize = 10; // must be >= 10ms
@@ -55,6 +50,11 @@ struct LocalApicTimerDriver {
     device_driver_info: DeviceDriverInfo,
     tick: usize,
     freq: Option<usize>,
+
+    lvt_timer_reg: Option<Mmio<Volatile<u32>>>,
+    int_cnt_reg: Option<Mmio<Volatile<u32>>>,
+    curr_cnt_reg: Option<Mmio<Volatile<u32>>>,
+    div_conf_reg: Option<Mmio<Volatile<u32>>>,
 }
 
 impl LocalApicTimerDriver {
@@ -63,36 +63,77 @@ impl LocalApicTimerDriver {
             device_driver_info: DeviceDriverInfo::new("local-apic-timer"),
             tick: 0,
             freq: None,
+
+            lvt_timer_reg: None,
+            int_cnt_reg: None,
+            curr_cnt_reg: None,
+            div_conf_reg: None,
         }
     }
 
-    unsafe fn start(&self) {
+    unsafe fn start(&mut self) {
         let init_cnt = if let Some(freq) = self.freq {
             ((freq / 1000 * INT_INTERVAL_MS) / DIV_VALUE.divisor()) as u32
         } else {
             u32::MAX // -1
         };
 
-        (INIT_CNT_VIRT_ADDR.as_ptr_mut() as *mut u32).write_volatile(init_cnt);
+        self.int_cnt_reg().get_unchecked_mut().write(init_cnt);
     }
 
-    unsafe fn stop(&self) {
-        (INIT_CNT_VIRT_ADDR.as_ptr_mut() as *mut u32).write_volatile(0);
+    unsafe fn stop(&mut self) {
+        self.int_cnt_reg().get_unchecked_mut().write(0);
     }
 
-    unsafe fn tick(&self) -> usize {
+    unsafe fn tick(&mut self) -> usize {
         if self.freq.is_some() {
             return self.tick;
         }
 
-        let current_cnt = (CURR_CNT_VIRT_ADDR.as_ptr_mut() as *mut u32).read_volatile();
+        let current_cnt = self.curr_cnt_reg().as_ref().read();
         u32::MAX as usize - current_cnt as usize
     }
 
-    fn current_ms(&self) -> Result<usize> {
+    fn current_ms(&mut self) -> Result<usize> {
         let _freq = self.freq.ok_or("Frequency not set")?;
         let current_tick = unsafe { self.tick() };
         Ok(current_tick * DIV_VALUE.divisor() * INT_INTERVAL_MS)
+    }
+
+    fn lvt_timer_reg(&mut self) -> &mut Mmio<Volatile<u32>> {
+        if self.lvt_timer_reg.is_none() {
+            let reg = unsafe { Mmio::from_raw(VirtualAddress::new(0xfee00320).as_ptr_mut()) };
+            self.lvt_timer_reg = Some(reg);
+        }
+
+        self.lvt_timer_reg.as_mut().unwrap()
+    }
+
+    fn int_cnt_reg(&mut self) -> &mut Mmio<Volatile<u32>> {
+        if self.int_cnt_reg.is_none() {
+            let reg = unsafe { Mmio::from_raw(VirtualAddress::new(0xfee00380).as_ptr_mut()) };
+            self.int_cnt_reg = Some(reg);
+        }
+
+        self.int_cnt_reg.as_mut().unwrap()
+    }
+
+    fn curr_cnt_reg(&mut self) -> &mut Mmio<Volatile<u32>> {
+        if self.curr_cnt_reg.is_none() {
+            let reg = unsafe { Mmio::from_raw(VirtualAddress::new(0xfee00390).as_ptr_mut()) };
+            self.curr_cnt_reg = Some(reg);
+        }
+
+        self.curr_cnt_reg.as_mut().unwrap()
+    }
+
+    fn div_conf_reg(&mut self) -> &mut Mmio<Volatile<u32>> {
+        if self.div_conf_reg.is_none() {
+            let reg = unsafe { Mmio::from_raw(VirtualAddress::new(0xfee003e0).as_ptr_mut()) };
+            self.div_conf_reg = Some(reg);
+        }
+
+        self.div_conf_reg.as_mut().unwrap()
     }
 }
 
@@ -125,10 +166,12 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
         unsafe {
             // calc freq
             self.stop();
-            (DIV_CONF_VIRT_ADDR.as_ptr_mut() as *mut u32).write_volatile(DIV_VALUE as u32);
-            (LVT_TIMER_VIRT_ADDR.as_ptr_mut() as *mut u32)
-                .write_volatile((2 << 16) | vec_num as u32);
-            // non masked, periodic
+            self.div_conf_reg()
+                .get_unchecked_mut()
+                .write(DIV_VALUE as u32);
+            self.lvt_timer_reg()
+                .get_unchecked_mut()
+                .write((2 << 16) | vec_num as u32); // non masked, periodic
             self.start();
             acpi::pm_timer_wait_ms(1000)?; // wait 1 sec
             let tick = self.tick() * DIV_VALUE.divisor();
@@ -223,7 +266,7 @@ pub fn write(data: &[u8]) -> Result<()> {
 }
 
 pub fn get_current_ms() -> Result<usize> {
-    let driver = unsafe { LOCAL_APIC_TIMER_DRIVER.try_lock() }?;
+    let mut driver = unsafe { LOCAL_APIC_TIMER_DRIVER.try_lock() }?;
     driver.current_ms()
 }
 
@@ -232,7 +275,6 @@ extern "x86-interrupt" fn poll_int_local_apic_timer() {
         let driver = LOCAL_APIC_TIMER_DRIVER.get_force_mut();
         let _ = driver.poll_int();
 
-        // notify end of interrupt
-        (END_OF_INT_REG_ADDR.as_ptr_mut() as *mut u32).write_volatile(0);
+        arch::apic::notify_end_of_int();
     }
 }

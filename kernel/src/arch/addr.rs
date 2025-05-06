@@ -6,7 +6,7 @@ use core::ptr::{read_volatile, write_volatile};
 pub struct PhysicalAddress(u64);
 
 impl PhysicalAddress {
-    pub const fn new(addr: u64) -> Self {
+    pub fn new(addr: u64) -> Self {
         Self(addr)
     }
 
@@ -38,7 +38,7 @@ impl From<u64> for PhysicalAddress {
 pub struct VirtualAddress(u64);
 
 impl VirtualAddress {
-    pub const fn new(addr: u64) -> Self {
+    pub fn new(addr: u64) -> Self {
         Self(addr)
     }
 

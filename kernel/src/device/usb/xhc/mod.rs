@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     addr::{PhysicalAddress, VirtualAddress},
-    apic,
+    apic, arch,
     device::{self, pci_bus::conf_space::BaseAddress, DeviceDriverFunction, DeviceDriverInfo},
     error::{Error, Result},
     fs::vfs,
@@ -21,7 +21,7 @@ use context::{
     slot::SlotContext,
 };
 use core::mem::size_of;
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 use port::{ConfigState, Port};
 use register::*;
 use ringbuf::*;
@@ -102,13 +102,13 @@ impl XhcDriver {
         }
 
         // start controller
-        info!("{}: Starting xHC...", name);
+        trace!("{}: Starting xHC...", name);
         let mut ope_reg = self.read_ope_reg();
         ope_reg.usb_cmd.set_run_stop(true);
         self.write_ope_reg(ope_reg);
 
         loop {
-            info!("{}: Waiting xHC...", name);
+            trace!("{}: Waiting xHC...", name);
             if !self.read_ope_reg().usb_status.hchalted() {
                 break;
             }
@@ -153,7 +153,7 @@ impl XhcDriver {
             if sc_reg.connect_status_change() && sc_reg.current_connect_status() {
                 self.ports.push(Port::new(i));
                 port_ids.push(i);
-                info!("{}: Found connected port (port id: {})", name, i);
+                trace!("{}: Found connected port (port id: {})", name, i);
             }
         }
 
@@ -171,11 +171,6 @@ impl XhcDriver {
             return Err(XhcDriverError::NotRunning.into());
         }
 
-        let port = self
-            .read_port(port_id)
-            .ok_or(XhcDriverError::PortWasNotFoundError(port_id))?;
-
-        let mut port = port.clone();
         let mut port_reg_set = self.read_port_reg_set(port_id).unwrap();
         port_reg_set.port_status_and_ctrl.set_port_reset(true);
         port_reg_set
@@ -190,10 +185,12 @@ impl XhcDriver {
             }
         }
 
-        port.config_state = ConfigState::Reset;
-        self.write_port(port);
+        let port_mut = self
+            .port_mut(port_id)
+            .ok_or(XhcDriverError::PortWasNotFoundError(port_id))?;
+        port_mut.config_state = ConfigState::Reset;
 
-        info!("{}: Reset port (port id: {})", name, port_id);
+        trace!("{}: Reset port (port id: {})", name, port_id);
 
         self.configuring_port_id = Some(port_id);
 
@@ -209,26 +206,28 @@ impl XhcDriver {
             return Err(XhcDriverError::NotRunning.into());
         }
 
-        let port = self
-            .read_port(port_id)
+        let root_hub_port_id = self.root_hub_port_id.unwrap();
+        let port_speed = self
+            .read_port_reg_set(root_hub_port_id)
+            .unwrap()
+            .port_status_and_ctrl
+            .port_speed();
+
+        let port_mut = self
+            .port_mut(port_id)
             .ok_or(XhcDriverError::PortWasNotFoundError(port_id))?;
 
-        if port.config_state != ConfigState::Enabled {
+        if port_mut.config_state != ConfigState::Enabled {
             return Err(XhcDriverError::PortIsNotEnabledError(port_id).into());
         }
 
-        let slot_id = port.slot_id.unwrap();
+        port_mut.config_state = ConfigState::AddressingDevice;
+        let slot_id = port_mut.slot_id.unwrap();
 
         let input_context_mem_frame_info = bitmap::alloc_mem_frame(1)?;
         bitmap::mem_clear(&input_context_mem_frame_info)?;
         let input_context_base_virt_addr = input_context_mem_frame_info.frame_start_virt_addr()?;
-
-        let mut port = port.clone();
-        port.config_state = ConfigState::AddressingDevice;
-        port.input_context_base_virt_addr = input_context_base_virt_addr;
-        self.write_port(port);
-
-        self.configuring_port_id = Some(port_id);
+        port_mut.set_input_context_reg(input_context_base_virt_addr.as_ptr_mut());
 
         // initialize input control context
         let mut input_context = InputContext::default();
@@ -241,18 +240,12 @@ impl XhcDriver {
             .set_add_context_flag(1, true)
             .unwrap();
 
-        let port_speed = self
-            .read_port_reg_set(self.root_hub_port_id.unwrap())
-            .unwrap()
-            .port_status_and_ctrl
-            .port_speed();
-
         let max_packet_size = port_speed.get_max_packet_size();
 
         let mut slot_context = SlotContext::default();
         slot_context.set_speed(port_speed);
         slot_context.set_context_entries(1);
-        slot_context.set_root_hub_port_num(self.root_hub_port_id.unwrap() as u8);
+        slot_context.set_root_hub_port_num(root_hub_port_id as u8);
 
         input_context.device_context.slot_context = slot_context;
 
@@ -270,13 +263,16 @@ impl XhcDriver {
 
         endpoint_context_0.set_tr_dequeue_ptr(transfer_ring_buf.buf_ptr() as u64);
         input_context.device_context.endpoint_contexts[0] = endpoint_context_0;
-        input_context_base_virt_addr.write_volatile(input_context);
+        port_mut.write_input_context(input_context)?;
+        drop(port_mut);
 
         let mut trb = TransferRequestBlock::default();
         trb.set_trb_type(TransferRequestBlockType::AddressDeviceCommand);
         trb.param = input_context_base_virt_addr.get_phys_addr().unwrap().get();
         trb.ctrl_regs = (slot_id as u16) << 8;
         self.push_cmd_ring(trb).unwrap();
+
+        self.configuring_port_id = Some(port_id);
 
         return UsbDevice::new(slot_id, max_packet_size, transfer_ring_buf);
     }
@@ -285,16 +281,41 @@ impl XhcDriver {
         !self.read_ope_reg().usb_status.hchalted()
     }
 
-    fn find_port_by_slot_id(&self, slot_id: usize) -> Option<Port> {
-        self.ports
+    fn read_port_input_context_by_slot_id(&self, slot_id: usize) -> Option<InputContext> {
+        let port: &Port = self.ports.iter().find(|p| p.slot_id == Some(slot_id))?;
+        port.read_input_context().ok()
+    }
+
+    fn write_port_input_context_by_slot_id(
+        &mut self,
+        slot_id: usize,
+        input_context: InputContext,
+    ) -> Result<()> {
+        let port: &mut Port = self
+            .ports
+            .iter_mut()
+            .find(|p| p.slot_id == Some(slot_id))
+            .ok_or(XhcDriverError::PortWasNotFoundError(slot_id))?;
+        port.write_input_context(input_context)
+    }
+
+    fn generate_config_endpoint_trb(&self, slot_id: usize) -> Result<TransferRequestBlock> {
+        let port = self
+            .ports
             .iter()
             .find(|p| p.slot_id == Some(slot_id))
-            .map(|p| p.clone())
+            .ok_or(XhcDriverError::PortWasNotFoundError(slot_id))?;
+
+        let mut trb = TransferRequestBlock::default();
+        trb.set_trb_type(TransferRequestBlockType::ConfigureEndpointCommand);
+        trb.param = port.input_context_base_addr()?.get_phys_addr()?.get();
+        trb.ctrl_regs = (slot_id as u16) << 8;
+        Ok(trb)
     }
 
     fn alloc_slot(&mut self, port_id: usize, slot_id: usize) -> Result<()> {
-        let port = self
-            .read_port(port_id)
+        let port_mut = self
+            .port_mut(port_id)
             .ok_or(XhcDriverError::PortWasNotFoundError(port_id))?;
 
         let device_context_mem_frame_info = bitmap::alloc_mem_frame(1)?;
@@ -302,36 +323,26 @@ impl XhcDriver {
         let device_context_base_virt_addr =
             device_context_mem_frame_info.frame_start_virt_addr()?;
 
-        let mut port = port.clone();
-        port.slot_id = Some(slot_id);
-        port.config_state = ConfigState::Enabled;
-        port.output_context_base_virt_addr = device_context_base_virt_addr;
-        self.write_port(port);
+        port_mut.slot_id = Some(slot_id);
+        port_mut.config_state = ConfigState::Enabled;
+        port_mut.set_output_context_reg(device_context_base_virt_addr.as_ptr_mut());
 
         self.write_device_context_base_addr(
             slot_id,
             device_context_base_virt_addr.get_phys_addr()?,
         )?;
-        info!(
+        trace!(
             "{}: Allocated slot: {} (port id: {})",
-            self.device_driver_info.name, slot_id, port_id
+            self.device_driver_info.name,
+            slot_id,
+            port_id
         );
 
         Ok(())
     }
 
-    fn read_port(&self, port_id: usize) -> Option<&Port> {
-        self.ports.iter().find(|p| p.port_id() == port_id)
-    }
-
-    fn write_port(&mut self, port: Port) {
-        if let Some(mut_port) = self
-            .ports
-            .iter_mut()
-            .find(|p| p.port_id() == port.port_id())
-        {
-            *mut_port = port;
-        }
+    fn port_mut(&mut self, port_id: usize) -> Option<&mut Port> {
+        self.ports.iter_mut().find(|p| p.port_id() == port_id)
     }
 
     fn read_cap_reg(&self) -> CapabilityRegisters {
@@ -595,7 +606,7 @@ impl DeviceDriverFunction for XhcDriver {
             self.write_ope_reg(ope_reg);
 
             loop {
-                info!("{}: Waiting xHC...", driver_name);
+                trace!("{}: Waiting xHC...", driver_name);
                 let ope_reg = self.read_ope_reg();
                 if !ope_reg.usb_cmd.host_controller_reset()
                     && !ope_reg.usb_status.controller_not_ready()
@@ -603,7 +614,7 @@ impl DeviceDriverFunction for XhcDriver {
                     break;
                 }
             }
-            info!("{}: Reset xHC", driver_name);
+            trace!("{}: Reset xHC", driver_name);
 
             // set max device slots
             let cap_reg = self.read_cap_reg();
@@ -670,7 +681,7 @@ impl DeviceDriverFunction for XhcDriver {
                 .get_phys_addr()?
                 .get();
             self.write_ope_reg(ope_reg);
-            info!("{}: Device context initialized", driver_name);
+            trace!("{}: Device context initialized", driver_name);
 
             // register command ring
             let pcs = true;
@@ -688,7 +699,7 @@ impl DeviceDriverFunction for XhcDriver {
             ope_reg.cmd_ring_ctrl = crcr;
             self.write_ope_reg(ope_reg);
 
-            info!("{}: Command ring initialized", driver_name);
+            trace!("{}: Command ring initialized", driver_name);
 
             // register event ring (primary)
             let primary_event_ring_seg_table_virt_addr =
@@ -720,7 +731,7 @@ impl DeviceDriverFunction for XhcDriver {
             );
             self.write_intr_reg_sets(0, intr_reg_sets_0).unwrap();
 
-            info!("{}: Event ring initialized", driver_name);
+            trace!("{}: Event ring initialized", driver_name);
 
             // setting up msi
             let vec_num = idt::set_handler_dyn_vec(
@@ -736,9 +747,10 @@ impl DeviceDriverFunction for XhcDriver {
                 TriggerMode::Level,
             );
 
-            match d.set_msi_cap(msg_addr, msg_data) {
-                Ok(_) => info!("{}: MSI interrupt initialized", driver_name),
-                Err(err) => warn!("{}: {:?}", driver_name, err),
+            if let Err(err) = d.set_msi_cap(msg_addr, msg_data) {
+                warn!("{}: {:?}", driver_name, err);
+            } else {
+                trace!("{}: MSI interrupt initialized", driver_name);
             }
 
             // enable interrupt
@@ -782,6 +794,7 @@ impl DeviceDriverFunction for XhcDriver {
             Some(trb) => trb,
             None => return Ok(()),
         };
+        debug!("{}: TRB poped: {:?}", name, trb.trb_type());
 
         match trb.trb_type() {
             TransferRequestBlockType::PortStatusChangeEvent => {
@@ -789,7 +802,7 @@ impl DeviceDriverFunction for XhcDriver {
                 self.root_hub_port_id = Some(trb.port_id().unwrap());
 
                 if let Some(port_id) = self.configuring_port_id {
-                    match self.read_port(port_id).unwrap().config_state {
+                    match self.port_mut(port_id).unwrap().config_state {
                         ConfigState::Reset => {
                             let mut trb = TransferRequestBlock::default();
                             trb.set_trb_type(TransferRequestBlockType::EnableSlotCommand);
@@ -816,7 +829,7 @@ impl DeviceDriverFunction for XhcDriver {
                 }
 
                 if let (Some(port_id), Some(slot_id)) = (self.configuring_port_id, trb.slot_id()) {
-                    match self.read_port(port_id).unwrap().config_state {
+                    match self.port_mut(port_id).unwrap().config_state {
                         ConfigState::Reset => {
                             if let Err(err) = self.alloc_slot(port_id, slot_id) {
                                 warn!("{}: {:?}", name, err);
@@ -825,9 +838,8 @@ impl DeviceDriverFunction for XhcDriver {
                             self.configuring_port_id = None;
                         }
                         ConfigState::AddressingDevice => {
-                            let mut port = self.read_port(port_id).unwrap().clone();
-                            port.config_state = ConfigState::InitializingDevice;
-                            self.write_port(port);
+                            let port_mut = self.port_mut(port_id).unwrap();
+                            port_mut.config_state = ConfigState::InitializingDevice;
                             self.configuring_port_id = None;
                         }
                         _ => (),
@@ -944,8 +956,19 @@ pub fn write(data: &[u8]) -> Result<()> {
     driver.write(data)
 }
 
-pub fn find_port_by_slot_id(slot_id: usize) -> Result<Option<Port>> {
-    Ok(unsafe { XHC_DRIVER.try_lock() }?.find_port_by_slot_id(slot_id))
+pub fn read_port_input_context_by_slot_id(slot_id: usize) -> Result<Option<InputContext>> {
+    Ok(unsafe { XHC_DRIVER.try_lock() }?.read_port_input_context_by_slot_id(slot_id))
+}
+
+pub fn write_port_input_context_by_slot_id(
+    slot_id: usize,
+    input_context: InputContext,
+) -> Result<()> {
+    unsafe { XHC_DRIVER.try_lock() }?.write_port_input_context_by_slot_id(slot_id, input_context)
+}
+
+pub fn generate_config_endpoint_trb(slot_id: usize) -> Result<TransferRequestBlock> {
+    unsafe { XHC_DRIVER.try_lock() }?.generate_config_endpoint_trb(slot_id)
 }
 
 pub fn read_device_context(slot_id: usize) -> Result<Option<DeviceContext>> {
@@ -978,5 +1001,5 @@ extern "x86-interrupt" fn poll_int_xhc_driver() {
         let _ = driver.poll_int();
     }
 
-    idt::notify_end_of_int();
+    arch::apic::notify_end_of_int();
 }

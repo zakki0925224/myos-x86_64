@@ -1267,7 +1267,7 @@ fn parse_die(
                     // skip
                 }
                 _ => {
-                    unimplemented!()
+                    unimplemented!("{:?}", form)
                 }
             }
         }

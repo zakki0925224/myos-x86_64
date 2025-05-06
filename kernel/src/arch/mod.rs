@@ -7,11 +7,13 @@ pub mod context;
 pub mod cpu;
 pub mod gdt;
 pub mod idt;
+pub mod mmio;
 pub mod qemu;
 pub mod register;
 pub mod syscall;
 pub mod task;
 pub mod tss;
+pub mod volatile;
 
 #[repr(C, packed(2))]
 #[derive(Debug, Default)]
