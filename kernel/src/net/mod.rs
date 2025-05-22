@@ -2,7 +2,7 @@ use crate::{
     error::{Error, Result},
     util::mutex::Mutex,
 };
-use alloc::collections::btree_map::BTreeMap;
+use alloc::{collections::btree_map::BTreeMap, vec::Vec};
 use arp::{ArpOperation, ArpPacket};
 use core::net::Ipv4Addr;
 use eth::{EthernetAddress, EthernetPayload};
@@ -112,6 +112,13 @@ impl NetworkManager {
 
                 let next_seq_num = socket_mut.receive_syn()?;
 
+                let mut options = Vec::new();
+                let mss_bytes_len = 1460u16;
+                options.push(0x02); // MSS
+                options.push(0x04); // MSS length
+                options.push((mss_bytes_len >> 8) as u8); // MSS high byte
+                options.push((mss_bytes_len & 0xff) as u8); // MSS low byte
+
                 // send SYN-ACK
                 let mut reply_packet = TcpPacket::new_with(
                     dst_port,
@@ -121,12 +128,14 @@ impl NetworkManager {
                     TcpPacket::FLAGS_SYN | TcpPacket::FLAGS_ACK,
                     u16::MAX,
                     0,
-                    packet.options_and_data,
+                    options,
                 );
                 reply_packet.calc_checksum();
+                debug!("net: TCP-SYN-ACK packet: {:?}", reply_packet);
                 return Ok(Some(reply_packet));
             }
             TcpSocketState::SynReceived => {
+                // TODO: TCP retransmission because of timeout (0.1s?)
                 if !packet.flags_ack() {
                     warn!("net: TCP-ACK not received");
                     return Ok(None);

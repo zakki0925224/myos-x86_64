@@ -29,10 +29,15 @@ extern "sysv64" fn asm_syscall_handler() {
     naked_asm!(
         "push rbp",
         "push rcx",
-        "push r11",
+        "push r11",     // rflags
         "mov rcx, r10", // rcx was updated by syscall instruction
         "mov rbp, rsp",
         "and rsp, -16",
+        "pushfq",
+        "pop r11",
+        "and r11, ~0x100", // clear TF
+        "push r11",
+        "popfq",
         "call syscall_handler",
         "mov rsp, rbp",
         "pop r11",
