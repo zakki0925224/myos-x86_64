@@ -222,8 +222,7 @@ async fn poll_ps2_mouse(mouse_pointer_bmp_path: String) {
     let mouse_pointer_bmp_fd = loop {
         match vfs::open_file(&((&mouse_pointer_bmp_path).into())) {
             Ok(fd) => break fd,
-            Err(e) => {
-                warn!("Failed to open mouse pointer bitmap, Retrying...: {:?}", e);
+            Err(_) => {
                 task::exec_yield().await;
             }
         }
@@ -232,8 +231,7 @@ async fn poll_ps2_mouse(mouse_pointer_bmp_path: String) {
     let bmp_data = loop {
         match vfs::read_file(&mouse_pointer_bmp_fd) {
             Ok(data) => break data,
-            Err(e) => {
-                warn!("Failed to read mouse pointer bitmap, Retrying...: {:?}", e);
+            Err(_) => {
                 task::exec_yield().await;
             }
         }
@@ -243,8 +241,7 @@ async fn poll_ps2_mouse(mouse_pointer_bmp_path: String) {
     loop {
         match vfs::close_file(&mouse_pointer_bmp_fd) {
             Ok(()) => break,
-            Err(e) => {
-                warn!("Failed to close mouse pointer bitmap, Retrying...: {:?}", e);
+            Err(_) => {
                 task::exec_yield().await;
             }
         }

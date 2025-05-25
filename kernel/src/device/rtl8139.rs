@@ -323,7 +323,7 @@ impl DeviceDriverFunction for Rtl8139Driver {
             debug!("{}: ROK", name);
             let (eth_frame, new_read_ptr) = self.receive_packet()?;
 
-            debug!("{}: Received packet: {:?}", name, eth_frame);
+            // debug!("{}: Received packet: {:?}", name, eth_frame);
             let payload = eth_frame.payload()?;
 
             if let Some(reply_payload) = net::receive_eth_payload(payload)? {
@@ -340,7 +340,7 @@ impl DeviceDriverFunction for Rtl8139Driver {
                     &payload_vec,
                 );
 
-                debug!("{}: Send packet: {:?}", name, reply_eth_frame);
+                // debug!("{}: Send packet: {:?}", name, reply_eth_frame);
                 self.send_packet(reply_eth_frame)?;
             }
 

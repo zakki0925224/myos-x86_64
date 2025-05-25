@@ -175,7 +175,7 @@ impl SimpleWindowManager {
         &mut self,
         layer_id: &LayerId,
         component: Box<dyn Component>,
-    ) -> Result<()> {
+    ) -> Result<LayerId> {
         if self.res_xy.is_none() {
             return Err(Error::NotInitialized);
         }
@@ -187,9 +187,26 @@ impl SimpleWindowManager {
             .ok_or(SimpleWindowManagerError::WindowWasNotFound {
                 layer_id: layer_id.get(),
             })?;
-        window.push_child(component)?;
+        window.push_child(component)
+    }
 
-        Ok(())
+    fn remove_component_from_window(
+        &mut self,
+        window_layer_id: &LayerId,
+        component_layer_id: &LayerId,
+    ) -> Result<()> {
+        if self.res_xy.is_none() {
+            return Err(Error::NotInitialized);
+        }
+
+        let window = self
+            .windows
+            .iter_mut()
+            .find(|w| w.layer_id().get() == window_layer_id.get())
+            .ok_or(SimpleWindowManagerError::WindowWasNotFound {
+                layer_id: window_layer_id.get(),
+            })?;
+        window.remove_child(component_layer_id)
     }
 
     fn flush_taskbar(&mut self) -> Result<()> {
@@ -262,8 +279,19 @@ pub fn create_window(title: String, xy: (usize, usize), wh: (usize, usize)) -> R
     unsafe { SIMPLE_WM.try_lock() }?.create_window(title, xy, wh)
 }
 
-pub fn add_component_to_window(layer_id: &LayerId, component: Box<dyn Component>) -> Result<()> {
+pub fn add_component_to_window(
+    layer_id: &LayerId,
+    component: Box<dyn Component>,
+) -> Result<LayerId> {
     unsafe { SIMPLE_WM.try_lock() }?.add_component_to_window(layer_id, component)
+}
+
+pub fn remove_component_from_window(
+    window_layer_id: &LayerId,
+    component_layer_id: &LayerId,
+) -> Result<()> {
+    unsafe { SIMPLE_WM.try_lock() }?
+        .remove_component_from_window(window_layer_id, component_layer_id)
 }
 
 pub fn flush_components() -> Result<()> {

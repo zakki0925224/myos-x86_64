@@ -266,9 +266,23 @@ impl Window {
         Ok(x >= cb_x && x < cb_x + cb_w && y >= cb_y && y < cb_y + cb_h)
     }
 
-    pub fn push_child(&mut self, child: Box<dyn Component>) -> Result<()> {
+    pub fn push_child(&mut self, child: Box<dyn Component>) -> Result<LayerId> {
+        let child_layer_id = child.layer_id();
         self.children.push(child);
-        Ok(())
+        Ok(child_layer_id)
+    }
+
+    pub fn remove_child(&mut self, layer_id: &LayerId) -> Result<()> {
+        if let Some(pos) = self
+            .children
+            .iter()
+            .position(|c| c.layer_id().get() == layer_id.get())
+        {
+            self.children.remove(pos);
+            Ok(())
+        } else {
+            Err(Error::Failed("Child component not found"))
+        }
     }
 }
 

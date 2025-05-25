@@ -13,7 +13,7 @@ pub struct ImageHeader {
     pub offset: u32,
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 pub struct InfoHeader {
     pub header_size: u32,
     pub width: i32,
