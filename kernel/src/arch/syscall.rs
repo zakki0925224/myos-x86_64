@@ -416,7 +416,7 @@ fn sys_stat(fd: FileDescriptorNumber, buf_addr: VirtualAddress) -> Result<()> {
 }
 
 fn sys_uptime() -> u64 {
-    device::local_apic_timer::get_current_ms().unwrap_or(0) as u64
+    device::local_apic_timer::global_uptime().as_millis() as u64
 }
 
 // flags: defined libc/syscall.h

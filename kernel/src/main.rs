@@ -149,52 +149,52 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     let task_graphics = async {
         loop {
             let _ = simple_window_manager::flush_components();
-            task::exec_yield().await;
+            async_task::exec_yield().await;
             let _ = multi_layer::draw_to_frame_buf();
-            task::exec_yield().await;
+            async_task::exec_yield().await;
             let _ = frame_buf::apply_shadow_buf();
-            task::exec_yield().await;
+            async_task::exec_yield().await;
         }
     };
 
     // let task_poll_virtio_net = async {
     //     loop {
     //         let _ = device::virtio::net::poll_normal();
-    //         task::exec_yield().await;
+    //         async_task::exec_yield().await;
     //     }
     // };
 
     let task_poll_uart = async {
         loop {
             let _ = device::uart::poll_normal();
-            task::exec_yield().await;
+            async_task::exec_yield().await;
         }
     };
 
     let task_poll_ps2_keyboard = async {
         loop {
             let _ = device::ps2_keyboard::poll_normal();
-            task::exec_yield().await;
+            async_task::exec_yield().await;
         }
     };
 
     let task_poll_rtl8139 = async {
         loop {
             let _ = device::rtl8139::poll_normal();
-            task::exec_yield().await;
+            async_task::exec_yield().await;
         }
     };
 
-    task::spawn(task_graphics).unwrap();
-    // task::spawn(task_poll_virtio_net).unwrap();
-    task::spawn(task_poll_uart).unwrap();
-    task::spawn(task_poll_ps2_keyboard).unwrap();
-    task::spawn(task_poll_rtl8139).unwrap();
-    task::spawn(poll_ps2_mouse(
+    async_task::spawn(task_graphics).unwrap();
+    // async_task::spawn(task_poll_virtio_net).unwrap();
+    async_task::spawn(task_poll_uart).unwrap();
+    async_task::spawn(task_poll_ps2_keyboard).unwrap();
+    async_task::spawn(task_poll_rtl8139).unwrap();
+    async_task::spawn(poll_ps2_mouse(
         boot_info.kernel_config.mouse_pointer_bmp_path.to_string(),
     ))
     .unwrap();
-    task::ready().unwrap();
+    async_task::ready().unwrap();
 
     // execute init app
     let init_app_exec_args = boot_info.kernel_config.init_app_exec_args;
@@ -223,7 +223,7 @@ async fn poll_ps2_mouse(mouse_pointer_bmp_path: String) {
         match vfs::open_file(&((&mouse_pointer_bmp_path).into())) {
             Ok(fd) => break fd,
             Err(_) => {
-                task::exec_yield().await;
+                async_task::exec_yield().await;
             }
         }
     };
@@ -232,7 +232,7 @@ async fn poll_ps2_mouse(mouse_pointer_bmp_path: String) {
         match vfs::read_file(&mouse_pointer_bmp_fd) {
             Ok(data) => break data,
             Err(_) => {
-                task::exec_yield().await;
+                async_task::exec_yield().await;
             }
         }
     };
@@ -242,7 +242,7 @@ async fn poll_ps2_mouse(mouse_pointer_bmp_path: String) {
         match vfs::close_file(&mouse_pointer_bmp_fd) {
             Ok(()) => break,
             Err(_) => {
-                task::exec_yield().await;
+                async_task::exec_yield().await;
             }
         }
     }
@@ -251,7 +251,7 @@ async fn poll_ps2_mouse(mouse_pointer_bmp_path: String) {
         let mouse_event = match device::ps2_mouse::poll_normal() {
             Ok(Some(e)) => e,
             _ => {
-                task::exec_yield().await;
+                async_task::exec_yield().await;
                 continue;
             }
         };
@@ -265,6 +265,6 @@ async fn poll_ps2_mouse(mouse_pointer_bmp_path: String) {
         if is_created_mouse_pointer_layer {
             let _ = simple_window_manager::mouse_pointer_event(mouse_event);
         }
-        task::exec_yield().await;
+        async_task::exec_yield().await;
     }
 }

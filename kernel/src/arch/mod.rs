@@ -3,6 +3,7 @@ use core::arch::asm;
 pub mod acpi;
 pub mod addr;
 pub mod apic;
+pub mod async_task;
 pub mod context;
 pub mod cpu;
 pub mod gdt;

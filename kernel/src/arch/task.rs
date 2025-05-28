@@ -10,143 +10,29 @@ use crate::{
     },
     util::mutex::Mutex,
 };
-use alloc::{boxed::Box, collections::VecDeque, ffi::CString, string::ToString, vec::Vec};
-use common::elf::{self, *};
-use core::{
-    future::Future,
-    pin::Pin,
-    ptr::null,
-    sync::atomic::*,
-    task::{Context as ExecutorContext, Poll, RawWaker, RawWakerVTable, Waker},
-};
+use alloc::{ffi::CString, string::ToString, vec::Vec};
+use common::elf::{self, Elf64};
+use core::sync::atomic::{AtomicUsize, Ordering};
 use log::{debug, trace};
 
 const USER_TASK_STACK_SIZE: usize = 1024 * 1024; // 1MiB
-
-static mut TASK_EXECUTOR: Mutex<Executor> = Mutex::new(Executor::new());
 
 static mut KERNEL_TASK: Mutex<Option<Task>> = Mutex::new(None);
 static mut USER_TASKS: Mutex<Vec<Task>> = Mutex::new(Vec::new());
 static mut USER_EXIT_STATUS: Option<u64> = None;
 
-#[derive(Default)]
-struct Yield {
-    polled: AtomicBool,
-}
-
-impl Future for Yield {
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, _: &mut ExecutorContext) -> Poll<()> {
-        if self.polled.fetch_or(true, Ordering::SeqCst) {
-            Poll::Ready(())
-        } else {
-            Poll::Pending
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
-struct TaskId(usize);
+pub struct TaskId(usize);
 
 impl TaskId {
-    fn new() -> Self {
+    pub fn new() -> Self {
         static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
         Self(NEXT_ID.fetch_add(1, Ordering::Relaxed))
     }
 
-    fn get(&self) -> usize {
+    pub fn get(&self) -> usize {
         self.0
     }
-}
-
-struct ExecutorTask {
-    id: TaskId,
-    future: Pin<Box<dyn Future<Output = ()>>>,
-}
-
-impl ExecutorTask {
-    fn new(future: impl Future<Output = ()> + 'static) -> Self {
-        Self {
-            id: TaskId::new(),
-            future: Box::pin(future),
-        }
-    }
-
-    fn poll(&mut self, context: &mut ExecutorContext) -> Poll<()> {
-        // trace!("task: Polling task (id: {})", self.id.get());
-        self.future.as_mut().poll(context)
-    }
-}
-
-struct Executor {
-    task_queue: VecDeque<ExecutorTask>,
-    is_ready: bool,
-}
-
-impl Executor {
-    const fn new() -> Self {
-        Self {
-            task_queue: VecDeque::new(),
-            is_ready: false,
-        }
-    }
-
-    fn poll(&mut self) {
-        if !self.is_ready {
-            return;
-        }
-
-        if let Some(mut task) = self.task_queue.pop_front() {
-            let waker = dummy_waker();
-            let mut context = ExecutorContext::from_waker(&waker);
-            match task.poll(&mut context) {
-                Poll::Ready(()) => trace!("task: Done (id: {})", task.id.get()),
-                Poll::Pending => self.task_queue.push_back(task),
-            }
-        }
-    }
-
-    fn ready(&mut self) {
-        self.is_ready = true;
-    }
-
-    fn spawn(&mut self, task: ExecutorTask) {
-        self.task_queue.push_back(task);
-    }
-}
-
-fn dummy_raw_waker() -> RawWaker {
-    fn no_op(_: *const ()) {}
-    fn clone(_: *const ()) -> RawWaker {
-        dummy_raw_waker()
-    }
-    let vtable = &RawWakerVTable::new(clone, no_op, no_op, no_op);
-    RawWaker::new(null() as *const (), vtable)
-}
-
-fn dummy_waker() -> Waker {
-    unsafe { Waker::from_raw(dummy_raw_waker()) }
-}
-
-pub async fn exec_yield() {
-    Yield::default().await
-}
-
-pub fn poll() -> Result<()> {
-    unsafe { TASK_EXECUTOR.try_lock() }?.poll();
-    Ok(())
-}
-
-pub fn ready() -> Result<()> {
-    unsafe { TASK_EXECUTOR.try_lock() }?.ready();
-    Ok(())
-}
-
-pub fn spawn(future: impl Future<Output = ()> + 'static) -> Result<()> {
-    let task = ExecutorTask::new(future);
-    unsafe { TASK_EXECUTOR.try_lock() }?.spawn(task);
-    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -235,7 +121,7 @@ impl Task {
             }
 
             for program_header in elf64.program_headers() {
-                if program_header.segment_type() != SegmentType::Load {
+                if program_header.segment_type() != elf::SegmentType::Load {
                     continue;
                 }
 

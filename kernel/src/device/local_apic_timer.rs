@@ -1,11 +1,13 @@
+use core::time::Duration;
+
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     acpi,
     addr::VirtualAddress,
     arch::{self, mmio::Mmio, volatile::Volatile},
+    async_task,
     error::Result,
     idt::{self, GateType, InterruptHandler},
-    task,
     util::mutex::Mutex,
 };
 use alloc::vec::Vec;
@@ -209,7 +211,7 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
         }
 
         // poll async tasks
-        let _ = task::poll();
+        let _ = async_task::poll();
 
         Ok(())
     }
@@ -265,9 +267,10 @@ pub fn write(data: &[u8]) -> Result<()> {
     driver.write(data)
 }
 
-pub fn get_current_ms() -> Result<usize> {
-    let mut driver = unsafe { LOCAL_APIC_TIMER_DRIVER.try_lock() }?;
-    driver.current_ms()
+pub fn global_uptime() -> Duration {
+    let driver = unsafe { LOCAL_APIC_TIMER_DRIVER.get_force_mut() };
+    let ms = driver.current_ms().unwrap_or(0);
+    Duration::from_millis(ms as u64)
 }
 
 extern "x86-interrupt" fn poll_int_local_apic_timer() {
