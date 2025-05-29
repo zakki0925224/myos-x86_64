@@ -24,6 +24,8 @@ mod util;
 #[macro_use]
 extern crate alloc;
 
+use core::time::Duration;
+
 use alloc::{
     string::{String, ToString},
     vec::Vec,
@@ -185,14 +187,15 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
         }
     };
 
-    async_task::spawn(task_graphics).unwrap();
-    // async_task::spawn(task_poll_virtio_net).unwrap();
-    async_task::spawn(task_poll_uart).unwrap();
-    async_task::spawn(task_poll_ps2_keyboard).unwrap();
-    async_task::spawn(task_poll_rtl8139).unwrap();
-    async_task::spawn(poll_ps2_mouse(
-        boot_info.kernel_config.mouse_pointer_bmp_path.to_string(),
-    ))
+    async_task::spawn(task_graphics, Some(Duration::from_millis(16))).unwrap();
+    // async_task::spawn(task_poll_virtio_net, None).unwrap();
+    async_task::spawn(task_poll_uart, Some(Duration::from_millis(4))).unwrap();
+    async_task::spawn(task_poll_ps2_keyboard, Some(Duration::from_millis(4))).unwrap();
+    async_task::spawn(task_poll_rtl8139, Some(Duration::from_millis(2))).unwrap();
+    async_task::spawn(
+        poll_ps2_mouse(boot_info.kernel_config.mouse_pointer_bmp_path.to_string()),
+        None,
+    )
     .unwrap();
     async_task::ready().unwrap();
 

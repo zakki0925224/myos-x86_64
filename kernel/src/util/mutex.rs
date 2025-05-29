@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::{arch, error::Result};
 use core::{
     cell::SyncUnsafeCell,
     ops::{Deref, DerefMut},
@@ -32,6 +32,16 @@ impl<T: Sized> Mutex<T> {
 
     pub unsafe fn get_force_mut(&mut self) -> &mut T {
         self.value.get_mut()
+    }
+
+    pub fn spin_lock(&self) -> MutexGuard<T> {
+        loop {
+            if let Ok(guard) = self.try_lock() {
+                return guard;
+            } else {
+                arch::hlt();
+            }
+        }
     }
 
     // pub fn lock(&self) -> MutexGuard<T> {

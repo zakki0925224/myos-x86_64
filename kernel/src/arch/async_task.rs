@@ -60,18 +60,31 @@ impl Future for TimeoutFuture {
 struct AsyncTask {
     id: TaskId,
     future: Pin<Box<dyn Future<Output = ()>>>,
+    poll_interval: Option<Duration>,
+    last_polled_at: Option<Duration>,
 }
 
 impl AsyncTask {
-    fn new(future: impl Future<Output = ()> + 'static) -> Self {
+    fn new(future: impl Future<Output = ()> + 'static, poll_interval: Option<Duration>) -> Self {
         Self {
             id: TaskId::new(),
             future: Box::pin(future),
+            poll_interval,
+            last_polled_at: None,
         }
     }
 
     fn poll(&mut self, context: &mut Context) -> Poll<()> {
-        // trace!("task: Polling task (id: {})", self.id.get());
+        if let Some(interval) = self.poll_interval {
+            let global_uptime = device::local_apic_timer::global_uptime();
+            if let Some(last_polled) = self.last_polled_at {
+                if global_uptime < last_polled + interval {
+                    return Poll::Pending;
+                }
+            }
+            self.last_polled_at = Some(global_uptime);
+        }
+
         self.future.as_mut().poll(context)
     }
 }
@@ -140,8 +153,11 @@ pub fn ready() -> Result<()> {
     Ok(())
 }
 
-pub fn spawn(future: impl Future<Output = ()> + 'static) -> Result<()> {
-    let task = AsyncTask::new(future);
+pub fn spawn(
+    future: impl Future<Output = ()> + 'static,
+    poll_interval: Option<Duration>,
+) -> Result<()> {
+    let task = AsyncTask::new(future, poll_interval);
     unsafe { ASYNC_TASK_EXECUTOR.try_lock() }?.spawn(task);
     Ok(())
 }

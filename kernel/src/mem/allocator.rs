@@ -402,19 +402,13 @@ struct LinkedListAllocator {
 
 unsafe impl GlobalAlloc for LinkedListAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let ptr = self
-            .heap
-            .try_lock()
-            .unwrap()
-            .alloc_first_fit(layout)
-            .unwrap();
+        let ptr = self.heap.spin_lock().alloc_first_fit(layout).unwrap();
         ptr.as_ptr()
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         self.heap
-            .try_lock()
-            .unwrap()
+            .spin_lock()
             .dealloc(NonNull::new_unchecked(ptr), layout)
             .unwrap()
     }
