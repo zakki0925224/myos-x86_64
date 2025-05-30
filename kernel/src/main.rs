@@ -24,14 +24,13 @@ mod util;
 #[macro_use]
 extern crate alloc;
 
-use core::time::Duration;
-
 use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
 use arch::*;
 use common::boot_info::BootInfo;
+use core::time::Duration;
 use fs::{file::bitmap::BitmapImage, vfs};
 use graphics::{color::*, frame_buf, multi_layer, simple_window_manager};
 use log::*;

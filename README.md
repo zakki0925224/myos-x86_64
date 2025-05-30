@@ -34,7 +34,7 @@ This is a replacement project for the previous **[myos](https://github.com/Zakki
     -   [ ] VirtIO (WIP)
         -   [ ] virtio-net (WIP)
 -   [x] File system
-    -   [x] Own VFS
+    -   [x] Own VFS (read/write, in-memory)
     -   [x] FAT32 (read only)
     -   [x] Device file (/dev)
 -   [x] Networking

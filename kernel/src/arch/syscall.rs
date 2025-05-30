@@ -331,13 +331,18 @@ fn sys_read(fd: FileDescriptorNumber, buf_addr: VirtualAddress, buf_len: usize) 
 
 fn sys_write(fd: FileDescriptorNumber, s_ptr: *const u8, s_len: usize) -> Result<()> {
     let s_slice = unsafe { slice::from_raw_parts(s_ptr, s_len) };
-    let s = String::from_utf8_lossy(s_slice).to_string();
 
     match fd {
         FileDescriptorNumber::STDOUT => {
+            let s = String::from_utf8_lossy(s_slice).to_string();
             print!("{}", s);
         }
-        _ => return Err(Error::Failed("fd is not defined")),
+        FileDescriptorNumber::STDIN | FileDescriptorNumber::STDERR => {
+            return Err(Error::Failed("fd is not defined"));
+        }
+        fd => {
+            vfs::write_file(&fd, s_slice)?;
+        }
     }
 
     Ok(())

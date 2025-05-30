@@ -7,6 +7,7 @@ use crate::{
 };
 use alloc::{collections::btree_map::BTreeMap, string::String, vec::Vec};
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use log::warn;
 
 static mut VFS: Mutex<VirtualFileSystem> = Mutex::new(VirtualFileSystem::new());
 
@@ -87,6 +88,7 @@ struct FileInfo {
     fs: Option<FileSystem>,
     parent: FileId,
     children: Vec<FileId>,
+    data: Option<Vec<u8>>,
 }
 
 impl FileInfo {
@@ -97,6 +99,7 @@ impl FileInfo {
             fs: None,
             parent,
             children: Vec::new(),
+            data: None,
         }
     }
 
@@ -361,6 +364,7 @@ impl VirtualFileSystem {
                             fs: None,
                             parent: *p_file_id,
                             children: Vec::new(),
+                            data: None,
                         };
 
                         if file_info.ty == FileType::Directory {
@@ -514,25 +518,74 @@ impl VirtualFileSystem {
             .ok_or(VirtualFileSystemError::NoSuchFileOrDirectoryError(None))?;
         match &file_ref.ty {
             FileType::VirtualFile => {
+                if let Some(data) = &file_ref.data {
+                    return Ok(data.clone());
+                }
+
                 let (fs, fs_path) = self.find_fs(file_ref).unwrap();
                 match fs {
                     FileSystem::Fat(fat) => {
                         let (_, bytes) = fat.get_file_by_abs_path(&file_path.diff(&fs_path))?;
-                        return Ok(bytes);
+                        Ok(bytes)
                     }
                 }
             }
-            FileType::DeviceFile(desc) => {
-                return (desc.read)();
+            FileType::DeviceFile(desc) => (desc.read)(),
+            _ => Err(VirtualFileSystemError::InvalidFileTypeError((
+                file_ref.ty.clone(),
+                Some(file_path),
+            ))
+            .into()),
+        }
+    }
+
+    fn write_file(&mut self, fd_num: FileDescriptorNumber, data: &[u8]) -> Result<()> {
+        let fd = if let Some(fd) = self
+            .fds
+            .iter()
+            .find(|f| f.num == fd_num && f.status == FileDescriptorStatus::Open)
+        {
+            fd
+        } else {
+            return Err(VirtualFileSystemError::ReleasedFileResourceError(fd_num).into());
+        };
+
+        let file_id = fd.file_id;
+        let file_path;
+        {
+            let file_ref = self
+                .find_file(&file_id)
+                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectoryError(None))?;
+            file_path = self
+                .abs_path_by_file(file_ref)
+                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectoryError(None))?;
+        }
+
+        let file_ref_mut = self
+            .find_file_mut(&file_id)
+            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectoryError(None))?;
+
+        match &mut file_ref_mut.ty {
+            FileType::VirtualFile => {
+                file_ref_mut.data = Some(data.to_vec());
+
+                // TODO
+                warn!(
+                    "VFS: Write to File system is unimplemented. Using temporary buffer: {}",
+                    file_path
+                );
             }
+            FileType::DeviceFile(desc) => (desc.write)(data)?,
             _ => {
                 return Err(VirtualFileSystemError::InvalidFileTypeError((
-                    file_ref.ty.clone(),
+                    file_ref_mut.ty.clone(),
                     Some(file_path),
                 ))
-                .into());
+                .into())
             }
         }
+
+        Ok(())
     }
 }
 
@@ -578,16 +631,19 @@ pub fn open_file(path: &Path) -> Result<FileDescriptorNumber> {
     Ok(fd.num)
 }
 
-// TODO
 pub fn close_file(fd_num: &FileDescriptorNumber) -> Result<()> {
     let mut vfs = unsafe { VFS.try_lock() }?;
     vfs.close_file(*fd_num)
 }
 
-// TODO
 pub fn read_file(fd_num: &FileDescriptorNumber) -> Result<Vec<u8>> {
     let vfs = unsafe { VFS.try_lock() }?;
     vfs.read_file(*fd_num)
+}
+
+pub fn write_file(fd_num: &FileDescriptorNumber, data: &[u8]) -> Result<()> {
+    let mut vfs = unsafe { VFS.try_lock() }?;
+    vfs.write_file(*fd_num, data)
 }
 
 pub fn add_dev_file(desc: DeviceFileDescriptor, file_name: &str) -> Result<()> {
