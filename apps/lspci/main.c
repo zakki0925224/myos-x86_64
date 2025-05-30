@@ -4,7 +4,7 @@
 #include <syscalls.h>
 
 int main(int argc, char *argv[]) {
-    int64_t fd = sys_open("/dev/pci-bus");
+    int64_t fd = sys_open("/dev/pci-bus", OPEN_FLAG_NONE);
 
     if (fd == -1) {
         printf("lspci: failed to open the file\n");

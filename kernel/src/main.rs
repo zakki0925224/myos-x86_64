@@ -222,7 +222,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
 async fn poll_ps2_mouse(mouse_pointer_bmp_path: String) {
     let mut is_created_mouse_pointer_layer = false;
     let mouse_pointer_bmp_fd = loop {
-        match vfs::open_file(&((&mouse_pointer_bmp_path).into())) {
+        match vfs::open_file(&((&mouse_pointer_bmp_path).into()), false) {
             Ok(fd) => break fd,
             Err(_) => {
                 async_task::exec_yield().await;

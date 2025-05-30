@@ -32,13 +32,17 @@
 #define FDN_STDOUT 1
 #define FDN_STDERR 2
 
+// sys_open flags
+#define OPEN_FLAG_NONE 0x0
+#define OPEN_FLAG_CREATE 0x1
+
 // sys_exec flags
 #define EXEC_FLAG_NONE 0x0
 #define EXEC_FLAG_DEBUG 0x1
 
 extern int64_t sys_read(int64_t fd, void *buf, int buf_len);
 extern int64_t sys_write(int64_t fd, const char *str, int len);
-extern int64_t sys_open(const char *filepath);
+extern int64_t sys_open(const char *filepath, char flags);
 extern int64_t sys_close(int64_t fd);
 extern void sys_exit(uint64_t status);
 extern void *sys_sbrk(uint64_t len);

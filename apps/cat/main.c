@@ -8,7 +8,7 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    int64_t fd = sys_open(argv[1]);
+    int64_t fd = sys_open(argv[1], OPEN_FLAG_NONE);
 
     if (fd == -1) {
         printf("cat: failed to open the file\n");

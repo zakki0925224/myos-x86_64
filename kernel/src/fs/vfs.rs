@@ -355,17 +355,14 @@ impl VirtualFileSystem {
                         }
 
                         let file_id = FileId::new();
-                        let mut file_info = FileInfo {
-                            ty: match meta.attr {
+                        let mut file_info = FileInfo::new(
+                            match meta.attr {
                                 Attribute::Directory => FileType::Directory,
                                 _ => FileType::VirtualFile,
                             },
-                            name: meta.name,
-                            fs: None,
-                            parent: *p_file_id,
-                            children: Vec::new(),
-                            data: None,
-                        };
+                            meta.name,
+                            *p_file_id,
+                        );
 
                         if file_info.ty == FileType::Directory {
                             let child_files = cache_recursively(
@@ -437,10 +434,23 @@ impl VirtualFileSystem {
         Some(Path::new(s).normalize())
     }
 
-    fn open_file(&mut self, path: &Path) -> Result<FileDescriptor> {
-        let (file_id, file_ref) = self.find_file_by_path(path).ok_or(
-            VirtualFileSystemError::NoSuchFileOrDirectoryError(Some(path.clone())),
-        )?;
+    fn open_file(&mut self, path: &Path, create: bool) -> Result<FileDescriptor> {
+        let file_id;
+        let file_ref;
+
+        if let Some((id, ref_)) = self.find_file_by_path(path) {
+            file_id = id;
+            file_ref = ref_;
+        } else if create {
+            self.add_file(path, FileType::VirtualFile)?;
+            (file_id, file_ref) = self.find_file_by_path(path).ok_or(
+                VirtualFileSystemError::NoSuchFileOrDirectoryError(Some(path.clone())),
+            )?;
+        } else {
+            return Err(
+                VirtualFileSystemError::NoSuchFileOrDirectoryError(Some(path.clone())).into(),
+            );
+        }
 
         match &file_ref.ty {
             FileType::VirtualFile | FileType::DeviceFile(_) => (),
@@ -519,15 +529,16 @@ impl VirtualFileSystem {
         match &file_ref.ty {
             FileType::VirtualFile => {
                 if let Some(data) = &file_ref.data {
-                    return Ok(data.clone());
-                }
-
-                let (fs, fs_path) = self.find_fs(file_ref).unwrap();
-                match fs {
-                    FileSystem::Fat(fat) => {
-                        let (_, bytes) = fat.get_file_by_abs_path(&file_path.diff(&fs_path))?;
-                        Ok(bytes)
+                    Ok(data.clone())
+                } else if let Some((fs, fs_path)) = self.find_fs(file_ref) {
+                    match fs {
+                        FileSystem::Fat(fat) => {
+                            let (_, bytes) = fat.get_file_by_abs_path(&file_path.diff(&fs_path))?;
+                            Ok(bytes)
+                        }
                     }
+                } else {
+                    Ok(Vec::new())
                 }
             }
             FileType::DeviceFile(desc) => (desc.read)(),
@@ -625,9 +636,9 @@ pub fn cwd_path() -> Result<Path> {
     Ok(path)
 }
 
-pub fn open_file(path: &Path) -> Result<FileDescriptorNumber> {
+pub fn open_file(path: &Path, create: bool) -> Result<FileDescriptorNumber> {
     let mut vfs = unsafe { VFS.try_lock() }?;
-    let fd = vfs.open_file(path)?;
+    let fd = vfs.open_file(path, create)?;
     Ok(fd.num)
 }
 
@@ -644,6 +655,11 @@ pub fn read_file(fd_num: &FileDescriptorNumber) -> Result<Vec<u8>> {
 pub fn write_file(fd_num: &FileDescriptorNumber, data: &[u8]) -> Result<()> {
     let mut vfs = unsafe { VFS.try_lock() }?;
     vfs.write_file(*fd_num, data)
+}
+
+pub fn create_file(path: &Path) -> Result<()> {
+    let mut vfs = unsafe { VFS.try_lock() }?;
+    vfs.add_file(path, FileType::VirtualFile)
 }
 
 pub fn add_dev_file(desc: DeviceFileDescriptor, file_name: &str) -> Result<()> {

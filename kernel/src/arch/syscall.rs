@@ -95,7 +95,8 @@ extern "sysv64" fn syscall_handler(
         // open syscall
         2 => {
             let filename_ptr = arg1 as *const u8;
-            let fd = match sys_open(filename_ptr) {
+            let flags = arg2 as u8;
+            let fd = match sys_open(filename_ptr, flags) {
                 Ok(fd) => fd,
                 Err(err) => {
                     error!("syscall: open: {:?}", err);
@@ -348,11 +349,12 @@ fn sys_write(fd: FileDescriptorNumber, s_ptr: *const u8, s_len: usize) -> Result
     Ok(())
 }
 
-fn sys_open(filename_ptr: *const u8) -> Result<FileDescriptorNumber> {
+fn sys_open(filename_ptr: *const u8, flags: u8) -> Result<FileDescriptorNumber> {
     let path = unsafe { util::cstring::from_cstring_ptr(filename_ptr) }
         .as_str()
         .into();
-    let fd = vfs::open_file(&path)?;
+    let create = flags & 0x1 != 0;
+    let fd = vfs::open_file(&path, create)?;
     task::push_fd(fd);
 
     Ok(fd)

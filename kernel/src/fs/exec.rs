@@ -4,7 +4,7 @@ use common::elf::Elf64;
 use log::{error, info};
 
 pub fn exec_elf(elf_path: &Path, args: &[&str], enable_debug: bool) -> Result<()> {
-    let fd_num = vfs::open_file(elf_path)?;
+    let fd_num = vfs::open_file(elf_path, false)?;
     let elf_data = vfs::read_file(&fd_num)?;
     let elf64 = match Elf64::new(&elf_data) {
         Ok(e) => e,

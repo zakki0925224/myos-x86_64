@@ -25,8 +25,8 @@ int64_t sys_write(int64_t fd, const char *str, int len) {
     return syscall(SN_WRITE, (uint64_t)fd, (uint64_t)str, (uint64_t)len, 0, 0);
 }
 
-int64_t sys_open(const char *filepath) {
-    return syscall(SN_OPEN, (uint64_t)filepath, 0, 0, 0, 0);
+int64_t sys_open(const char *filepath, char flags) {
+    return syscall(SN_OPEN, (uint64_t)filepath, (uint64_t)flags, 0, 0, 0);
 }
 
 int64_t sys_close(int64_t fd) {
