@@ -1,5 +1,3 @@
-use core::time::Duration;
-
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     acpi,
@@ -11,6 +9,7 @@ use crate::{
     util::mutex::Mutex,
 };
 use alloc::vec::Vec;
+use core::time::Duration;
 use log::{debug, info};
 
 const DIV_VALUE: DivideValue = DivideValue::By1;
