@@ -8,7 +8,7 @@ int main(int argc, char *argv[]) {
 
     if (sys_chdir(argv[1]) == -1) {
         printf("cd: failed to change directory\n");
-        return 1;
+        return -1;
     }
 
     return 0;

@@ -106,7 +106,7 @@ int main(int argc, char const *argv[]) {
 
         if (sys_read(0, buf, BUF_LEN) == -1) {
             printf("Failed to read stdin\n");
-            return 1;
+            return -1;
         }
 
         replace(buf, '\n', '\0');

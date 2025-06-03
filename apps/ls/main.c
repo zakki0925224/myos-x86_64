@@ -14,7 +14,7 @@ int main(int argc, char *argv[]) {
 
     if (sys_getenames(path, cwdenames, sizeof(cwdenames)) == -1) {
         printf("ls: failed to get entry names\n");
-        return 1;
+        return -1;
     }
 
     char old_c = '\0';

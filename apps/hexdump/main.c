@@ -12,24 +12,24 @@ int main(int argc, char *argv[]) {
 
     if (fd == -1) {
         printf("hexdump: failed to open the file\n");
-        return 1;
+        return -1;
     }
 
     f_stat *file_stat = (f_stat *)malloc(sizeof(f_stat));
     if (sys_stat(fd, file_stat) == -1) {
         printf("hexdump: failed to get the file status\n");
-        return 1;
+        return -1;
     }
 
     char *f_buf = (char *)malloc(file_stat->size);
     if (sys_read(fd, f_buf, file_stat->size) == -1) {
         printf("hexdump: failed to read the file\n");
-        return 1;
+        return -1;
     }
 
     if (sys_close(fd) == -1) {
         printf("hexdump: failed to close the file\n");
-        return 1;
+        return -1;
     }
 
     for (int i = 0; i < (file_stat->size + 15) / 16; i++) {

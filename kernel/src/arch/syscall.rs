@@ -24,6 +24,41 @@ use common::{
 use core::{arch::naked_asm, slice};
 use log::*;
 
+#[derive(Debug, Clone, Copy)]
+#[repr(u32)]
+enum IomsgCommand {
+    CreateWindow = 0x80000000,
+    DestroyWindow = 0x80000001,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C, align(8))]
+struct IomsgHeader {
+    cmd_id: u32,
+    payload_size: u32,
+}
+
+impl IomsgHeader {
+    fn new(cmd: IomsgCommand, payload_size: u32) -> Self {
+        Self {
+            cmd_id: cmd as u32,
+            payload_size,
+        }
+    }
+
+    fn is_valid(&self) -> bool {
+        (self.cmd_id & 0x80000000) != 0 && self.payload_size > 0
+    }
+
+    fn cmd(&self) -> Result<IomsgCommand> {
+        match self.cmd_id {
+            0x80000000 => Ok(IomsgCommand::CreateWindow),
+            0x80000001 => Ok(IomsgCommand::DestroyWindow),
+            _ => Err(Error::Failed("Invalid command ID")),
+        }
+    }
+}
+
 #[unsafe(naked)]
 extern "sysv64" fn asm_syscall_handler() {
     naked_asm!(
@@ -273,6 +308,16 @@ extern "sysv64" fn syscall_handler(
                 return -1;
             }
         }
+        // iomsg syscall
+        18 => {
+            let msgbuf_addr = arg1.into();
+            let replymsgbuf_addr = arg2.into();
+            let replymsgbuf_len = arg3 as usize;
+            if let Err(err) = sys_iomsg(msgbuf_addr, replymsgbuf_addr, replymsgbuf_len) {
+                error!("syscall: iomsg: {:?}", err);
+                return -1;
+            }
+        }
         num => {
             error!("syscall: Syscall number 0x{:x} is not defined", num);
             return -1;
@@ -519,6 +564,59 @@ fn sys_getenames(path_ptr: *const u8, buf_addr: VirtualAddress, buf_len: usize) 
     }
 
     buf_addr.copy_from_nonoverlapping(entry_names_s.as_ptr(), entry_names_s.len());
+
+    Ok(())
+}
+
+fn sys_iomsg(
+    msgbuf_addr: VirtualAddress,
+    replymsgbuf_addr: VirtualAddress,
+    replymsgbuf_len: usize,
+) -> Result<()> {
+    let mut offset = 0;
+    let header: IomsgHeader =
+        unsafe { *(msgbuf_addr.offset(offset).as_ptr() as *const IomsgHeader) };
+    offset += size_of::<IomsgHeader>();
+    debug!("{:?}", header);
+
+    match header.cmd()? {
+        IomsgCommand::CreateWindow => {
+            let x_pos: u64 = unsafe { *(msgbuf_addr.offset(offset).as_ptr() as *const u64) };
+            offset += size_of::<u64>();
+            let y_pos: u64 = unsafe { *(msgbuf_addr.offset(offset).as_ptr() as *const u64) };
+            offset += size_of::<u64>();
+            let width: u64 = unsafe { *(msgbuf_addr.offset(offset).as_ptr() as *const u64) };
+            offset += size_of::<u64>();
+            let height: u64 = unsafe { *(msgbuf_addr.offset(offset).as_ptr() as *const u64) };
+            offset += size_of::<u64>();
+            let title_ptr = msgbuf_addr.offset(offset).as_ptr() as *const u8;
+
+            let xy = (x_pos as usize, y_pos as usize);
+            let wh = (width as usize, height as usize);
+            let title = unsafe { util::cstring::from_cstring_ptr(title_ptr) };
+            offset += title.len() + 1; // null terminator
+
+            if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
+                return Err(Error::Failed("Invalid payload size for CreateWindow"));
+            }
+
+            let wd = simple_window_manager::create_window(title, xy, wh)?;
+            task::push_wd(wd.clone());
+
+            // reply
+            let reply_header =
+                IomsgHeader::new(IomsgCommand::CreateWindow, size_of::<u64>() as u32);
+            if replymsgbuf_len < size_of::<IomsgHeader>() + reply_header.payload_size as usize {
+                return Err(Error::Failed("Reply buffer is too small"));
+            }
+
+            replymsgbuf_addr.copy_from_nonoverlapping(&reply_header as *const IomsgHeader, 1);
+            replymsgbuf_addr
+                .offset(size_of::<IomsgHeader>())
+                .copy_from_nonoverlapping(&(wd.get() as u64) as *const u64, 1);
+        }
+        IomsgCommand::DestroyWindow => {}
+    }
 
     Ok(())
 }

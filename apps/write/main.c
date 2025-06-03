@@ -12,17 +12,17 @@ int main(int argc, char *argv[]) {
 
     if (fd == -1) {
         printf("write: failed to open the file\n");
-        return 1;
+        return -1;
     }
 
     if (sys_write(fd, argv[2], strlen(argv[2])) == -1) {
         printf("write: failed to write to the file\n");
-        return 1;
+        return -1;
     }
 
     if (sys_close(fd) == -1) {
         printf("write: failed to close the file\n");
-        return 1;
+        return -1;
     }
 
     return 0;

@@ -18,7 +18,7 @@ int fprintf(FILE *stream, const char *fmt, ...) {
 
 FILE *fopen(const char *filename, const char *mode) {
     // printf("[DEBUG]fopen called\n");
-    int64_t fd = sys_open(filename);
+    int64_t fd = sys_open(filename, OPEN_FLAG_NONE);
     if (fd == -1)
         return NULL;
 

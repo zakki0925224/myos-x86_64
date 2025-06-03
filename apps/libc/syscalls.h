@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "iomsg.h"
 #include "stat.h"
 #include "utsname.h"
 
@@ -26,6 +27,7 @@
 #define SN_SBRKSZ 15
 #define SN_ADD_IMAGE_TO_WINDOW 16
 #define SN_GETENAMES 17
+#define SN_IOMSG 18
 
 // defined file descriptor numbers
 #define FDN_STDIN 0
@@ -58,5 +60,6 @@ extern int64_t sys_destroy_window(int64_t wd);
 extern size_t sys_sbrksz(const void *target);
 extern int64_t sys_add_image_to_window(int64_t wd, uint64_t image_width, uint64_t image_height, uint8_t pixel_format, const char *framebuf);
 extern int64_t sys_getenames(const char *path, char *buf, int buf_len);
+extern int64_t sys_iomsg(void *msgbuf, void *replymsgbuf, size_t replymsgbuf_len);
 
 #endif

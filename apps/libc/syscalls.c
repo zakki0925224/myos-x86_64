@@ -89,3 +89,7 @@ int64_t sys_add_image_to_window(int64_t wd, uint64_t image_width, uint64_t image
 int64_t sys_getenames(const char *path, char *buf, int buf_len) {
     return syscall(SN_GETENAMES, (uint64_t)path, (uint64_t)buf, (uint64_t)buf_len, 0, 0);
 }
+
+int64_t sys_iomsg(void *msgbuf, void *replymsgbuf, size_t replymsgbuf_len) {
+    return syscall(SN_IOMSG, (uint64_t)msgbuf, (uint64_t)replymsgbuf, replymsgbuf_len, 0, 0);
+}

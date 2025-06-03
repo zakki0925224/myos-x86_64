@@ -138,7 +138,7 @@ int main(int argc, char const *argv[]) {
     printf("Welcome to Brainf**k interpreter!\n");
     printf("code: \"%s\"\n", bf_code);
     if (exec_bf(bf_code) == -1) {
-        return 1;
+        return -1;
     }
 
     return 0;

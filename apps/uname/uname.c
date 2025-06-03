@@ -7,7 +7,7 @@
 int main(int argc, const char *argv[]) {
     utsname *buf = (utsname *)malloc(sizeof(utsname));
     if (buf == NULL) {
-        return 1;
+        return -1;
     }
 
     sys_uname(buf);
