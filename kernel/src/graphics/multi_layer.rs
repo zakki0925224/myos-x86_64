@@ -30,7 +30,7 @@ impl LayerId {
         Self(NEXT_ID.fetch_add(1, Ordering::Relaxed))
     }
 
-    pub const fn new_val(value: i64) -> Result<Self> {
+    pub const fn new_val(value: i32) -> Result<Self> {
         if value < 0 {
             return Err(Error::Failed("Invalid layer id"));
         }

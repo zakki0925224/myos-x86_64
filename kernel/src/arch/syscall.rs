@@ -17,10 +17,7 @@ use crate::{
     print, util,
 };
 use alloc::{boxed::Box, ffi::CString, string::*, vec::Vec};
-use common::{
-    graphic_info::PixelFormat,
-    libc::{Stat, Utsname},
-};
+use common::libc::{Stat, Utsname};
 use core::{arch::naked_asm, slice};
 use log::*;
 
@@ -29,6 +26,7 @@ use log::*;
 enum IomsgCommand {
     CreateWindow = 0x80000000,
     DestroyWindow = 0x80000001,
+    AddImageToWindow = 0x80000002,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -54,6 +52,7 @@ impl IomsgHeader {
         match self.cmd_id {
             0x80000000 => Ok(IomsgCommand::CreateWindow),
             0x80000001 => Ok(IomsgCommand::DestroyWindow),
+            0x80000002 => Ok(IomsgCommand::AddImageToWindow),
             _ => Err(Error::Failed("Invalid command ID")),
         }
     }
@@ -97,58 +96,39 @@ extern "sysv64" fn syscall_handler(
     match arg0 {
         // read syscall
         0 => {
-            let fd = match FileDescriptorNumber::new_val(arg1 as i64) {
-                Ok(fd) => fd,
-                Err(err) => {
-                    error!("syscall: read: {:?}", err);
-                    return -1;
-                }
-            };
-            let buf_addr = arg2.into();
+            let fd = arg1 as i32;
+            let buf = arg2 as *mut u8;
             let buf_len = arg3 as usize;
-            if let Err(err) = sys_read(fd, buf_addr, buf_len) {
+            if let Err(err) = sys_read(fd, buf, buf_len) {
                 error!("syscall: read: {:?}", err);
                 return -1;
             }
         }
         // write syscall
         1 => {
-            let fd = match FileDescriptorNumber::new_val(arg1 as i64) {
-                Ok(fd) => fd,
-                Err(err) => {
-                    error!("syscall: write: {:?}", err);
-                    return -1;
-                }
-            };
-            let s_ptr = arg2 as *const u8;
-            let s_len = arg3 as usize;
-            if let Err(err) = sys_write(fd, s_ptr, s_len) {
+            let fd = arg1 as i32;
+            let buf = arg2 as *const u8;
+            let buf_len = arg3 as usize;
+            if let Err(err) = sys_write(fd, buf, buf_len) {
                 error!("syscall: write: {:?}", err);
                 return -1;
             }
         }
         // open syscall
         2 => {
-            let filename_ptr = arg1 as *const u8;
-            let flags = arg2 as u8;
-            let fd = match sys_open(filename_ptr, flags) {
-                Ok(fd) => fd,
+            let filepath = arg1 as *const u8;
+            let flags = arg2 as u32;
+            match sys_open(filepath, flags) {
+                Ok(fd) => return fd as i64,
                 Err(err) => {
                     error!("syscall: open: {:?}", err);
                     return -1;
                 }
-            };
-            return fd.get() as i64;
+            }
         }
         // close syscall
         3 => {
-            let fd = match FileDescriptorNumber::new_val(arg1 as i64) {
-                Ok(fd) => fd,
-                Err(err) => {
-                    error!("syscall: close: {:?}", err);
-                    return -1;
-                }
-            };
+            let fd = arg1 as i32;
             if let Err(err) = sys_close(fd) {
                 error!("syscall: close: {:?}", err);
                 return -1;
@@ -156,25 +136,25 @@ extern "sysv64" fn syscall_handler(
         }
         // exit syscall
         4 => {
-            let status = arg1;
+            let status = arg1 as i32;
             sys_exit(status);
             unreachable!();
         }
         // sbrk syscall
         5 => {
             let len = arg1 as usize;
-            let addr = match sys_sbrk(len) {
-                Ok(addr) => addr.get(),
+            match sys_sbrk(len) {
+                Ok(ptr) => return ptr as i64,
                 Err(err) => {
                     error!("syscall: sbrk: {:?}", err);
-                    return 0; // return null address
+                    return -1;
                 }
-            };
-            return addr as i64;
+            }
         }
         // uname syscall
         6 => {
-            if let Err(err) = sys_uname(arg1.into()) {
+            let buf = arg1 as *mut Utsname;
+            if let Err(err) = sys_uname(buf) {
                 error!("syscall: uname: {:?}", err);
                 return -1;
             }
@@ -186,134 +166,71 @@ extern "sysv64" fn syscall_handler(
         }
         // stat syscall
         8 => {
-            let fd = match FileDescriptorNumber::new_val(arg1 as i64) {
-                Ok(fd) => fd,
-                Err(err) => {
-                    error!("syscall: read: {:?}", err);
-                    return -1;
-                }
-            };
-
-            if let Err(err) = sys_stat(fd, arg2.into()) {
+            let fd = arg1 as i32;
+            let buf = arg2 as *mut Stat;
+            if let Err(err) = sys_stat(fd, buf) {
                 error!("syscall: stat: {:?}", err);
                 return -1;
             }
         }
         // uptime syscall
         9 => {
-            let uptime = sys_uptime();
-            return uptime as i64;
+            return sys_uptime();
         }
         // exec syscall
         10 => {
-            let args_ptr = arg1 as *const u8;
-            let flags = arg2;
-            if let Err(err) = sys_exec(args_ptr, flags) {
+            let args = arg1 as *const u8;
+            let flags = arg2 as u32;
+            if let Err(err) = sys_exec(args, flags) {
                 error!("syscall: exec: {:?}", err);
                 return -1;
             }
         }
         // getcwd syscall
         11 => {
-            let buf_addr = arg1.into();
+            let buf = arg1 as *mut u8;
             let buf_len = arg2 as usize;
-            if let Err(err) = sys_getcwd(buf_addr, buf_len) {
+            if let Err(err) = sys_getcwd(buf, buf_len) {
                 error!("syscall: getcwd: {:?}", err);
                 return -1;
             }
         }
         // chdir syscall
         12 => {
-            let path_ptr = arg1 as *const u8;
-            if let Err(err) = sys_chdir(path_ptr) {
+            let path = arg1 as *const u8;
+            if let Err(err) = sys_chdir(path) {
                 error!("syscall: chdir: {:?}", err);
-                return -1;
-            }
-        }
-        // create_window syscall
-        13 => {
-            let title_ptr = arg1 as *const u8;
-            let x = arg2 as usize;
-            let y = arg3 as usize;
-            let w = arg4 as usize;
-            let h = arg5 as usize;
-
-            match sys_create_window(title_ptr, (x, y), (w, h)) {
-                Ok(wd) => return wd.get() as i64,
-                Err(err) => {
-                    error!("syscall: create_window: {:?}", err);
-                    return -1;
-                }
-            }
-        }
-        // destroy_window syscall
-        14 => {
-            let wd = match LayerId::new_val(arg1 as i64) {
-                Ok(wd) => wd,
-                Err(err) => {
-                    error!("syscall: destroy_window: {:?}", err);
-                    return -1;
-                }
-            };
-
-            if let Err(err) = sys_destroy_window(wd) {
-                error!("syscall: destroy_window: {:?}", err);
                 return -1;
             }
         }
         // sbrksz syscall
         15 => {
-            let target_addr = arg1.into();
-
-            return match sys_sbrksz(target_addr) {
-                Ok(size) => size as i64,
+            let target = arg1 as *const u8;
+            match sys_sbrksz(target) {
+                Ok(size) => return size as i64,
                 Err(err) => {
-                    error!(
-                        "syscall: sbrksz: {:?}, target addr: 0x{:x}",
-                        err,
-                        target_addr.get()
-                    );
-                    0
+                    error!("syscall: sbrksz: {:?}, target addr: 0x{:x}", err, arg1);
+                    return 0;
                 }
             };
-        }
-        // add_image_to_window syscall
-        16 => {
-            let wd = match LayerId::new_val(arg1 as i64) {
-                Ok(wd) => wd,
-                Err(err) => {
-                    error!("syscall: add_image_to_window: {:?}", err);
-                    return -1;
-                }
-            };
-            let w = arg2 as usize;
-            let h = arg3 as usize;
-            let pixel_format = (arg4 as u8).into();
-            let framebuf_virt_addr = arg5.into();
-
-            if let Err(err) = sys_add_image_to_window(wd, (w, h), pixel_format, framebuf_virt_addr)
-            {
-                error!("syscall: add_image_to_window: {:?}", err);
-                return -1;
-            }
         }
         // getenames syscall
         17 => {
-            let path_ptr = arg1 as *const u8;
-            let buf_addr = arg2.into();
+            let path = arg1 as *const u8;
+            let buf = arg2 as *mut u8;
             let buf_len = arg3 as usize;
 
-            if let Err(err) = sys_getenames(path_ptr, buf_addr, buf_len) {
+            if let Err(err) = sys_getenames(path, buf, buf_len) {
                 error!("syscall: getenames: {:?}", err);
                 return -1;
             }
         }
         // iomsg syscall
         18 => {
-            let msgbuf_addr = arg1.into();
-            let replymsgbuf_addr = arg2.into();
+            let msgbuf = arg1 as *const u8;
+            let replymsgbuf = arg2 as *mut u8;
             let replymsgbuf_len = arg3 as usize;
-            if let Err(err) = sys_iomsg(msgbuf_addr, replymsgbuf_addr, replymsgbuf_len) {
+            if let Err(err) = sys_iomsg(msgbuf, replymsgbuf, replymsgbuf_len) {
                 error!("syscall: iomsg: {:?}", err);
                 return -1;
             }
@@ -327,7 +244,9 @@ extern "sysv64" fn syscall_handler(
     0
 }
 
-fn sys_read(fd: FileDescriptorNumber, buf_addr: VirtualAddress, buf_len: usize) -> Result<()> {
+fn sys_read(fd: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
+    let fd = FileDescriptorNumber::new_val(fd)?;
+
     match fd {
         FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => {
             return Err(Error::Failed("fd is not defined"));
@@ -344,21 +263,34 @@ fn sys_read(fd: FileDescriptorNumber, buf_addr: VirtualAddress, buf_len: usize) 
                     }
                 }
 
-                let c_s = CString::new(input_s.unwrap())
+                let c_s: Vec<u8> = CString::new(input_s.unwrap())
                     .unwrap()
                     .into_bytes_with_nul();
-                buf_addr.copy_from_nonoverlapping(c_s.as_ptr(), buf_len);
+
+                if buf_len < c_s.len() {
+                    return Err(Error::Failed("buffer is too small"));
+                }
+
+                unsafe {
+                    buf.copy_from_nonoverlapping(c_s.as_ptr(), c_s.len());
+                }
             } else if buf_len == 1 {
-                let mut ascii = None;
-                while ascii.is_none() {
-                    if let Ok(c) = crate::arch::disabled_int(|| tty::get_char()) {
-                        ascii = Some(c);
+                let mut c = None;
+                while c.is_none() {
+                    if let Ok(ch) = crate::arch::disabled_int(|| tty::get_char()) {
+                        c = Some(ch);
                     } else {
                         super::hlt();
                     }
                 }
 
-                buf_addr.copy_from_nonoverlapping(&(ascii.unwrap() as u8), 1);
+                if buf_len < 1 {
+                    return Err(Error::Failed("buffer is too small"));
+                }
+
+                unsafe {
+                    buf.write(c.unwrap() as u8);
+                }
             }
         }
         fd => {
@@ -368,55 +300,59 @@ fn sys_read(fd: FileDescriptorNumber, buf_addr: VirtualAddress, buf_len: usize) 
                 return Err(Error::Failed("buffer is too small"));
             }
 
-            buf_addr.copy_from_nonoverlapping(data.as_ptr(), data.len());
+            unsafe {
+                buf.copy_from_nonoverlapping(data.as_ptr(), data.len());
+            }
         }
     }
 
     Ok(())
 }
 
-fn sys_write(fd: FileDescriptorNumber, s_ptr: *const u8, s_len: usize) -> Result<()> {
-    let s_slice = unsafe { slice::from_raw_parts(s_ptr, s_len) };
+fn sys_write(fd: i32, buf: *const u8, buf_len: usize) -> Result<()> {
+    let fd = FileDescriptorNumber::new_val(fd)?;
+    let buf_slice = unsafe { slice::from_raw_parts(buf, buf_len) };
 
     match fd {
         FileDescriptorNumber::STDOUT => {
-            let s = String::from_utf8_lossy(s_slice).to_string();
+            let s = String::from_utf8_lossy(buf_slice).to_string();
             print!("{}", s);
         }
         FileDescriptorNumber::STDIN | FileDescriptorNumber::STDERR => {
             return Err(Error::Failed("fd is not defined"));
         }
         fd => {
-            vfs::write_file(&fd, s_slice)?;
+            vfs::write_file(&fd, buf_slice)?;
         }
     }
 
     Ok(())
 }
 
-fn sys_open(filename_ptr: *const u8, flags: u8) -> Result<FileDescriptorNumber> {
-    let path = unsafe { util::cstring::from_cstring_ptr(filename_ptr) }
+fn sys_open(filepath: *const u8, flags: u32) -> Result<i32> {
+    let filepath = unsafe { util::cstring::from_cstring_ptr(filepath) }
         .as_str()
         .into();
     let create = flags & 0x1 != 0;
-    let fd = vfs::open_file(&path, create)?;
+    let fd = vfs::open_file(&filepath, create)?;
     task::push_fd(fd);
 
-    Ok(fd)
+    Ok(fd.get() as i32)
 }
 
-fn sys_close(fd: FileDescriptorNumber) -> Result<()> {
+fn sys_close(fd: i32) -> Result<()> {
+    let fd = FileDescriptorNumber::new_val(fd)?;
     vfs::close_file(&fd)?;
     task::remove_fd(&fd);
 
     Ok(())
 }
 
-fn sys_exit(status: u64) {
+fn sys_exit(status: i32) {
     task::return_task(status);
 }
 
-fn sys_sbrk(len: usize) -> Result<VirtualAddress> {
+fn sys_sbrk(len: usize) -> Result<*const u8> {
     assert!(len > 0);
     let mem_frame_info = bitmap::alloc_mem_frame((len + PAGE_SIZE).div_ceil(PAGE_SIZE))?;
     mem_frame_info.set_permissions_to_user()?;
@@ -427,10 +363,10 @@ fn sys_sbrk(len: usize) -> Result<VirtualAddress> {
         virt_addr.get()
     );
     task::push_allocated_mem_frame_info_for_user_task(mem_frame_info)?;
-    Ok(virt_addr)
+    Ok(virt_addr.as_ptr())
 }
 
-fn sys_uname(buf_addr: VirtualAddress) -> Result<()> {
+fn sys_uname(buf: *mut Utsname) -> Result<()> {
     let sysname = env::OS_NAME.as_bytes();
     let nodename = "nodename".as_bytes();
     let release = "release".as_bytes();
@@ -438,14 +374,13 @@ fn sys_uname(buf_addr: VirtualAddress) -> Result<()> {
     let machine = "x86_64".as_bytes();
     let domainname = "domainname".as_bytes();
 
-    let mut utsname = Utsname::default();
-    utsname.sysname[..sysname.len()].copy_from_slice(sysname);
-    utsname.nodename[..nodename.len()].copy_from_slice(nodename);
-    utsname.release[..release.len()].copy_from_slice(release);
-    utsname.version[..version.len()].copy_from_slice(version);
-    utsname.machine[..machine.len()].copy_from_slice(machine);
-    utsname.domainname[..domainname.len()].copy_from_slice(domainname);
-    buf_addr.copy_from_nonoverlapping(&utsname as *const Utsname, 1);
+    let utsname_mut = unsafe { &mut *buf };
+    utsname_mut.sysname[..sysname.len()].copy_from_slice(sysname);
+    utsname_mut.nodename[..nodename.len()].copy_from_slice(nodename);
+    utsname_mut.release[..release.len()].copy_from_slice(release);
+    utsname_mut.version[..version.len()].copy_from_slice(version);
+    utsname_mut.machine[..machine.len()].copy_from_slice(machine);
+    utsname_mut.domainname[..domainname.len()].copy_from_slice(domainname);
     Ok(())
 }
 
@@ -454,26 +389,26 @@ fn sys_break() {
     super::int3();
 }
 
-fn sys_stat(fd: FileDescriptorNumber, buf_addr: VirtualAddress) -> Result<()> {
+fn sys_stat(fd: i32, buf: *mut Stat) -> Result<()> {
+    let fd = FileDescriptorNumber::new_val(fd)?;
+    let stat_mut = unsafe { &mut *buf };
+
     let size = match fd {
         FileDescriptorNumber::STDIN
         | FileDescriptorNumber::STDOUT
         | FileDescriptorNumber::STDERR => 0,
-        fd => vfs::read_file(&fd)?.len() as u64, // FIXME
+        fd => vfs::read_file(&fd)?.len(),
     };
-
-    let stat = Stat { size };
-    buf_addr.copy_from_nonoverlapping(&stat as *const Stat, 1);
+    stat_mut.size = size;
     Ok(())
 }
 
-fn sys_uptime() -> u64 {
-    device::local_apic_timer::global_uptime().as_millis() as u64
+fn sys_uptime() -> i64 {
+    device::local_apic_timer::global_uptime().as_millis() as i64
 }
 
-// flags: defined libc/syscall.h
-fn sys_exec(args_ptr: *const u8, flags: u64) -> Result<()> {
-    let args = unsafe { util::cstring::from_cstring_ptr(args_ptr) };
+fn sys_exec(args: *const u8, flags: u32) -> Result<()> {
+    let args = unsafe { util::cstring::from_cstring_ptr(args) };
     let args: Vec<&str> = args.split(' ').collect();
 
     let enable_debug = flags & 0x1 != 0;
@@ -482,9 +417,9 @@ fn sys_exec(args_ptr: *const u8, flags: u64) -> Result<()> {
     Ok(())
 }
 
-fn sys_getcwd(buf_addr: VirtualAddress, buf_len: usize) -> Result<()> {
+fn sys_getcwd(buf: *mut u8, buf_len: usize) -> Result<()> {
     let cwd = vfs::cwd_path()?;
-    let cwd_s = CString::new(cwd.to_string().as_str())
+    let cwd_s: Vec<u8> = CString::new(cwd.to_string().as_str())
         .unwrap()
         .into_bytes_with_nul();
 
@@ -492,63 +427,30 @@ fn sys_getcwd(buf_addr: VirtualAddress, buf_len: usize) -> Result<()> {
         return Err(Error::Failed("Buffer is too small"));
     }
 
-    buf_addr.copy_from_nonoverlapping(cwd_s.as_ptr(), cwd_s.len());
+    unsafe {
+        buf.copy_from_nonoverlapping(cwd_s.as_ptr(), cwd_s.len());
+    }
 
     Ok(())
 }
 
-fn sys_chdir(path_ptr: *const u8) -> Result<()> {
-    let path = unsafe { util::cstring::from_cstring_ptr(path_ptr) }
+fn sys_chdir(path: *const u8) -> Result<()> {
+    let path = unsafe { util::cstring::from_cstring_ptr(path) }
         .as_str()
         .into();
     vfs::chdir(&path)?;
     Ok(())
 }
 
-fn sys_create_window(
-    title_ptr: *const u8,
-    xy: (usize, usize),
-    wh: (usize, usize),
-) -> Result<LayerId> {
-    let title = unsafe { util::cstring::from_cstring_ptr(title_ptr) };
-    let wd = simple_window_manager::create_window(title, xy, wh)?;
-    task::push_wd(wd.clone());
-
-    Ok(wd)
-}
-
-fn sys_destroy_window(wd: LayerId) -> Result<()> {
-    simple_window_manager::destroy_window(&wd)?;
-    task::remove_wd(&wd);
-
-    Ok(())
-}
-
-fn sys_sbrksz(target_addr: VirtualAddress) -> Result<usize> {
-    let size = task::get_memory_frame_size_by_virt_addr(target_addr)?
+fn sys_sbrksz(target: *const u8) -> Result<usize> {
+    let target_virt_addr: VirtualAddress = (target as u64).into();
+    let size = task::get_memory_frame_size_by_virt_addr(target_virt_addr)?
         .ok_or(Error::Failed("Failed to get memory frame size"))?;
     Ok(size)
 }
 
-fn sys_add_image_to_window(
-    wd: LayerId,
-    wh: (usize, usize),
-    pixel_format: PixelFormat,
-    framebuf_virt_addr: VirtualAddress,
-) -> Result<()> {
-    let image = simple_window_manager::components::Image::create_and_push_from_framebuf(
-        (0, 0),
-        wh,
-        framebuf_virt_addr,
-        pixel_format,
-    )?;
-    simple_window_manager::add_component_to_window(&wd, Box::new(image))?;
-
-    Ok(())
-}
-
-fn sys_getenames(path_ptr: *const u8, buf_addr: VirtualAddress, buf_len: usize) -> Result<()> {
-    let path = unsafe { util::cstring::from_cstring_ptr(path_ptr) }
+fn sys_getenames(path: *const u8, buf: *mut u8, buf_len: usize) -> Result<()> {
+    let path = unsafe { util::cstring::from_cstring_ptr(path) }
         .as_str()
         .into();
 
@@ -563,33 +465,30 @@ fn sys_getenames(path_ptr: *const u8, buf_addr: VirtualAddress, buf_len: usize) 
         return Err(Error::Failed("Buffer is too small"));
     }
 
-    buf_addr.copy_from_nonoverlapping(entry_names_s.as_ptr(), entry_names_s.len());
+    unsafe {
+        buf.copy_from_nonoverlapping(entry_names_s.as_ptr(), entry_names_s.len());
+    }
 
     Ok(())
 }
 
-fn sys_iomsg(
-    msgbuf_addr: VirtualAddress,
-    replymsgbuf_addr: VirtualAddress,
-    replymsgbuf_len: usize,
-) -> Result<()> {
+fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) -> Result<()> {
     let mut offset = 0;
-    let header: IomsgHeader =
-        unsafe { *(msgbuf_addr.offset(offset).as_ptr() as *const IomsgHeader) };
+    let header: &IomsgHeader = unsafe { &*(msgbuf as *const IomsgHeader) };
     offset += size_of::<IomsgHeader>();
     debug!("{:?}", header);
 
     match header.cmd()? {
         IomsgCommand::CreateWindow => {
-            let x_pos: u64 = unsafe { *(msgbuf_addr.offset(offset).as_ptr() as *const u64) };
-            offset += size_of::<u64>();
-            let y_pos: u64 = unsafe { *(msgbuf_addr.offset(offset).as_ptr() as *const u64) };
-            offset += size_of::<u64>();
-            let width: u64 = unsafe { *(msgbuf_addr.offset(offset).as_ptr() as *const u64) };
-            offset += size_of::<u64>();
-            let height: u64 = unsafe { *(msgbuf_addr.offset(offset).as_ptr() as *const u64) };
-            offset += size_of::<u64>();
-            let title_ptr = msgbuf_addr.offset(offset).as_ptr() as *const u8;
+            let x_pos: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+            offset += size_of::<usize>();
+            let y_pos: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+            offset += size_of::<usize>();
+            let width: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+            offset += size_of::<usize>();
+            let height: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+            offset += size_of::<usize>();
+            let title_ptr = unsafe { msgbuf.offset(offset as isize) as *const u8 };
 
             let xy = (x_pos as usize, y_pos as usize);
             let wh = (width as usize, height as usize);
@@ -610,12 +509,83 @@ fn sys_iomsg(
                 return Err(Error::Failed("Reply buffer is too small"));
             }
 
-            replymsgbuf_addr.copy_from_nonoverlapping(&reply_header as *const IomsgHeader, 1);
-            replymsgbuf_addr
-                .offset(size_of::<IomsgHeader>())
-                .copy_from_nonoverlapping(&(wd.get() as u64) as *const u64, 1);
+            unsafe {
+                let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
+                reply_header_ptr.write(reply_header);
+                let reply_wd = wd.get() as u64;
+                (replymsgbuf.offset(size_of::<IomsgHeader>() as isize) as *mut u64).write(reply_wd);
+            }
         }
-        IomsgCommand::DestroyWindow => {}
+        IomsgCommand::DestroyWindow => {
+            let layer_id: i32 = unsafe { *(msgbuf.offset(offset as isize) as *const i32) };
+            offset += size_of::<i32>();
+
+            if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
+                return Err(Error::Failed("Invalid payload size for DestroyWindow"));
+            }
+
+            let wd = LayerId::new_val(layer_id)?;
+            simple_window_manager::destroy_window(&wd)?;
+            task::remove_wd(&wd);
+
+            // reply
+            let reply_header = IomsgHeader::new(IomsgCommand::DestroyWindow, 0);
+            if replymsgbuf_len < size_of::<IomsgHeader>() {
+                return Err(Error::Failed("Reply buffer is too small"));
+            }
+
+            unsafe {
+                let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
+                reply_header_ptr.write(reply_header);
+            }
+        }
+        IomsgCommand::AddImageToWindow => {
+            let layer_id: i32 = unsafe { *(msgbuf.offset(offset as isize) as *const i32) };
+            offset += size_of::<i32>();
+            offset += 4; // padding
+            let image_width: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+            offset += size_of::<usize>();
+            let image_height: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+            offset += size_of::<usize>();
+            let pixel_format: u8 = unsafe { *(msgbuf.offset(offset as isize) as *const u8) };
+            offset += size_of::<u8>();
+            offset += 7; // padding
+            let framebuf_ptr =
+                unsafe { *(msgbuf.offset(offset as isize) as *const usize) } as *const u8;
+            offset += size_of::<usize>();
+
+            if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
+                return Err(Error::Failed("Invalid payload size for AddImageToWindow"));
+            }
+
+            let wd = LayerId::new_val(layer_id)?;
+            let wh = (image_width, image_height);
+            let framebuf_virt_addr: VirtualAddress = (framebuf_ptr as u64).into();
+            debug!("framebuf_virt_addr: 0x{:x}", framebuf_virt_addr.get());
+
+            let image = simple_window_manager::components::Image::create_and_push_from_framebuf(
+                (0, 0),
+                wh,
+                framebuf_virt_addr,
+                pixel_format.into(),
+            )?;
+            let new_layer_id =
+                simple_window_manager::add_component_to_window(&wd, Box::new(image))?;
+
+            // reply
+            let reply_header =
+                IomsgHeader::new(IomsgCommand::AddImageToWindow, size_of::<i32>() as u32);
+            if replymsgbuf_len < size_of::<IomsgHeader>() + reply_header.payload_size as usize {
+                return Err(Error::Failed("Reply buffer is too small"));
+            }
+
+            unsafe {
+                let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
+                reply_header_ptr.write(reply_header);
+                (replymsgbuf.offset(size_of::<IomsgHeader>() as isize) as *mut i32)
+                    .write(new_layer_id.get() as i32);
+            }
+        }
     }
 
     Ok(())

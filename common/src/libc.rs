@@ -25,5 +25,5 @@ impl Default for Utsname {
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Stat {
-    pub size: u64, // file size (bytes)
+    pub size: usize, // file size (bytes)
 }

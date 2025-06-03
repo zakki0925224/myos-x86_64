@@ -34,7 +34,7 @@ impl FileDescriptorNumber {
         Self(NEXT_NUM.fetch_add(1, Ordering::Relaxed))
     }
 
-    pub fn new_val(value: i64) -> Result<Self> {
+    pub fn new_val(value: i32) -> Result<Self> {
         if value < 0 {
             return Err(Error::Failed("Invalid file descriptor number"));
         }

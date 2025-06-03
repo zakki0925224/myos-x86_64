@@ -19,7 +19,7 @@ const USER_TASK_STACK_SIZE: usize = 1024 * 1024; // 1MiB
 
 static mut KERNEL_TASK: Mutex<Option<Task>> = Mutex::new(None);
 static mut USER_TASKS: Mutex<Vec<Task>> = Mutex::new(Vec::new());
-static mut USER_EXIT_STATUS: Option<u64> = None;
+static mut USER_EXIT_STATUS: Option<i32> = None;
 
 #[derive(Debug, Clone)]
 pub struct TaskId(usize);
@@ -278,7 +278,7 @@ pub fn exec_user_task(
     path: &Path,
     args: &[&str],
     dwarf: Option<Dwarf>,
-) -> Result<u64> {
+) -> Result<i32> {
     let kernel_task = unsafe { KERNEL_TASK.get_force_mut() };
     let user_tasks = unsafe { USER_TASKS.get_force_mut() };
 
@@ -402,7 +402,7 @@ pub fn remove_fd(fd: &FileDescriptorNumber) {
     user_task.opend_fd.retain(|cfdn| cfdn.get() != fd.get());
 }
 
-pub fn return_task(exit_status: u64) {
+pub fn return_task(exit_status: i32) {
     unsafe {
         USER_EXIT_STATUS = Some(exit_status);
     }

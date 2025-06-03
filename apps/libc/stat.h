@@ -1,11 +1,11 @@
 #ifndef _STAT_H
 #define _STAT_H
 
-#include <stdint.h>
+#include <stddef.h>
 
 typedef struct
 {
-    uint64_t size;
+    size_t size;
 } f_stat;
 
 #endif
