@@ -1,7 +1,6 @@
 use crate::error::Result;
 use alloc::vec::Vec;
 
-pub mod console;
 pub mod local_apic_timer;
 pub mod panic_screen;
 pub mod pci_bus;

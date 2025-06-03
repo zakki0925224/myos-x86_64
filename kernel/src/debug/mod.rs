@@ -1,6 +1,6 @@
 use crate::{
     arch::{self, idt::InterruptStackFrame},
-    device::console,
+    device::tty,
     error::Result,
     print, println,
 };
@@ -86,7 +86,7 @@ pub fn user_app_debugger(
         print!("(dbg) ");
         let mut input_s = None;
         while input_s.is_none() {
-            if let Ok(s) = arch::disabled_int(|| console::get_line()) {
+            if let Ok(s) = arch::disabled_int(|| tty::get_line()) {
                 input_s = s;
             } else {
                 arch::hlt();

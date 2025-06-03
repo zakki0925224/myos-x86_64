@@ -89,16 +89,12 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     )
     .unwrap();
 
-    // initialize PS/2 keyboard and mouse
-    if let Err(err) = device::ps2_keyboard::probe_and_attach() {
-        let name = device::ps2_keyboard::get_device_driver_info().unwrap().name;
-        error!("{}: Failed to probe or attach device: {:?}", name, err);
-    }
+    // initialize TTY device
+    device::tty::probe_and_attach().unwrap();
 
-    if let Err(err) = device::ps2_mouse::probe_and_attach() {
-        let name = device::ps2_mouse::get_device_driver_info().unwrap().name;
-        error!("{}: Failed to probe or attach device: {:?}", name, err);
-    }
+    // initialize PS/2 keyboard and mouse
+    device::ps2_keyboard::probe_and_attach().unwrap();
+    device::ps2_mouse::probe_and_attach().unwrap();
 
     // initialize my flavor driver
     device::zakki::probe_and_attach().unwrap();

@@ -1,35 +1,153 @@
-use super::{DeviceDriverFunction, DeviceDriverInfo};
+use super::{uart, DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     error::{Error, Result},
     fs::vfs,
-    util::mutex::{Mutex, MutexGuard},
+    graphics::frame_buf_console,
+    util::{lifo::Lifo, mutex::Mutex},
 };
-use alloc::vec::Vec;
+use alloc::{boxed::Box, string::String, vec::Vec};
+use core::fmt::{self, Write};
 use log::info;
 
-const NUM_OF_TTY: usize = 8;
-static mut TTYS: [Mutex<Tty>; NUM_OF_TTY] = [
-    Mutex::new(Tty::new("tty0", 0)), // kernel console
-    Mutex::new(Tty::new("tty1", 1)),
-    Mutex::new(Tty::new("tty2", 2)),
-    Mutex::new(Tty::new("tty3", 3)),
-    Mutex::new(Tty::new("tty4", 4)),
-    Mutex::new(Tty::new("tty5", 5)),
-    Mutex::new(Tty::new("tty6", 6)),
-    Mutex::new(Tty::new("tty7", 7)),
-];
+const IO_BUF_LEN: usize = 512;
+
+static mut TTY: Mutex<Tty> = Mutex::new(Tty::new(true));
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BufferType {
+    Input,
+    Output,
+    ErrorOutput,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TtyError {
+    IoBufferError {
+        buf_type: BufferType,
+        err: Box<Error>,
+    },
+}
 
 struct Tty {
     device_driver_info: DeviceDriverInfo,
-    tty_num: usize,
+    input_buf: Lifo<char, IO_BUF_LEN>,
+    output_buf: Lifo<char, IO_BUF_LEN>,
+    err_output_buf: Lifo<char, IO_BUF_LEN>,
+    use_serial_port: bool,
+    is_ready_get_line: bool,
 }
 
 impl Tty {
-    const fn new(name: &'static str, tty_num: usize) -> Self {
+    const fn new(use_serial_port: bool) -> Self {
         Self {
-            device_driver_info: DeviceDriverInfo::new(name),
-            tty_num,
+            device_driver_info: DeviceDriverInfo::new("tty"),
+            input_buf: Lifo::new('\0'),
+            output_buf: Lifo::new('\0'),
+            err_output_buf: Lifo::new('\0'),
+            use_serial_port,
+            is_ready_get_line: false,
         }
+    }
+
+    fn is_full(&self, buf_type: BufferType) -> bool {
+        match buf_type {
+            BufferType::Input => self.input_buf.is_full(),
+            BufferType::Output => self.output_buf.is_full(),
+            BufferType::ErrorOutput => self.err_output_buf.is_full(),
+        }
+    }
+
+    fn reset_buf(&mut self, buf_type: BufferType) {
+        match buf_type {
+            BufferType::Input => self.input_buf.reset(),
+            BufferType::Output => self.output_buf.reset(),
+            BufferType::ErrorOutput => self.err_output_buf.reset(),
+        }
+    }
+
+    fn write(&mut self, c: char, buf_type: BufferType) -> Result<()> {
+        let buf = match buf_type {
+            BufferType::Input => &mut self.input_buf,
+            BufferType::Output => &mut self.output_buf,
+            BufferType::ErrorOutput => &mut self.err_output_buf,
+        };
+
+        match c {
+            '\x08' /* backspace */ | '\x7f' /* delete */ => {
+                buf.pop()?;
+            }
+            _ => {
+                buf.push(c).map_err(|err| TtyError::IoBufferError { buf_type, err: Box::new(err) })?;
+            }
+        }
+
+        if (buf_type == BufferType::Output || buf_type == BufferType::ErrorOutput)
+            && self.use_serial_port
+        {
+            let data = match c {
+                '\x08' | '\x7f' => '\x08' as u8,
+                _ => c as u8,
+            };
+
+            // backspace
+            if data == 0x08 {
+                uart::send_data(data);
+                uart::send_data(b' ');
+                uart::send_data(data);
+            } else {
+                uart::send_data(data);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn get_line(&mut self, buf_type: BufferType) -> String {
+        let buf = match buf_type {
+            BufferType::Input => &mut self.input_buf,
+            BufferType::Output => &mut self.output_buf,
+            BufferType::ErrorOutput => &mut self.err_output_buf,
+        };
+
+        let mut s = String::new();
+
+        loop {
+            if let Ok(c) = buf.pop() {
+                s.push(c);
+            } else {
+                break;
+            }
+        }
+
+        s.chars().rev().collect()
+    }
+
+    fn get_char(&mut self, buf_type: BufferType) -> char {
+        let buf = match buf_type {
+            BufferType::Input => &mut self.input_buf,
+            BufferType::Output => &mut self.output_buf,
+            BufferType::ErrorOutput => &mut self.err_output_buf,
+        };
+
+        match buf.pop() {
+            Ok(c) => c,
+            Err(_) => '\0', // null
+        }
+    }
+}
+
+impl fmt::Write for Tty {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let buf_type = BufferType::Output;
+        for c in s.chars() {
+            if self.is_full(buf_type) {
+                self.reset_buf(buf_type);
+            }
+
+            self.write(c, buf_type).map_err(|_| fmt::Error)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -84,43 +202,104 @@ impl DeviceDriverFunction for Tty {
     }
 }
 
-fn tty_try_lock(num: usize) -> Result<MutexGuard<'static, Tty>> {
-    if num >= NUM_OF_TTY {
-        return Err(Error::IndexOutOfBoundsError(num));
+#[doc(hidden)]
+pub fn _print(args: fmt::Arguments) {
+    if let Ok(mut tty) = unsafe { TTY.try_lock() } {
+        let _ = tty.write_fmt(args);
     }
 
-    unsafe { TTYS[num].try_lock() }
+    let _ = frame_buf_console::write_fmt(args);
+}
+
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::device::tty::_print(format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
 pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = tty_try_lock(0)?;
+    let driver = unsafe { TTY.try_lock() }?;
     driver.get_device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = tty_try_lock(0)?;
+    let mut driver = unsafe { TTY.try_lock() }?;
     driver.probe()?;
     driver.attach(())?;
     info!("{}: Attached!", driver.get_device_driver_info()?.name);
     Ok(())
 }
 
-fn open() -> Result<()> {
-    let mut driver = tty_try_lock(0)?;
+pub fn open() -> Result<()> {
+    let mut driver = unsafe { TTY.try_lock() }?;
     driver.open()
 }
 
-fn close() -> Result<()> {
-    let mut driver = tty_try_lock(0)?;
+pub fn close() -> Result<()> {
+    let mut driver = unsafe { TTY.try_lock() }?;
     driver.close()
 }
 
-fn read() -> Result<Vec<u8>> {
-    let mut driver = tty_try_lock(0)?;
+pub fn read() -> Result<Vec<u8>> {
+    let mut driver = unsafe { TTY.try_lock() }?;
     driver.read()
 }
 
-fn write(data: &[u8]) -> Result<()> {
-    let mut driver = tty_try_lock(0)?;
-    driver.write(data)
+pub fn write(data: &[u8]) -> Result<()> {
+    let mut driver = unsafe { TTY.try_lock() }?;
+    for &c in data {
+        driver.write(c as char, BufferType::Output)?;
+    }
+
+    Ok(())
+}
+
+pub fn input(c: char) -> Result<()> {
+    let mut c = c;
+    if c == '\r' {
+        c = '\n';
+    }
+
+    match c {
+        '\n' => {
+            println!();
+        }
+        _ => {
+            print!("{}", c);
+        }
+    }
+
+    let mut tty = unsafe { TTY.try_lock() }?;
+    if tty.is_full(BufferType::Input) {
+        tty.reset_buf(BufferType::Input);
+    }
+
+    tty.write(c, BufferType::Input)?;
+
+    if c == '\n' {
+        tty.is_ready_get_line = true;
+    }
+
+    Ok(())
+}
+
+pub fn get_line() -> Result<Option<String>> {
+    let mut tty = unsafe { TTY.try_lock() }?;
+
+    if tty.is_ready_get_line {
+        tty.is_ready_get_line = false;
+        Ok(Some(tty.get_line(BufferType::Input)))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn get_char() -> Result<char> {
+    let mut tty = unsafe { TTY.try_lock() }?;
+    Ok(tty.get_char(BufferType::Input))
 }

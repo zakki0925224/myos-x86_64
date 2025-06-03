@@ -1,4 +1,4 @@
-use super::{console, DeviceDriverFunction, DeviceDriverInfo};
+use super::{tty, DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     arch::{self, addr::IoPortAddress},
     error::{Error, Result},
@@ -189,7 +189,7 @@ pub fn poll_normal() -> Result<()> {
         None => return Ok(()),
     };
 
-    console::input(received_data as char)
+    tty::input(received_data as char)
 }
 
 pub fn send_data(data: u8) {

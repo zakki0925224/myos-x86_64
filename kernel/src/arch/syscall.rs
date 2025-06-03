@@ -5,7 +5,7 @@ use crate::{
         register::{model_specific::*, Register},
         task,
     },
-    device::{self, console},
+    device::{self, tty},
     env,
     error::*,
     fs::{
@@ -292,7 +292,7 @@ fn sys_read(fd: FileDescriptorNumber, buf_addr: VirtualAddress, buf_len: usize) 
                 let mut input_s = None;
 
                 while input_s.is_none() {
-                    if let Ok(s) = crate::arch::disabled_int(|| console::get_line()) {
+                    if let Ok(s) = crate::arch::disabled_int(|| tty::get_line()) {
                         input_s = s;
                     } else {
                         super::hlt();
@@ -306,7 +306,7 @@ fn sys_read(fd: FileDescriptorNumber, buf_addr: VirtualAddress, buf_len: usize) 
             } else if buf_len == 1 {
                 let mut ascii = None;
                 while ascii.is_none() {
-                    if let Ok(c) = crate::arch::disabled_int(|| console::get_char()) {
+                    if let Ok(c) = crate::arch::disabled_int(|| tty::get_char()) {
                         ascii = Some(c);
                     } else {
                         super::hlt();

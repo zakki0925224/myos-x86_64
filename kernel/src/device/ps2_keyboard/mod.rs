@@ -1,5 +1,5 @@
 use self::{key_event::KeyEvent, key_map::KeyMap};
-use super::{console, DeviceDriverFunction, DeviceDriverInfo};
+use super::{tty, DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     arch::{self, addr::IoPortAddress},
     device::ps2_keyboard::{
@@ -305,7 +305,7 @@ pub fn poll_normal() -> Result<()> {
         None => return Ok(()),
     };
 
-    console::input(c)
+    tty::input(c)
 }
 
 pub extern "x86-interrupt" fn poll_int_ps2_kbd_driver() {

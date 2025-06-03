@@ -1,7 +1,7 @@
 use crate::{
     acpi::AcpiError,
     device::{
-        console::ConsoleError,
+        tty::TtyError,
         usb::{
             bus::{device::UsbDeviceError, UsbBusDriverError},
             xhc::{ringbuf::RingBufferError, XhcDriverError},
@@ -23,7 +23,6 @@ pub enum Error {
     LayerError(LayerError),
     BitmapMemoryManagerError(BitmapMemoryManagerError),
     PageManagerError(PageManagerError),
-    ConsoleError(ConsoleError),
     UsbBusDriverError(UsbBusDriverError),
     UsbDeviceError(UsbDeviceError),
     XhcDriverError(XhcDriverError),
@@ -37,6 +36,7 @@ pub enum Error {
     AcpiError(AcpiError),
     AllocationError(AllocationError),
     DrawError(DrawError),
+    TtyError(TtyError),
 }
 
 impl From<&'static str> for Error {
@@ -60,12 +60,6 @@ impl From<BitmapMemoryManagerError> for Error {
 impl From<PageManagerError> for Error {
     fn from(err: PageManagerError) -> Self {
         Self::PageManagerError(err)
-    }
-}
-
-impl From<ConsoleError> for Error {
-    fn from(err: ConsoleError) -> Self {
-        Self::ConsoleError(err)
     }
 }
 
@@ -138,6 +132,12 @@ impl From<AllocationError> for Error {
 impl From<DrawError> for Error {
     fn from(err: DrawError) -> Self {
         Self::DrawError(err)
+    }
+}
+
+impl From<TtyError> for Error {
+    fn from(err: TtyError) -> Self {
+        Self::TtyError(err)
     }
 }
 
