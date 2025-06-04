@@ -5,6 +5,7 @@ use crate::{
     device::ps2_keyboard::{
         key_event::{KeyState, ModifierKeysState},
         key_map::ANSI_US_104_KEY_MAP,
+        scan_code::KeyCode,
     },
     error::{Error, Result},
     fs::vfs,
@@ -298,6 +299,34 @@ pub fn poll_normal() -> Result<()> {
 
     if key_event.state == KeyState::Released {
         return Ok(());
+    }
+
+    match key_event.code {
+        KeyCode::CursorUp => {
+            tty::input('\x1b')?;
+            tty::input('[')?;
+            tty::input('A')?;
+            return Ok(());
+        }
+        KeyCode::CursorDown => {
+            tty::input('\x1b')?;
+            tty::input('[')?;
+            tty::input('B')?;
+            return Ok(());
+        }
+        KeyCode::CursorRight => {
+            tty::input('\x1b')?;
+            tty::input('[')?;
+            tty::input('C')?;
+            return Ok(());
+        }
+        KeyCode::CursorLeft => {
+            tty::input('\x1b')?;
+            tty::input('[')?;
+            tty::input('D')?;
+            return Ok(());
+        }
+        _ => (),
     }
 
     let c = match key_event.c {

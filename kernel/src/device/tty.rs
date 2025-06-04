@@ -66,6 +66,8 @@ impl Tty {
     }
 
     fn write(&mut self, c: char, buf_type: BufferType) -> Result<()> {
+        let _ = frame_buf_console::write_char(c);
+
         let buf = match buf_type {
             BufferType::Input => &mut self.input_buf,
             BufferType::Output => &mut self.output_buf,
@@ -81,9 +83,7 @@ impl Tty {
             }
         }
 
-        if (buf_type == BufferType::Output || buf_type == BufferType::ErrorOutput)
-            && self.use_serial_port
-        {
+        if self.use_serial_port {
             let data = match c {
                 '\x08' | '\x7f' => '\x08' as u8,
                 _ => c as u8,
@@ -207,8 +207,6 @@ pub fn _print(args: fmt::Arguments) {
     if let Ok(mut tty) = unsafe { TTY.try_lock() } {
         let _ = tty.write_fmt(args);
     }
-
-    let _ = frame_buf_console::write_fmt(args);
 }
 
 #[macro_export]
@@ -263,15 +261,6 @@ pub fn input(c: char) -> Result<()> {
     let mut c = c;
     if c == '\r' {
         c = '\n';
-    }
-
-    match c {
-        '\n' => {
-            println!();
-        }
-        _ => {
-            print!("{}", c);
-        }
     }
 
     let mut tty = unsafe { TTY.try_lock() }?;

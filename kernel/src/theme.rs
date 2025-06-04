@@ -57,8 +57,6 @@ const LEGACY_THEME: Theme = Theme {
     wm_component_border_flat: true,
     wm_window_titlebar_back_color: LEGACY_BLACK,
     wm_window_titlebar_fore_color: LEGACY_GREEN,
-    io_buf_default_back_color: LEGACY_BLACK,
-    io_buf_default_fore_color: LEGACY_BLACK,
 };
 
 #[allow(unused)]
@@ -99,8 +97,6 @@ const CLASSIC_THEME: Theme = Theme {
     wm_component_border_flat: false,
     wm_window_titlebar_back_color: ColorCode::new_rgb(0x0a, 0x24, 0x6a),
     wm_window_titlebar_fore_color: BASE_WHITE,
-    io_buf_default_back_color: BASE_BLACK,
-    io_buf_default_fore_color: BASE_BLACK,
 };
 
 #[allow(unused)]
@@ -155,8 +151,6 @@ const EGA_THEME: Theme = Theme {
     wm_component_border_flat: true,
     wm_window_titlebar_back_color: EGA_BLACK,
     wm_window_titlebar_fore_color: EGA_LIGHT_GREEN,
-    io_buf_default_back_color: EGA_BLACK,
-    io_buf_default_fore_color: EGA_BLACK,
 };
 
 #[allow(unused)]
@@ -179,7 +173,4 @@ pub struct Theme {
     pub wm_component_border_flat: bool,
     pub wm_window_titlebar_back_color: ColorCode,
     pub wm_window_titlebar_fore_color: ColorCode,
-    // io buffer
-    pub io_buf_default_back_color: ColorCode,
-    pub io_buf_default_fore_color: ColorCode,
 }

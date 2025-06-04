@@ -15,14 +15,9 @@ pub fn init(
     graphic_info: &GraphicInfo,
     console_back_color: ColorCode,
     console_fore_color: ColorCode,
-    console_is_scrollable: bool,
 ) -> Result<()> {
     frame_buf::init(graphic_info)?;
-    frame_buf_console::init(
-        console_back_color,
-        console_fore_color,
-        console_is_scrollable,
-    )?;
+    frame_buf_console::init(console_back_color, console_fore_color)?;
 
     info!("graphics: Frame buffer initialized");
     Ok(())

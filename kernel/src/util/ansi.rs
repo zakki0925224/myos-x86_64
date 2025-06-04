@@ -91,21 +91,20 @@ impl AnsiEscapeStream {
             match ch {
                 '0'..='9' => num_buf1.push(ch),
                 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'S' | 'T' => {
-                    if let Ok(num) = num_buf1.parse() {
-                        let seq = match ch {
-                            'A' => CsiSequence::CursorUp(num),
-                            'B' => CsiSequence::CursorDown(num),
-                            'C' => CsiSequence::CursorRight(num),
-                            'D' => CsiSequence::CursorLeft(num),
-                            'E' => CsiSequence::CursorNextLineHead(num),
-                            'F' => CsiSequence::CursorPrevLineHead(num),
-                            'G' => CsiSequence::CursorColumn(num),
-                            'S' => CsiSequence::ScrollUp(num),
-                            'T' => CsiSequence::ScrollDown(num),
-                            _ => unreachable!(),
-                        };
-                        return Some(AnsiEvent::CsiSequence(seq));
-                    }
+                    let num = num_buf1.parse().unwrap_or(1);
+                    let seq = match ch {
+                        'A' => CsiSequence::CursorUp(num),
+                        'B' => CsiSequence::CursorDown(num),
+                        'C' => CsiSequence::CursorRight(num),
+                        'D' => CsiSequence::CursorLeft(num),
+                        'E' => CsiSequence::CursorNextLineHead(num),
+                        'F' => CsiSequence::CursorPrevLineHead(num),
+                        'G' => CsiSequence::CursorColumn(num),
+                        'S' => CsiSequence::ScrollUp(num),
+                        'T' => CsiSequence::ScrollDown(num),
+                        _ => unreachable!(),
+                    };
+                    return Some(AnsiEvent::CsiSequence(seq));
                 }
                 'H' | 'f' => {
                     if let (Ok(num1), Ok(num2)) = (num_buf1.parse(), num_buf2.parse()) {
