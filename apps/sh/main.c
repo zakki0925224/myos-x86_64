@@ -30,6 +30,7 @@ void exec_cmd(char *cmd) {
         printf("  break\n");
         printf("  exec\n");
         printf("  window\n");
+        printf("  clear\n");
 
         if (strlen(envpath) > 0) {
             printf("sh: envpath available\n");
@@ -66,6 +67,9 @@ void exec_cmd(char *cmd) {
             printf("sh: window: failed to create window\n");
             return;
         }
+    } else if (strcmp(splitted_buf[0], "clear") == 0) {
+        printf("\e[2J");
+        printf("\e[1;1H");
     }
     // execute command with envpath
     else if (strlen(envpath) > 0) {

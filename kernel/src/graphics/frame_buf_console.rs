@@ -25,6 +25,7 @@ struct FrameBufferConsole {
     cursor_y: usize,
     target_layer_id: Option<LayerId>,
     ansi_escape_stream: AnsiEscapeStream,
+    is_hidden: bool,
 }
 
 impl FrameBufferConsole {
@@ -38,6 +39,7 @@ impl FrameBufferConsole {
             cursor_y: 0,
             target_layer_id: None,
             ansi_escape_stream: AnsiEscapeStream::new(),
+            is_hidden: false,
         }
     }
 
@@ -196,6 +198,7 @@ impl FrameBufferConsole {
                         CsiSequence::CharReset => {
                             self.reset_back_color();
                             self.reset_fore_color();
+                            self.is_hidden = false;
                         }
                         CsiSequence::CharBold => {
                             unimplemented!()
@@ -221,7 +224,7 @@ impl FrameBufferConsole {
                             self.set_back_color(tmp);
                         }
                         CsiSequence::CharHidden => {
-                            unimplemented!()
+                            self.is_hidden = true;
                         }
                         CsiSequence::CharCancel => {
                             unimplemented!()
@@ -285,10 +288,11 @@ impl FrameBufferConsole {
             }
         }
 
-        let xy = (self.cursor_x * f_w, self.cursor_y * f_h);
-        self.draw_font(xy, c, self.fore_color, self.back_color)?;
-
-        self.inc_cursor()?;
+        if !self.is_hidden {
+            let xy = (self.cursor_x * f_w, self.cursor_y * f_h);
+            self.draw_font(xy, c, self.fore_color, self.back_color)?;
+            self.inc_cursor()?;
+        }
 
         Ok(())
     }

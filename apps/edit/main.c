@@ -1,9 +1,12 @@
 #include <stdio.h>
+#include <syscalls.h>
 
 #define SCREEN_WIDTH 80
 #define SCREEN_HEIGHT 24
 
 #define BOTTOM_BAR_HEIGHT 3
+
+char input_char;
 
 int main(int argc, char *argv[]) {
     // fill screen
@@ -26,11 +29,18 @@ int main(int argc, char *argv[]) {
         printf("\n");
     }
 
-    printf("\e[0m");
-    printf("\e[2;1H");
+    printf("\e[2;1H\e[8m");
 
     for (;;) {
+        sys_read(FDN_STDIN, &input_char, 1);
+        if (input_char >= ' ')
+            printf("\e[0m%c\e[8m", input_char);
+        else if (input_char == 0x03) {
+            printf("\e[0m");
+            return 0;
+        }
     }
 
+    printf("\e[0m");
     return 0;
 }
