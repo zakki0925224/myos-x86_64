@@ -1,4 +1,4 @@
-use crate::{graphics::frame_buf_console, println, ColorCode};
+use crate::ColorCode;
 
 pub const GLOBAL_THEME: Theme = LEGACY_THEME;
 
@@ -182,85 +182,4 @@ pub struct Theme {
     // io buffer
     pub io_buf_default_back_color: ColorCode,
     pub io_buf_default_fore_color: ColorCode,
-}
-
-#[allow(unused)]
-pub fn debug_global_theme() {
-    let theme = &GLOBAL_THEME;
-
-    let _ = frame_buf_console::set_fore_color(theme.back_color);
-    println!("back_color: {:?}", theme.back_color);
-
-    let _ = frame_buf_console::set_fore_color(theme.fore_color);
-    println!("fore_color: {:?}", theme.fore_color);
-
-    for (i, color_code) in theme.sample_rect_colors.iter().enumerate() {
-        let _ = frame_buf_console::set_fore_color(*color_code);
-        println!("sample_rect_colors[{}]: {:?}", i, *color_code);
-    }
-
-    let _ = frame_buf_console::set_fore_color(theme.log_color_error);
-    println!("log_color_error: {:?}", theme.log_color_error);
-
-    let _ = frame_buf_console::set_fore_color(theme.log_color_warn);
-    println!("log_color_warn: {:?}", theme.log_color_warn);
-
-    let _ = frame_buf_console::set_fore_color(theme.log_color_info);
-    println!("log_color_info: {:?}", theme.log_color_info);
-
-    let _ = frame_buf_console::set_fore_color(theme.log_color_debug);
-    println!("log_color_debug: {:?}", theme.log_color_debug);
-
-    let _ = frame_buf_console::set_fore_color(theme.log_color_trace);
-    println!("log_color_trace: {:?}", theme.log_color_trace);
-
-    let _ = frame_buf_console::set_fore_color(theme.wm_component_back_color);
-    println!(
-        "wm_component_back_color: {:?}",
-        theme.wm_component_back_color
-    );
-
-    let _ = frame_buf_console::set_fore_color(theme.wm_component_fore_color);
-    println!(
-        "wm_component_fore_color: {:?}",
-        theme.wm_component_fore_color
-    );
-
-    let _ = frame_buf_console::set_fore_color(theme.wm_component_border_color1);
-    println!(
-        "wm_component_border_color1: {:?}",
-        theme.wm_component_border_color1
-    );
-
-    let _ = frame_buf_console::set_fore_color(theme.wm_component_border_color2);
-    println!(
-        "wm_component_border_color2: {:?}",
-        theme.wm_component_border_color2
-    );
-
-    let _ = frame_buf_console::set_fore_color(theme.wm_window_titlebar_back_color);
-    println!(
-        "wm_window_titlebar_back_color: {:?}",
-        theme.wm_window_titlebar_back_color
-    );
-
-    let _ = frame_buf_console::set_fore_color(theme.wm_window_titlebar_fore_color);
-    println!(
-        "wm_window_titlebar_fore_color: {:?}",
-        theme.wm_window_titlebar_fore_color
-    );
-
-    let _ = frame_buf_console::set_fore_color(theme.io_buf_default_back_color);
-    println!(
-        "io_buf_default_back_color: {:?}",
-        theme.io_buf_default_back_color
-    );
-
-    let _ = frame_buf_console::set_fore_color(theme.io_buf_default_fore_color);
-    println!(
-        "io_buf_default_fore_color: {:?}",
-        theme.io_buf_default_fore_color
-    );
-
-    let _ = frame_buf_console::reset_fore_color();
 }

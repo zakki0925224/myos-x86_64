@@ -3,12 +3,21 @@ use super::{
     frame_buf,
     multi_layer::{self, LayerId},
 };
-use crate::{error::Result, theme::GLOBAL_THEME, util::mutex::Mutex, ColorCode};
+use crate::{
+    error::Result,
+    theme::GLOBAL_THEME,
+    util::{
+        ansi::{AnsiEscapeStream, AnsiEvent, CsiSequence},
+        mutex::Mutex,
+    },
+    ColorCode,
+};
 use core::fmt::{self, Write};
 
 static mut FRAME_BUF_CONSOLE: Mutex<FrameBufferConsole> = Mutex::new(FrameBufferConsole::new());
 
 struct FrameBufferConsole {
+    default_back_color: ColorCode,
     back_color: ColorCode,
     default_fore_color: ColorCode,
     fore_color: ColorCode,
@@ -17,11 +26,13 @@ struct FrameBufferConsole {
     target_layer_id: Option<LayerId>,
     is_scrollable: bool,
     color_swapped: bool,
+    ansi_escape_stream: AnsiEscapeStream,
 }
 
 impl FrameBufferConsole {
     const fn new() -> Self {
         Self {
+            default_back_color: ColorCode::default(),
             back_color: ColorCode::default(),
             default_fore_color: ColorCode::default(),
             fore_color: ColorCode::default(),
@@ -30,6 +41,7 @@ impl FrameBufferConsole {
             target_layer_id: None,
             is_scrollable: false,
             color_swapped: false,
+            ansi_escape_stream: AnsiEscapeStream::new(),
         }
     }
 
@@ -48,6 +60,7 @@ impl FrameBufferConsole {
         fore_color: ColorCode,
         is_scrollable: bool,
     ) -> Result<()> {
+        self.default_back_color = back_color;
         self.back_color = back_color;
         self.default_fore_color = fore_color;
         self.fore_color = fore_color;
@@ -74,6 +87,14 @@ impl FrameBufferConsole {
         return self.init(self.back_color, self.fore_color, self.is_scrollable);
     }
 
+    fn set_back_color(&mut self, back_color: ColorCode) {
+        self.back_color = back_color;
+    }
+
+    fn reset_back_color(&mut self) {
+        self.back_color = self.default_back_color;
+    }
+
     fn set_fore_color(&mut self, fore_color: ColorCode) {
         self.fore_color = fore_color;
     }
@@ -83,6 +104,8 @@ impl FrameBufferConsole {
     }
 
     fn write_char(&mut self, c: char) -> Result<()> {
+        let (f_w, f_h) = FONT.get_wh();
+
         match c {
             '\n' => return self.new_line(),
             '\t' => return self.tab(),
@@ -90,7 +113,83 @@ impl FrameBufferConsole {
             _ => (),
         }
 
-        let (f_w, f_h) = FONT.get_wh();
+        match self.ansi_escape_stream.push(c) {
+            Ok(Some(e)) => match e {
+                // unprintable char
+                AnsiEvent::AnsiControlChar(_) => {
+                    return Ok(());
+                }
+                AnsiEvent::CsiSequence(seq) => {
+                    match seq {
+                        CsiSequence::CharReset => {
+                            self.reset_back_color();
+                            self.reset_fore_color();
+                        }
+                        CsiSequence::CharReverseColor => {
+                            let tmp = self.fore_color;
+                            self.set_fore_color(self.back_color);
+                            self.set_back_color(tmp);
+                        }
+                        CsiSequence::ForeColorBlack => {
+                            self.set_fore_color(ColorCode::BLACK);
+                        }
+                        CsiSequence::ForeColorRed => {
+                            self.set_fore_color(ColorCode::RED);
+                        }
+                        CsiSequence::ForeColorGreen => {
+                            self.set_fore_color(ColorCode::GREEN);
+                        }
+                        CsiSequence::ForeColorYellow => {
+                            self.set_fore_color(ColorCode::YELLOW);
+                        }
+                        CsiSequence::ForeColorBlue => {
+                            self.set_fore_color(ColorCode::BLUE);
+                        }
+                        CsiSequence::ForeColorMagenta => {
+                            self.set_fore_color(ColorCode::MAGENTA);
+                        }
+                        CsiSequence::ForeColorCyan => {
+                            self.set_fore_color(ColorCode::CYAN);
+                        }
+                        CsiSequence::ForeColorWhite => {
+                            self.set_fore_color(ColorCode::WHITE);
+                        }
+                        CsiSequence::BackColorBlack => {
+                            self.set_back_color(ColorCode::BLACK);
+                        }
+                        CsiSequence::BackColorRed => {
+                            self.set_back_color(ColorCode::RED);
+                        }
+                        CsiSequence::BackColorGreen => {
+                            self.set_back_color(ColorCode::GREEN);
+                        }
+                        CsiSequence::BackColorYellow => {
+                            self.set_back_color(ColorCode::YELLOW);
+                        }
+                        CsiSequence::BackColorBlue => {
+                            self.set_back_color(ColorCode::BLUE);
+                        }
+                        CsiSequence::BackColorMagenta => {
+                            self.set_back_color(ColorCode::MAGENTA);
+                        }
+                        CsiSequence::BackColorCyan => {
+                            self.set_back_color(ColorCode::CYAN);
+                        }
+                        CsiSequence::BackColorWhite => {
+                            self.set_back_color(ColorCode::WHITE);
+                        }
+                        _ => (),
+                    }
+
+                    return Ok(());
+                }
+            },
+            Ok(None) => (),
+            Err(_) => {
+                self.ansi_escape_stream.reset();
+            }
+        }
+
         let xy = (self.cursor_x * f_w, self.cursor_y * f_h);
         self.draw_font(xy, c, self.fore_color, self.back_color)?;
 

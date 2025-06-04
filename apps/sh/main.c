@@ -102,7 +102,7 @@ int main(int argc, char const *argv[]) {
 
     while (1) {
         getcwd_ret = sys_getcwd(cwd_path, sizeof(cwd_path));
-        printf("\n[%s]$ ", getcwd_ret == -1 ? "UNKNOWN" : cwd_path);
+        printf("\n\e[34m[%s]\e[m$ ", getcwd_ret == -1 ? "UNKNOWN" : cwd_path);
 
         if (sys_read(0, buf, BUF_LEN) == -1) {
             printf("Failed to read stdin\n");

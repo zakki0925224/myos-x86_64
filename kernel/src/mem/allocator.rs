@@ -516,6 +516,8 @@ fn alloc_error_handler(layout: Layout) -> ! {
 
 #[test_case]
 fn test_alloc_string() {
+    use crate::alloc::string::ToString;
+
     let s1 = "Hello, World!".to_string();
     assert_eq!(s1, "Hello, World!");
     let s2 = "hoge huga hogera piyo 012345!\"#$%&".to_string();

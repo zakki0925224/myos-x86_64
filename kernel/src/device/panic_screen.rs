@@ -1,15 +1,14 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    addr::VirtualAddress, error::Result, graphics::font::FONT, theme::GLOBAL_THEME,
-    util::mutex::Mutex, ColorCode,
+    addr::VirtualAddress, error::Result, graphics::font::FONT, util::mutex::Mutex, ColorCode,
 };
 use alloc::vec::Vec;
 use common::graphic_info::{GraphicInfo, PixelFormat};
 use core::fmt::{self, Write};
 use log::info;
 
-const BACK_COLOR: ColorCode = ColorCode::new_rgb(0, 0, 0);
-const FORE_COLOR: ColorCode = GLOBAL_THEME.log_color_error;
+const BACK_COLOR: ColorCode = ColorCode::BLACK;
+const FORE_COLOR: ColorCode = ColorCode::RED;
 
 static mut PANIC_SCREEN_DRIVER: Mutex<PanicScreenDriver> = Mutex::new(PanicScreenDriver::new());
 
