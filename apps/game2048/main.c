@@ -2,6 +2,8 @@
 #include <syscalls.h>
 
 #define SIZE 4
+#define CELL_WIDTH 16
+#define CELL_HEIGHT 8
 
 void draw_board(int board[SIZE][SIZE]) {
     // fill screen
@@ -10,10 +12,23 @@ void draw_board(int board[SIZE][SIZE]) {
 
     for (int i = 0; i < SIZE; i++) {
         for (int j = 0; j < SIZE; j++) {
-            printf("%d ", board[i][j]);
+            int y = (i + 1) * CELL_HEIGHT;
+            int x = (j + 1) * CELL_WIDTH;
+
+            // draw cell border
+            for (int k = y; k < y + CELL_HEIGHT; k++) {
+                for (int l = x; l < x + CELL_WIDTH; l++) {
+                    if (k == y || k == y + CELL_HEIGHT - 1 || l == x || l == x + CELL_WIDTH - 1)
+                        printf("\e[7m\e[%d;%dH+\e[0m", k, l);
+                    else
+                        printf("\e[%d;%dH ", k, l);
+                }
+            }
+
+            printf("\e[%d;%dH%d", y + CELL_HEIGHT / 2, x + CELL_WIDTH / 2, board[i][j]);
         }
-        printf("\n");
     }
+    printf("\n\n\n\n\n\n\n");
 }
 
 void update_board(char key, int board[SIZE][SIZE]) {
