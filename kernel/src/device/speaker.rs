@@ -1,35 +1,10 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
-use crate::{arch, error::Result, fs::vfs};
+use crate::{arch, error::Result, fs::vfs, util};
 use alloc::vec::Vec;
-use core::num::NonZeroU8;
+use core::time::Duration;
 use log::info;
 
 static mut SPEAKER_DRIVER: SpeakerDriver = SpeakerDriver::new();
-
-#[repr(u32)]
-#[derive(Copy, Clone)]
-pub enum Pitch {
-    C = 65,
-    Cs = 69,
-    D = 73,
-    Ds = 78,
-    E = 82,
-    F = 87,
-    Fs = 92,
-    G = 98,
-    Gs = 104,
-    A = 110,
-    As = 117,
-    B = 123,
-}
-
-impl Pitch {
-    pub fn to_freq(&self, octave: NonZeroU8) -> u32 {
-        let base_freq = *self as u32;
-        let octave_mul = 1u32 << (octave.get() - 1);
-        base_freq * octave_mul
-    }
-}
 
 struct SpeakerDriver {
     device_driver_info: DeviceDriverInfo,
@@ -37,6 +12,13 @@ struct SpeakerDriver {
 
 // https://wiki.osdev.org/PC_Speaker
 impl SpeakerDriver {
+    const PIT_BASE_FREQ: u32 = 1193182;
+    const PORT_PIT_CTRL: u16 = 0x43;
+    const PORT_TIMER2_CTRL: u16 = 0x42;
+    const TIMER2_SELECT: u8 = 0x80;
+    const WRITE_WORD: u8 = 0x30;
+    const MODE_SQUARE_WAVE: u8 = 0x06;
+
     const fn new() -> Self {
         Self {
             device_driver_info: DeviceDriverInfo::new("speaker"),
@@ -44,45 +26,22 @@ impl SpeakerDriver {
     }
 
     fn play(&self, freq: u32) {
-        let div = 1193180 / freq;
+        let div = (Self::PIT_BASE_FREQ / freq) as u16;
 
-        arch::out8(0x43, 0xb6);
-        arch::out8(0x42, div as u8);
+        arch::out8(
+            Self::PORT_PIT_CTRL,
+            Self::TIMER2_SELECT | Self::WRITE_WORD | Self::MODE_SQUARE_WAVE,
+        );
+        arch::out8(Self::PORT_TIMER2_CTRL, div as u8);
 
-        let tmp = arch::in8(0x61);
-        if tmp != (tmp | 3) {
-            arch::out8(0x61, tmp | 3);
-        }
+        arch::out8(Self::PORT_TIMER2_CTRL, (div >> 8) as u8);
+        arch::out8(Self::PORT_TIMER2_CTRL, div as u8);
+
+        arch::out8(0x61, arch::in8(0x61) | 3);
     }
 
     fn stop(&self) {
-        let tmp = arch::in8(0x61) & 0xfc;
-        arch::out8(0x61, tmp);
-    }
-
-    fn beep(&self) {
-        let octave = NonZeroU8::new(1).unwrap();
-        self.play(Pitch::C.to_freq(octave));
-        // sleep::sleep_ms(100);
-        self.stop();
-        self.play(Pitch::D.to_freq(octave));
-        // sleep::sleep_ms(100);
-        self.stop();
-        self.play(Pitch::E.to_freq(octave));
-        // sleep::sleep_ms(100);
-        self.stop();
-        self.play(Pitch::F.to_freq(octave));
-        // sleep::sleep_ms(100);
-        self.stop();
-        self.play(Pitch::G.to_freq(octave));
-        // sleep::sleep_ms(100);
-        self.stop();
-        self.play(Pitch::A.to_freq(octave));
-        // sleep::sleep_ms(100);
-        self.stop();
-        self.play(Pitch::B.to_freq(octave));
-        // sleep::sleep_ms(100);
-        self.stop();
+        arch::out8(0x61, arch::in8(0x61) & !3);
     }
 }
 
@@ -167,6 +126,18 @@ pub fn write(data: &[u8]) -> Result<()> {
     unsafe { SPEAKER_DRIVER.write(data) }
 }
 
-pub fn beep() {
-    unsafe { SPEAKER_DRIVER.beep() };
+pub fn play(freq: u32, duration: Duration) {
+    unsafe {
+        SPEAKER_DRIVER.play(freq);
+        util::time::sleep(duration);
+        SPEAKER_DRIVER.stop();
+    }
+}
+
+pub async fn play_async(freq: u32, duration: Duration) {
+    unsafe {
+        SPEAKER_DRIVER.play(freq);
+        util::time::sleep_async(duration).await;
+        SPEAKER_DRIVER.stop();
+    }
 }
