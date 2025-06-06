@@ -53,6 +53,7 @@ pub struct Layer {
     format: PixelFormat,
     pub always_on_top: bool,
     dirty: bool,
+    pos_moved: bool,
 }
 
 impl Draw for Layer {
@@ -92,11 +93,13 @@ impl Layer {
             format,
             always_on_top: false,
             dirty: false,
+            pos_moved: false,
         }
     }
 
     pub fn move_to(&mut self, x: usize, y: usize) {
         self.xy = (x, y);
+        self.pos_moved = true;
     }
 
     pub fn layer_pos_info(&self) -> LayerPositionInfo {
@@ -141,16 +144,29 @@ impl LayerManager {
         self.layers
             .sort_by(|a, b| a.always_on_top.cmp(&b.always_on_top));
 
+        let mut pos_moved = false;
+        for layer in &self.layers {
+            if layer.disabled {
+                continue;
+            }
+
+            if layer.pos_moved {
+                pos_moved = true;
+                break;
+            }
+        }
+
         for layer in &mut self.layers {
             if layer.disabled {
                 continue;
             }
 
-            if !layer.dirty() {
+            if !layer.dirty() && !pos_moved {
                 continue;
             }
 
             frame_buf::apply_layer_buf(layer)?;
+            layer.set_dirty(false);
         }
 
         Ok(())
