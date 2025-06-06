@@ -15,6 +15,7 @@ struct FrameBuffer {
     format: Option<PixelFormat>,
     frame_buf_virt_addr: Option<VirtualAddress>,
     shadow_buf: Option<Vec<u32>>,
+    dirty: bool,
 }
 
 impl Draw for FrameBuffer {
@@ -49,6 +50,14 @@ impl Draw for FrameBuffer {
             Ok(addr.as_ptr_mut())
         }
     }
+
+    fn dirty(&self) -> bool {
+        self.dirty
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        self.dirty = dirty;
+    }
 }
 
 impl FrameBuffer {
@@ -59,6 +68,7 @@ impl FrameBuffer {
             format: None,
             frame_buf_virt_addr: None,
             shadow_buf: None,
+            dirty: false,
         }
     }
 
@@ -92,6 +102,10 @@ impl FrameBuffer {
 
     fn apply_shadow_buf(&mut self) -> Result<()> {
         if self.shadow_buf.is_none() {
+            return Ok(());
+        }
+
+        if !self.dirty {
             return Ok(());
         }
 

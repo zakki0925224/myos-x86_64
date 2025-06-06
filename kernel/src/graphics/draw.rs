@@ -20,6 +20,10 @@ pub trait Draw {
 
     fn buf_ptr_mut(&mut self) -> Result<*mut u32>;
 
+    fn dirty(&self) -> bool;
+
+    fn set_dirty(&mut self, dirty: bool);
+
     fn draw_pixel(&mut self, xy: (usize, usize), color: ColorCode) -> Result<()> {
         let (res_w, res_h) = self.resolution()?;
         let (x, y) = xy;
@@ -36,6 +40,7 @@ pub trait Draw {
             pixel_ptr.write(code);
         }
 
+        self.set_dirty(true);
         Ok(())
     }
 
@@ -74,6 +79,7 @@ pub trait Draw {
             }
         }
 
+        self.set_dirty(true);
         Ok(())
     }
 
@@ -108,6 +114,7 @@ pub trait Draw {
             src_ptr.copy_to(dst_ptr, w * h);
         }
 
+        self.set_dirty(true);
         Ok(())
     }
 
@@ -130,6 +137,7 @@ pub trait Draw {
             }
         }
 
+        self.set_dirty(true);
         Ok(())
     }
 
@@ -165,6 +173,7 @@ pub trait Draw {
             }
         }
 
+        self.set_dirty(true);
         Ok(())
     }
 
@@ -200,6 +209,7 @@ pub trait Draw {
             }
         }
 
+        self.set_dirty(true);
         Ok(())
     }
 
@@ -233,6 +243,7 @@ pub trait Draw {
             }
         }
 
+        self.set_dirty(true);
         Ok(())
     }
 
@@ -265,6 +276,7 @@ pub trait Draw {
             }
         }
 
+        dst.set_dirty(true);
         Ok(())
     }
 }

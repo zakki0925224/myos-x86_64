@@ -52,6 +52,7 @@ pub struct Layer {
     pub disabled: bool,
     format: PixelFormat,
     pub always_on_top: bool,
+    dirty: bool,
 }
 
 impl Draw for Layer {
@@ -70,6 +71,14 @@ impl Draw for Layer {
     fn buf_ptr_mut(&mut self) -> Result<*mut u32> {
         Ok(self.buf.as_mut_ptr())
     }
+
+    fn dirty(&self) -> bool {
+        self.dirty
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        self.dirty = dirty;
+    }
 }
 
 impl Layer {
@@ -82,6 +91,7 @@ impl Layer {
             disabled: false,
             format,
             always_on_top: false,
+            dirty: false,
         }
     }
 
@@ -133,6 +143,10 @@ impl LayerManager {
 
         for layer in &mut self.layers {
             if layer.disabled {
+                continue;
+            }
+
+            if !layer.dirty() {
                 continue;
             }
 
