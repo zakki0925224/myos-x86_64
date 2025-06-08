@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, process::Command};
 
 fn find_headers_recursively(dir: PathBuf) -> Vec<PathBuf> {
     let mut headers = Vec::new();
@@ -20,6 +20,12 @@ fn find_headers_recursively(dir: PathBuf) -> Vec<PathBuf> {
 }
 
 fn main() {
+    Command::new("make")
+        .arg("-C")
+        .arg("../libc")
+        .status()
+        .expect("Failed to run make");
+
     println!("cargo::rustc-link-search=../libc");
     println!("cargo::rustc-link-lib=c");
 

@@ -4,13 +4,14 @@ CFLAGS := -I ../libc -Werror -g -m64 -nostdlib -fno-builtin -fno-stack-protector
 LD := ld.lld
 LDFLAGS := -z norelro --static --image-base=0xffff800000000000
 
-LIB_DIR := ../libc
-LIB := -L$(LIB_DIR) -lc
+LIBC_DIR := ../libc
+LIBC := $(LIBC_DIR)/libc_with_main.a
 
 $(OUT_FILE): $(OBJ_FILES)
 	mkdir -p ../bin
-	make -C $(LIB_DIR)
-	$(LD) $(OBJ_FILES) $(LIB) -o $@ $(LDFLAGS)
+	make -C $(LIBC_DIR) app
+
+	$(LD) $(OBJ_FILES) $(LIBC) -o $@ $(LDFLAGS)
 
 %.o: %.c
 	$(CC) -c $< -o $@ $(CFLAGS)
