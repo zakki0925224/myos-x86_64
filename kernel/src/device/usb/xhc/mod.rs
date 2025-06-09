@@ -4,14 +4,17 @@ use super::{
 };
 use crate::{
     addr::{PhysicalAddress, VirtualAddress},
-    apic, arch,
+    apic, arch, debug,
     device::{self, pci_bus::conf_space::BaseAddress, DeviceDriverFunction, DeviceDriverInfo},
+    error as m_error,
     error::{Error, Result},
     fs::vfs,
-    idt,
+    idt, info,
     mem::bitmap,
     register::msi::*,
+    trace,
     util::mutex::Mutex,
+    warn,
 };
 use alloc::vec::Vec;
 use context::{
@@ -21,7 +24,6 @@ use context::{
     slot::SlotContext,
 };
 use core::mem::size_of;
-use log::{debug, error, info, trace, warn};
 use port::{ConfigState, Port};
 use register::*;
 use ringbuf::*;
@@ -875,7 +877,7 @@ impl DeviceDriverFunction for XhcDriver {
                     if update_device(device).is_ok() {
                         self.ring_doorbell(slot_id, endpoint_id as u8);
                     } else {
-                        error!("{}: Failed to update USB device", name);
+                        m_error!("{}: Failed to update USB device", name);
                     }
                 }
             }

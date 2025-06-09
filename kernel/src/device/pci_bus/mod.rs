@@ -1,13 +1,14 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
+    debug,
     error::{Error, Result},
     fs::vfs,
+    info,
     util::mutex::Mutex,
 };
 use alloc::{string::String, vec::Vec};
 use conf_space::*;
 use device::{PciDevice, PciDeviceFunctions};
-use log::{debug, info};
 
 pub mod conf_space;
 mod device;

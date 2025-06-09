@@ -1,8 +1,7 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
-use crate::{arch, error::Result, fs::vfs, util};
+use crate::{arch, error::Result, fs::vfs, info, util};
 use alloc::vec::Vec;
 use core::time::Duration;
-use log::info;
 
 static mut SPEAKER_DRIVER: SpeakerDriver = SpeakerDriver::new();
 

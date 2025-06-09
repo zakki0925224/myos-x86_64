@@ -4,10 +4,10 @@ use crate::{
     error::{Error, Result},
     fs::fat::dir_entry::Attribute,
     util::mutex::Mutex,
+    warn,
 };
 use alloc::{collections::btree_map::BTreeMap, string::String, vec::Vec};
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use log::warn;
 
 static mut VFS: Mutex<VirtualFileSystem> = Mutex::new(VirtualFileSystem::new());
 

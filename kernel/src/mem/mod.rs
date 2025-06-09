@@ -1,10 +1,10 @@
 use crate::{
     error::Result,
+    info,
     mem::paging::{EntryMode, PageWriteThroughLevel, ReadWrite, PAGE_SIZE},
     println,
 };
 use common::mem_desc::MemoryDescriptor;
-use log::info;
 
 pub mod allocator;
 pub mod bitmap;

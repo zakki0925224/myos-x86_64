@@ -33,9 +33,7 @@ use common::boot_info::BootInfo;
 use core::time::Duration;
 use fs::{file::bitmap::BitmapImage, vfs};
 use graphics::{color::*, frame_buf, multi_layer, simple_window_manager};
-use log::*;
 use theme::GLOBAL_THEME;
-use util::logger;
 
 #[no_mangle]
 pub extern "sysv64" fn kernel_entry(boot_info: &BootInfo) -> ! {
@@ -43,9 +41,7 @@ pub extern "sysv64" fn kernel_entry(boot_info: &BootInfo) -> ! {
 }
 
 pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
-    // initialize logger
     device::panic_screen::probe_and_attach(boot_info.graphic_info).unwrap();
-    logger::init();
 
     // attach uart driver
     // do not use .unwrap() here!!
@@ -261,6 +257,5 @@ async fn poll_ps2_mouse(mouse_pointer_bmp_path: String) {
         if is_created_mouse_pointer_layer {
             let _ = simple_window_manager::mouse_pointer_event(mouse_event);
         }
-        async_task::exec_yield().await;
     }
 }

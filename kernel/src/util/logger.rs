@@ -1,60 +1,155 @@
-use crate::{device, graphics::frame_buf_console, print, theme::GLOBAL_THEME};
-use log::{Level, LevelFilter, Record};
+use crate::{graphics::frame_buf_console, print, theme::GLOBAL_THEME, util};
 
-static LOGGER: SimpleLogger = SimpleLogger;
+static mut LOGGER: SimpleLogger = SimpleLogger::new(LogLevel::max());
 
-pub fn init() {
-    log::set_logger(&LOGGER)
-        .map(|()| log::set_max_level(LevelFilter::max()))
-        .unwrap();
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
 }
 
-struct SimpleLogger;
-
-impl log::Log for SimpleLogger {
-    fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level() <= Level::max()
+impl LogLevel {
+    const fn max() -> Self {
+        LogLevel::Trace
     }
 
-    fn log(&self, record: &Record) {
-        if !self.enabled(record.metadata()) {
+    fn to_str(self) -> &'static str {
+        match self {
+            LogLevel::Error => "ERROR",
+            LogLevel::Warn => " WARN",
+            LogLevel::Info => " INFO",
+            LogLevel::Debug => "DEBUG",
+            LogLevel::Trace => "TRACE",
+        }
+    }
+}
+
+struct SimpleLogger {
+    max_level: LogLevel,
+}
+
+impl SimpleLogger {
+    const fn new(max_level: LogLevel) -> Self {
+        Self { max_level }
+    }
+
+    fn enabled(&self, level: LogLevel) -> bool {
+        level <= self.max_level
+    }
+
+    fn log(&self, level: LogLevel, args: core::fmt::Arguments, file: &str, line: u32, col: u32) {
+        if !self.enabled(level) {
             return;
         }
 
-        let fore_color = match record.level() {
-            Level::Error => GLOBAL_THEME.log_color_error,
-            Level::Warn => GLOBAL_THEME.log_color_warn,
-            Level::Info => GLOBAL_THEME.log_color_info,
-            Level::Debug => GLOBAL_THEME.log_color_debug,
-            Level::Trace => GLOBAL_THEME.log_color_trace,
+        let fore_color = match level {
+            LogLevel::Error => GLOBAL_THEME.log_color_error,
+            LogLevel::Warn => GLOBAL_THEME.log_color_warn,
+            LogLevel::Info => GLOBAL_THEME.log_color_info,
+            LogLevel::Debug => GLOBAL_THEME.log_color_debug,
+            LogLevel::Trace => GLOBAL_THEME.log_color_trace,
         };
 
         let _ = frame_buf_console::set_fore_color(fore_color);
 
-        let ms = device::local_apic_timer::global_uptime().as_millis() as usize;
-        print!("[{:06}.{:03}]", ms / 1000, ms % 1000);
-
-        print!(
-            "[{}{}]: ",
-            match record.level() {
-                Level::Error | Level::Debug | Level::Trace => "",
-                _ => " ",
-            },
-            record.level()
-        );
-
-        if record.level() == Level::Error {
-            print!(
-                "{}@{}: ",
-                record.file().unwrap_or("Unknown"),
-                record.line().unwrap_or(0)
-            );
+        let uptime = util::time::global_uptime();
+        if uptime.is_zero() {
+            print!("[??????.???]");
+        } else {
+            let ms = uptime.as_millis() as usize;
+            print!("[{:06}.{:03}]", ms / 1000, ms % 1000);
         }
 
-        print!("{:?}\n", record.args());
+        print!("[{}]: ", level.to_str());
+
+        if level == LogLevel::Error {
+            print!("{}@{}:{}: ", file, line, col);
+        }
+
+        print!("{:?}\n", args);
 
         let _ = frame_buf_console::reset_fore_color();
     }
+}
 
-    fn flush(&self) {}
+pub unsafe fn log(level: LogLevel, args: core::fmt::Arguments, file: &str, line: u32, col: u32) {
+    LOGGER.log(level, args, file, line, col);
+}
+
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {
+        unsafe {
+            $crate::util::logger::log(
+                $crate::util::logger::LogLevel::Info,
+                format_args!($($arg)*),
+                file!(),
+                line!(),
+                column!()
+            );
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! debug {
+    ($($arg:tt)*) => {
+        unsafe {
+            $crate::util::logger::log(
+                $crate::util::logger::LogLevel::Debug,
+                format_args!($($arg)*),
+                file!(),
+                line!(),
+                column!()
+            );
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! warn {
+    ($($arg:tt)*) => {
+        unsafe {
+            $crate::util::logger::log(
+                $crate::util::logger::LogLevel::Warn,
+                format_args!($($arg)*),
+                file!(),
+                line!(),
+                column!()
+            );
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! error {
+    ($($arg:tt)*) => {
+        unsafe {
+            $crate::util::logger::log(
+                $crate::util::logger::LogLevel::Error,
+                format_args!($($arg)*),
+                file!(),
+                line!(),
+                column!()
+            );
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! trace {
+    ($($arg:tt)*) => {
+        unsafe {
+            $crate::util::logger::log(
+                $crate::util::logger::LogLevel::Trace,
+                format_args!($($arg)*),
+                file!(),
+                line!(),
+                column!()
+            );
+        }
+    };
 }

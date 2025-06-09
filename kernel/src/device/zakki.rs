@@ -1,7 +1,6 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
-use crate::{error::Result, fs::vfs, util::mutex::Mutex};
+use crate::{error::Result, fs::vfs, info, util::mutex::Mutex};
 use alloc::vec::Vec;
-use log::info;
 
 const MESSAGE: &str = "Hello! I'm Zakki, a low-level programmer!\nCheck out my links below:\n\tX: https://x.com/zakki0925224\n\tGitHub: https://github.com/Zakki0925224\n\tPortfolio: https://bento.me/zakki0925224\n";
 

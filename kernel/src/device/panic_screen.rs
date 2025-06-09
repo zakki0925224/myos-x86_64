@@ -1,11 +1,10 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    addr::VirtualAddress, error::Result, graphics::font::FONT, util::mutex::Mutex, ColorCode,
+    addr::VirtualAddress, error::Result, graphics::font::FONT, info, util::mutex::Mutex, ColorCode,
 };
 use alloc::vec::Vec;
 use common::graphic_info::{GraphicInfo, PixelFormat};
 use core::fmt::{self, Write};
-use log::info;
 
 const BACK_COLOR: ColorCode = ColorCode::BLACK;
 const FORE_COLOR: ColorCode = ColorCode::RED;

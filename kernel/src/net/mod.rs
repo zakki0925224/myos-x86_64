@@ -1,6 +1,9 @@
 use crate::{
+    debug,
     error::{Error, Result},
+    info,
     util::mutex::Mutex,
+    warn,
 };
 use alloc::{collections::btree_map::BTreeMap, vec::Vec};
 use arp::{ArpOperation, ArpPacket};
@@ -8,7 +11,6 @@ use core::net::Ipv4Addr;
 use eth::{EthernetAddress, EthernetPayload};
 use icmp::{IcmpPacket, IcmpType};
 use ip::{Ipv4Packet, Ipv4Payload};
-use log::{debug, info, warn};
 use tcp::{TcpPacket, TcpSocket, TcpSocketState};
 use udp::{UdpPacket, UdpSocket};
 

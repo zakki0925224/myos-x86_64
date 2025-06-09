@@ -1,6 +1,6 @@
 use crate::{
     addr::IoPortAddress,
-    arch,
+    arch, debug,
     device::{
         self,
         virtio::{virt_queue, DeviceStatus, InterruptType, IoRegister, NetworkDeviceFeature},
@@ -8,12 +8,11 @@ use crate::{
     },
     error::{Error, Result},
     fs::vfs,
-    idt,
+    idt, info,
     mem::{bitmap, paging::PAGE_SIZE},
     util::mutex::Mutex,
 };
 use alloc::vec::Vec;
-use log::{debug, info};
 
 static mut VIRTIO_NET_DRIVER: Mutex<VirtioNetDriver> = Mutex::new(VirtioNetDriver::new());
 

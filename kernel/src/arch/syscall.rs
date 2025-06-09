@@ -2,61 +2,26 @@ use crate::{
     arch::{
         addr::VirtualAddress,
         gdt::*,
+        iomsg::{IomsgCommand, IomsgHeader},
         register::{model_specific::*, Register},
         task,
     },
-    device::{self, tty},
-    env,
+    debug,
+    device::tty,
+    env, error as m_error,
     error::*,
     fs::{
         self,
         vfs::{self, FileDescriptorNumber},
     },
     graphics::{multi_layer::LayerId, simple_window_manager},
+    info,
     mem::{bitmap, paging::PAGE_SIZE},
-    print, util,
+    print, trace, util,
 };
 use alloc::{boxed::Box, ffi::CString, string::*, vec::Vec};
 use common::libc::{Stat, Utsname};
 use core::{arch::naked_asm, slice};
-use log::*;
-
-#[derive(Debug, Clone, Copy)]
-#[repr(u32)]
-enum IomsgCommand {
-    CreateWindow = 0x80000000,
-    DestroyWindow = 0x80000001,
-    AddImageToWindow = 0x80000002,
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(C, align(8))]
-struct IomsgHeader {
-    cmd_id: u32,
-    payload_size: u32,
-}
-
-impl IomsgHeader {
-    fn new(cmd: IomsgCommand, payload_size: u32) -> Self {
-        Self {
-            cmd_id: cmd as u32,
-            payload_size,
-        }
-    }
-
-    fn is_valid(&self) -> bool {
-        (self.cmd_id & 0x80000000) != 0 && self.payload_size > 0
-    }
-
-    fn cmd(&self) -> Result<IomsgCommand> {
-        match self.cmd_id {
-            0x80000000 => Ok(IomsgCommand::CreateWindow),
-            0x80000001 => Ok(IomsgCommand::DestroyWindow),
-            0x80000002 => Ok(IomsgCommand::AddImageToWindow),
-            _ => Err(Error::Failed("Invalid command ID")),
-        }
-    }
-}
 
 #[unsafe(naked)]
 extern "sysv64" fn asm_syscall_handler() {
@@ -100,7 +65,7 @@ extern "sysv64" fn syscall_handler(
             let buf = arg2 as *mut u8;
             let buf_len = arg3 as usize;
             if let Err(err) = sys_read(fd, buf, buf_len) {
-                error!("syscall: read: {:?}", err);
+                m_error!("syscall: read: {:?}", err);
                 return -1;
             }
         }
@@ -110,7 +75,7 @@ extern "sysv64" fn syscall_handler(
             let buf = arg2 as *const u8;
             let buf_len = arg3 as usize;
             if let Err(err) = sys_write(fd, buf, buf_len) {
-                error!("syscall: write: {:?}", err);
+                m_error!("syscall: write: {:?}", err);
                 return -1;
             }
         }
@@ -121,7 +86,7 @@ extern "sysv64" fn syscall_handler(
             match sys_open(filepath, flags) {
                 Ok(fd) => return fd as i64,
                 Err(err) => {
-                    error!("syscall: open: {:?}", err);
+                    m_error!("syscall: open: {:?}", err);
                     return -1;
                 }
             }
@@ -130,7 +95,7 @@ extern "sysv64" fn syscall_handler(
         3 => {
             let fd = arg1 as i32;
             if let Err(err) = sys_close(fd) {
-                error!("syscall: close: {:?}", err);
+                m_error!("syscall: close: {:?}", err);
                 return -1;
             }
         }
@@ -146,7 +111,7 @@ extern "sysv64" fn syscall_handler(
             match sys_sbrk(len) {
                 Ok(ptr) => return ptr as i64,
                 Err(err) => {
-                    error!("syscall: sbrk: {:?}", err);
+                    m_error!("syscall: sbrk: {:?}", err);
                     return -1;
                 }
             }
@@ -155,7 +120,7 @@ extern "sysv64" fn syscall_handler(
         6 => {
             let buf = arg1 as *mut Utsname;
             if let Err(err) = sys_uname(buf) {
-                error!("syscall: uname: {:?}", err);
+                m_error!("syscall: uname: {:?}", err);
                 return -1;
             }
         }
@@ -169,7 +134,7 @@ extern "sysv64" fn syscall_handler(
             let fd = arg1 as i32;
             let buf = arg2 as *mut Stat;
             if let Err(err) = sys_stat(fd, buf) {
-                error!("syscall: stat: {:?}", err);
+                m_error!("syscall: stat: {:?}", err);
                 return -1;
             }
         }
@@ -182,7 +147,7 @@ extern "sysv64" fn syscall_handler(
             let args = arg1 as *const u8;
             let flags = arg2 as u32;
             if let Err(err) = sys_exec(args, flags) {
-                error!("syscall: exec: {:?}", err);
+                m_error!("syscall: exec: {:?}", err);
                 return -1;
             }
         }
@@ -191,7 +156,7 @@ extern "sysv64" fn syscall_handler(
             let buf = arg1 as *mut u8;
             let buf_len = arg2 as usize;
             if let Err(err) = sys_getcwd(buf, buf_len) {
-                error!("syscall: getcwd: {:?}", err);
+                m_error!("syscall: getcwd: {:?}", err);
                 return -1;
             }
         }
@@ -199,7 +164,7 @@ extern "sysv64" fn syscall_handler(
         12 => {
             let path = arg1 as *const u8;
             if let Err(err) = sys_chdir(path) {
-                error!("syscall: chdir: {:?}", err);
+                m_error!("syscall: chdir: {:?}", err);
                 return -1;
             }
         }
@@ -209,7 +174,7 @@ extern "sysv64" fn syscall_handler(
             match sys_sbrksz(target) {
                 Ok(size) => return size as i64,
                 Err(err) => {
-                    error!("syscall: sbrksz: {:?}, target addr: 0x{:x}", err, arg1);
+                    m_error!("syscall: sbrksz: {:?}, target addr: 0x{:x}", err, arg1);
                     return 0;
                 }
             };
@@ -221,7 +186,7 @@ extern "sysv64" fn syscall_handler(
             let buf_len = arg3 as usize;
 
             if let Err(err) = sys_getenames(path, buf, buf_len) {
-                error!("syscall: getenames: {:?}", err);
+                m_error!("syscall: getenames: {:?}", err);
                 return -1;
             }
         }
@@ -231,12 +196,12 @@ extern "sysv64" fn syscall_handler(
             let replymsgbuf = arg2 as *mut u8;
             let replymsgbuf_len = arg3 as usize;
             if let Err(err) = sys_iomsg(msgbuf, replymsgbuf, replymsgbuf_len) {
-                error!("syscall: iomsg: {:?}", err);
+                m_error!("syscall: iomsg: {:?}", err);
                 return -1;
             }
         }
         num => {
-            error!("syscall: Syscall number 0x{:x} is not defined", num);
+            m_error!("syscall: Syscall number 0x{:x} is not defined", num);
             return -1;
         }
     }
@@ -404,7 +369,7 @@ fn sys_stat(fd: i32, buf: *mut Stat) -> Result<()> {
 }
 
 fn sys_uptime() -> i64 {
-    device::local_apic_timer::global_uptime().as_millis() as i64
+    util::time::global_uptime().as_millis() as i64
 }
 
 fn sys_exec(args: *const u8, flags: u32) -> Result<()> {

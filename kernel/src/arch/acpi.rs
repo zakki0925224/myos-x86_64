@@ -1,8 +1,10 @@
 use super::addr::{IoPortAddress, VirtualAddress};
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    info,
+};
 use alloc::vec::Vec;
 use core::{mem::size_of, ptr::read_unaligned, slice};
-use log::info;
 
 static mut ACPI: Acpi = Acpi::new();
 

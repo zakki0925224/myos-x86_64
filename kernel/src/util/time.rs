@@ -4,20 +4,22 @@ use crate::{
 };
 use core::time::Duration;
 
-pub fn sleep(duration: Duration) {
-    let global_uptime = device::local_apic_timer::global_uptime();
-    let target_time = global_uptime + duration;
+pub fn global_uptime() -> Duration {
+    device::local_apic_timer::global_uptime()
+}
 
-    while device::local_apic_timer::global_uptime() < target_time {
+pub fn sleep(duration: Duration) {
+    let target_time = global_uptime() + duration;
+
+    while global_uptime() < target_time {
         arch::hlt();
     }
 }
 
 pub async fn sleep_async(duration: Duration) {
-    let global_uptime = device::local_apic_timer::global_uptime();
-    let target_time = global_uptime + duration;
+    let target_time = global_uptime() + duration;
 
-    while device::local_apic_timer::global_uptime() < target_time {
+    while global_uptime() < target_time {
         arch::hlt();
         async_task::exec_yield().await;
     }

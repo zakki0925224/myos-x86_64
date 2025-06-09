@@ -1,7 +1,6 @@
 use self::color::ColorCode;
-use crate::error::Result;
+use crate::{error::Result, info};
 use common::graphic_info::GraphicInfo;
-use log::info;
 
 pub mod color;
 pub mod draw;

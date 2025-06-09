@@ -1,5 +1,9 @@
 use super::task::TaskId;
-use crate::{device, error::Result, util::mutex::Mutex};
+use crate::{
+    error::Result,
+    trace,
+    util::{self, mutex::Mutex},
+};
 use alloc::{boxed::Box, collections::VecDeque};
 use core::{
     future::Future,
@@ -9,7 +13,6 @@ use core::{
     task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
     time::Duration,
 };
-use log::trace;
 
 static mut ASYNC_TASK_EXECUTOR: Mutex<Executor> = Mutex::new(Executor::new());
 
@@ -36,7 +39,7 @@ pub struct TimeoutFuture {
 
 impl TimeoutFuture {
     pub fn new(durtion: Duration) -> Self {
-        let global_uptime = device::local_apic_timer::global_uptime();
+        let global_uptime = util::time::global_uptime();
         Self {
             timeout: global_uptime + durtion,
         }
@@ -47,7 +50,7 @@ impl Future for TimeoutFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, _: &mut Context) -> Poll<()> {
-        let global_uptime = device::local_apic_timer::global_uptime();
+        let global_uptime = util::time::global_uptime();
 
         if self.timeout <= global_uptime {
             Poll::Ready(())
@@ -76,7 +79,7 @@ impl AsyncTask {
 
     fn poll(&mut self, context: &mut Context) -> Poll<()> {
         if let Some(interval) = self.poll_interval {
-            let global_uptime = device::local_apic_timer::global_uptime();
+            let global_uptime = util::time::global_uptime();
             if let Some(last_polled) = self.last_polled_at {
                 if global_uptime < last_polled + interval {
                     return Poll::Pending;

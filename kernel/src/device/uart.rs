@@ -2,10 +2,10 @@ use super::{tty, DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     arch::{self, addr::IoPortAddress},
     error::{Error, Result},
+    info,
     util::mutex::Mutex,
 };
 use alloc::vec::Vec;
-use log::info;
 
 static mut UART_DRIVER: Mutex<UartDriver> = Mutex::new(UartDriver::new());
 

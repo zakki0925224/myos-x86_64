@@ -8,10 +8,10 @@ use crate::{
         tss,
     },
     error::Result,
+    info,
     util::mutex::Mutex,
 };
 use core::mem::size_of;
-use log::info;
 
 pub const KERNEL_MODE_SS_VALUE: u16 = 2 << 3;
 pub const KERNEL_MODE_CS_VALUE: u16 = 1 << 3;

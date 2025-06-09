@@ -9,11 +9,10 @@ use crate::{
     },
     error::{Error, Result},
     fs::vfs,
-    idt,
+    idt, info,
     util::{fifo::Fifo, mutex::Mutex},
 };
 use alloc::vec::Vec;
-use log::info;
 
 pub mod key_event;
 mod key_map;

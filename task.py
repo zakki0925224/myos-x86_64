@@ -332,6 +332,10 @@ def clean():
     _run_cmd(f"rm -f ./{THIRD_PARTY_DIR}/{COZETTE_BDF}")
     _run_cmd(f"rm -rf ./{THIRD_PARTY_DIR}/{DOOM_DIR}/build")
     _run_cmd(f"rm -rf ./{THIRD_PARTY_DIR}/{QEMU_DIR}/build")
+    _run_cmd(f"make -C ./{THIRD_PARTY_DIR}/{DOOM_DIR} clean")
+    _run_cmd(
+        f"make -C ./{THIRD_PARTY_DIR}/{DOOM_DIR}/berkley-softfloat-3/build/Linux-x86_64-GCC clean"
+    )
     _run_cmd("cargo clean")
 
     # clean apps

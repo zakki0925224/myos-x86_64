@@ -8,6 +8,7 @@ pub mod context;
 pub mod cpu;
 pub mod gdt;
 pub mod idt;
+pub mod iomsg;
 pub mod mmio;
 pub mod qemu;
 pub mod register;

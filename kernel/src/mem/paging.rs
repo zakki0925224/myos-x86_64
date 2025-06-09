@@ -5,10 +5,10 @@ use crate::{
         register::{control::*, Register},
     },
     error::Result,
+    info,
     mem::bitmap,
 };
 use alloc::string::String;
-use log::info;
 
 const PAGE_TABLE_ENTRY_LEN: usize = 512;
 pub const PAGE_SIZE: usize = 4096;

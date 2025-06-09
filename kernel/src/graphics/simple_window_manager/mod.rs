@@ -6,9 +6,13 @@ use crate::{
     device::ps2_mouse::MouseEvent,
     error::{Error, Result},
     fs::file::bitmap::BitmapImage,
-    util::mutex::Mutex,
+    util::{self, mutex::Mutex},
 };
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 use components::*;
 
 pub mod components;
@@ -30,6 +34,8 @@ struct SimpleWindowManager {
 }
 
 impl SimpleWindowManager {
+    const MAX_REL_MOVEMENT: isize = 100;
+
     const fn new() -> Self {
         Self {
             windows: Vec::new(),
@@ -72,8 +78,10 @@ impl SimpleWindowManager {
             wh: (m_w, m_h),
         } = mouse_pointer.get_layer_pos_info()?;
 
-        let rel_x = mouse_event.rel_x as isize;
-        let rel_y = mouse_event.rel_y as isize;
+        let rel_x =
+            (mouse_event.rel_x as isize).clamp(-Self::MAX_REL_MOVEMENT, Self::MAX_REL_MOVEMENT);
+        let rel_y =
+            (mouse_event.rel_y as isize).clamp(-Self::MAX_REL_MOVEMENT, Self::MAX_REL_MOVEMENT);
 
         let m_x_after =
             (m_x_before as isize + rel_x).clamp(0, res_x as isize - m_w as isize) as usize;
@@ -90,13 +98,21 @@ impl SimpleWindowManager {
                     wh: (w_w, w_h),
                 } = w.get_layer_pos_info()?;
 
+                // click close button event
+                if w.is_close_button_clickable(m_x_before, m_y_before)? {
+                    w.is_closed = true;
+                    self.windows.retain(|w| !w.is_closed);
+                    break;
+                }
+
                 // drag window event
                 if m_x_before >= w_x
                     && m_x_before < w_x + w_w
                     && m_y_before >= w_y
                     && m_y_before < w_y + w_h
                 // pointer is in window
-                && m_x_before != m_x_after && m_y_before != m_y_after
+                && m_x_before != m_x_after
+                    || m_y_before != m_y_after
                 // pointer moved
                 {
                     let new_w_x =
@@ -105,13 +121,6 @@ impl SimpleWindowManager {
                         (w_y as isize + m_y_after as isize - m_y_before as isize).max(0) as usize;
 
                     w.move_by_root(new_w_x, new_w_y)?;
-                    break;
-                }
-
-                // click close button event
-                if w.is_close_button_clickable(m_x_before, m_y_before)? {
-                    w.is_closed = true;
-                    self.windows.retain(|w| !w.is_closed);
                     break;
                 }
             }
@@ -218,19 +227,24 @@ impl SimpleWindowManager {
             .taskbar
             .as_mut()
             .ok_or(SimpleWindowManagerError::TaskbarLayerWasNotFound)?;
-        // let (w, h) = taskbar.get_layer_pos_info()?.wh;
+        let (w, h) = taskbar.get_layer_pos_info()?.wh;
         taskbar.draw_flush()?;
 
-        // let window_titles: Vec<&str> = self.windows.iter().map(|w| w.title()).collect();
-        // let s = format!("{:?}", window_titles);
-        // taskbar.draw_string((7, h / 2 - 8), &s)?;
+        let window_titles: Vec<&str> = self.windows.iter().map(|w| w.title()).collect();
+        let s = format!("{:?}", window_titles);
+        taskbar.draw_string((7, h / 2 - 8), &s)?;
 
-        // let s = if let Ok(ms) = device::local_apic_timer::get_current_ms() {
-        //     format!("{:06}.{:03}", ms / 1000, ms % 1000)
-        // } else {
-        //     "??????.???".to_string()
-        // };
-        // taskbar.draw_string((w - s.len() * 8, h / 2 - 8), &s)?;
+        let uptime = util::time::global_uptime();
+        let s = if uptime.is_zero() {
+            "??????.???".to_string()
+        } else {
+            format!(
+                "{:06}.{:03}",
+                uptime.as_millis() / 1000,
+                uptime.as_millis() % 1000
+            )
+        };
+        taskbar.draw_string((w - s.len() * 8, h / 2 - 8), &s)?;
 
         Ok(())
     }

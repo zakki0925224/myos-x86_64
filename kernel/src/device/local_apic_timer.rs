@@ -3,14 +3,14 @@ use crate::{
     acpi,
     addr::VirtualAddress,
     arch::{self, mmio::Mmio, volatile::Volatile},
-    async_task,
+    async_task, debug,
     error::Result,
     idt::{self, GateType, InterruptHandler},
+    info,
     util::mutex::Mutex,
 };
 use alloc::vec::Vec;
 use core::time::Duration;
-use log::{debug, info};
 
 const DIV_VALUE: DivideValue = DivideValue::By1;
 const INT_INTERVAL_MS: usize = 10; // must be >= 10ms

@@ -1,9 +1,10 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     addr::IoPortAddress,
-    device,
+    debug, device,
     error::{Error, Result},
     fs::vfs,
+    info,
     net::{
         self,
         eth::{EtherType, EthernetAddress, EthernetFrame, EthernetPayload},
@@ -11,7 +12,6 @@ use crate::{
     util::mutex::Mutex,
 };
 use alloc::{boxed::Box, vec::Vec};
-use log::{debug, info};
 
 const RX_BUF_SIZE: usize = 8192;
 

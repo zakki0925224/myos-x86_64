@@ -4,12 +4,13 @@ use crate::{
     device::{DeviceDriverFunction, DeviceDriverInfo},
     error::{Error, Result},
     fs::vfs,
+    info,
     util::mutex::Mutex,
+    warn,
 };
 use alloc::{boxed::Box, vec::Vec};
 use descriptor::*;
 use device::UsbDevice;
-use log::{info, warn};
 
 mod descriptor;
 pub mod device;

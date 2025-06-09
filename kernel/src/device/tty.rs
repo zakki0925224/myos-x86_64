@@ -3,11 +3,11 @@ use crate::{
     error::{Error, Result},
     fs::vfs,
     graphics::frame_buf_console,
+    info,
     util::{lifo::Lifo, mutex::Mutex},
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::fmt::{self, Write};
-use log::info;
 
 const IO_BUF_LEN: usize = 512;
 

@@ -3,11 +3,10 @@ use crate::{
     arch::{self, addr::IoPortAddress},
     error::{Error, Result},
     fs::vfs,
-    idt,
+    idt, info,
     util::{fifo::Fifo, mutex::Mutex},
 };
 use alloc::vec::Vec;
-use log::info;
 
 const PS2_DATA_REG_ADDR: IoPortAddress = IoPortAddress::new(0x60);
 const PS2_CMD_AND_STATE_REG_ADDR: IoPortAddress = IoPortAddress::new(0x64);
@@ -63,7 +62,12 @@ impl Ps2MouseDriver {
     }
 
     fn receive(&mut self, data: u8) -> Result<()> {
-        self.data_buf.enqueue(data)
+        if self.data_buf.enqueue(data).is_err() {
+            self.data_buf.reset_ptr();
+            self.data_buf.enqueue(data)?;
+        }
+
+        Ok(())
     }
 
     fn get_event(&mut self) -> Result<Option<MouseEvent>> {

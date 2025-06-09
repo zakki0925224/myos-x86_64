@@ -1,7 +1,6 @@
 use super::{path::Path, vfs};
-use crate::{arch::task, debug::dwarf, error::Result};
+use crate::{arch::task, debug::dwarf, error as m_error, error::Result, info};
 use common::elf::Elf64;
-use log::{error, info};
 
 pub fn exec_elf(elf_path: &Path, args: &[&str], enable_debug: bool) -> Result<()> {
     let fd_num = vfs::open_file(elf_path, false)?;
@@ -17,7 +16,7 @@ pub fn exec_elf(elf_path: &Path, args: &[&str], enable_debug: bool) -> Result<()
         match dwarf::parse(&elf64) {
             Ok(d) => Some(d),
             Err(err) => {
-                error!("exec: Failed to parse DWARF: {:?}", err);
+                m_error!("exec: Failed to parse DWARF: {:?}", err);
                 None
             }
         }

@@ -1,5 +1,6 @@
 use crate::{
     arch::{addr::VirtualAddress, context::*},
+    debug,
     debug::dwarf::Dwarf,
     error::*,
     fs::{self, path::Path, vfs::FileDescriptorNumber},
@@ -8,12 +9,12 @@ use crate::{
         bitmap::{self, MemoryFrameInfo},
         paging::{self, *},
     },
+    trace,
     util::mutex::Mutex,
 };
 use alloc::{ffi::CString, string::ToString, vec::Vec};
 use common::elf::{self, Elf64};
 use core::sync::atomic::{AtomicUsize, Ordering};
-use log::{debug, trace};
 
 const USER_TASK_STACK_SIZE: usize = 1024 * 1024; // 1MiB
 
