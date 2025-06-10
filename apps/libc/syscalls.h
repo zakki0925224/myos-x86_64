@@ -1,12 +1,12 @@
+#ifndef _SYSCALLS_H
+#define _SYSCALLS_H
+
 #include <stddef.h>
 #include <stdint.h>
 
 #include "iomsg.h"
 #include "stat.h"
 #include "utsname.h"
-
-#ifndef _SYSCALLS_H
-#define _SYSCALLS_H
 
 // syscall numbers
 #define SN_READ 0
