@@ -18,13 +18,20 @@ int fprintf(FILE *stream, const char *fmt, ...) {
 
 FILE *fopen(const char *filename, const char *mode) {
     // printf("[DEBUG]fopen called\n");
-    int64_t fd = sys_open(filename, OPEN_FLAG_NONE);
+    uint32_t flags = OPEN_FLAG_NONE;
+
+    if (strcmp(mode, "w") == 0) {
+        flags |= OPEN_FLAG_CREATE;
+    }
+
+    int fd = sys_open(filename, flags);
     if (fd == -1)
         return NULL;
 
     f_stat *stat = (f_stat *)malloc(sizeof(f_stat));
     if (sys_stat(fd, stat) == -1) {
         free(stat);
+        sys_close(fd);
         return NULL;
     }
 
@@ -63,14 +70,29 @@ long int ftell(FILE *stream) {
     return stream->pos;
 }
 
-int fflush(FILE *__stream) {
-    printf("[DEBUG]fflush called\n");
-    return -1;
+int fflush(FILE *stream) {
+    if (stream == NULL)
+        return -1;
+
+    if (stream->buf == NULL || stream->pos == 0)
+        return 0;
+
+    int ret = sys_write(stream->fd, stream->buf, stream->pos);
+    if (ret == -1)
+        return -1;
+    free(stream->buf);
+    stream->buf = NULL;
+    stream->pos = 0;
+    return 0;
 }
 
 int puts(const char *c) {
-    int64_t ret = sys_write(FDN_STDOUT, c, strlen(c));
+    int ret = sys_write(FDN_STDOUT, c, strlen(c));
 
+    if (ret == -1)
+        return -1;
+
+    ret = sys_write(FDN_STDOUT, "\n", 1);
     if (ret == -1)
         return -1;
 
@@ -99,7 +121,7 @@ size_t fread(void *buf, size_t size, size_t count, FILE *stream) {
     if (stream == NULL)
         return 0;
 
-    uint64_t f_size = stream->stat->size;
+    size_t f_size = stream->stat->size;
 
     if (stream->buf == NULL) {
         stream->buf = (char *)malloc(f_size);
@@ -126,7 +148,7 @@ int fseek(FILE *stream, long int offset, int whence) {
     if (stream == NULL)
         return -1;
 
-    uint64_t f_size = stream->stat->size;
+    size_t f_size = stream->stat->size;
     switch (whence) {
         case SEEK_SET:
             if (offset < 0 || offset > f_size)
@@ -146,9 +168,31 @@ int fseek(FILE *stream, long int offset, int whence) {
         default:
             return -1;
     }
+
+    return 0;
 }
 
 size_t fwrite(const void *buf, size_t size, size_t count, FILE *stream) {
-    printf("[DEBUG]fwrite called\n");
-    return -1;
+    // printf("[DEBUG]fwrite called\n");
+    if (size == 0 || count == 0)
+        return 0;
+
+    if (stream == NULL)
+        return 0;
+
+    size_t bytes_to_write = size * count;
+    if (stream->buf == NULL) {
+        stream->buf = (char *)malloc(bytes_to_write);
+        if (stream->buf == NULL)
+            return 0;
+    } else {
+        stream->buf = (char *)realloc(stream->buf, stream->pos + bytes_to_write);
+        if (stream->buf == NULL)
+            return 0;
+    }
+
+    memcpy(stream->buf + stream->pos, buf, bytes_to_write);
+    stream->pos += bytes_to_write;
+
+    return count;
 }

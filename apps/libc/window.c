@@ -17,7 +17,7 @@ int remove_component(ComponentDescriptor *cdesc) {
 
     iomsg_remove_component *msg = (iomsg_remove_component *)msgbuf;
     msg->header.cmd_id = IOMSG_CMD_REMOVE_COMPONENT;
-    msg->header.payload_size = sizeof(iomsg_remove_component) - sizeof(iomsg_header);
+    msg->header.payload_size = sizeof(int);
     msg->layer_id = cdesc->layer_id;
 
     void *replymsgbuf = malloc(sizeof(iomsg_reply_remove_component));

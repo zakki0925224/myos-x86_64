@@ -9,7 +9,6 @@ $(OUT_FILE):
 	cp target/$(TARGET)/release/$(FILE_NAME) $(OUT_FILE)
 
 clean:
-	cargo clean
 	rm -f $(OUT_FILE)
 
 all: $(OUT_FILE)

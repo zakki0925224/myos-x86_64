@@ -1,26 +1,31 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <syscalls.h>
 
 int main(int argc, char *argv[]) {
     if (argc < 3) {
         return 0;
     }
 
-    int64_t fd = sys_open(argv[1], OPEN_FLAG_CREATE);
-
-    if (fd == -1) {
+    FILE *file = fopen(argv[1], "w");
+    if (file == NULL) {
         printf("write: failed to open the file\n");
         return -1;
     }
 
-    if (sys_write(fd, argv[2], strlen(argv[2])) == -1) {
+    if (fwrite(argv[2], 1, strlen(argv[2]), file) != strlen(argv[2])) {
         printf("write: failed to write to the file\n");
+        fclose(file);
         return -1;
     }
 
-    if (sys_close(fd) == -1) {
+    if (fflush(file) == -1) {
+        printf("write: failed to flush the file\n");
+        fclose(file);
+        return -1;
+    }
+
+    if (fclose(file) == -1) {
         printf("write: failed to close the file\n");
         return -1;
     }

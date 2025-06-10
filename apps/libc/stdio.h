@@ -13,7 +13,7 @@
 
 typedef struct
 {
-    int64_t fd;
+    int fd;
     f_stat *stat;
     char *buf;
     long int pos;
