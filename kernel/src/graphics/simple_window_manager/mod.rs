@@ -169,17 +169,6 @@ impl SimpleWindowManager {
         Ok(layer_id)
     }
 
-    fn destroy_window(&mut self, layer_id: &LayerId) -> Result<()> {
-        if self.res_xy.is_none() {
-            return Err(Error::NotInitialized);
-        }
-
-        self.windows
-            .retain(|w| w.layer_id().get() != layer_id.get());
-
-        Ok(())
-    }
-
     fn add_component_to_window(
         &mut self,
         layer_id: &LayerId,
@@ -199,23 +188,32 @@ impl SimpleWindowManager {
         window.push_child(component)
     }
 
-    fn remove_component_from_window(
-        &mut self,
-        window_layer_id: &LayerId,
-        component_layer_id: &LayerId,
-    ) -> Result<()> {
+    fn remove_component(&mut self, layer_id: &LayerId) -> Result<()> {
         if self.res_xy.is_none() {
             return Err(Error::NotInitialized);
         }
 
-        let window = self
+        // try remove window
+        if let Some(index) = self
             .windows
-            .iter_mut()
-            .find(|w| w.layer_id().get() == window_layer_id.get())
-            .ok_or(SimpleWindowManagerError::WindowWasNotFound {
-                layer_id: window_layer_id.get(),
-            })?;
-        window.remove_child(component_layer_id)
+            .iter()
+            .position(|w| w.layer_id().get() == layer_id.get())
+        {
+            self.windows.remove(index);
+            return Ok(());
+        }
+
+        // try remove component from window
+        for window in self.windows.iter_mut() {
+            if window.remove_child(layer_id).is_ok() {
+                return Ok(());
+            }
+        }
+
+        Err(SimpleWindowManagerError::WindowWasNotFound {
+            layer_id: layer_id.get(),
+        }
+        .into())
     }
 
     fn flush_taskbar(&mut self) -> Result<()> {
@@ -281,10 +279,6 @@ pub fn create_taskbar() -> Result<()> {
     unsafe { SIMPLE_WM.try_lock() }?.create_taskbar()
 }
 
-pub fn destroy_window(layer_id: &LayerId) -> Result<()> {
-    unsafe { SIMPLE_WM.try_lock() }?.destroy_window(layer_id)
-}
-
 pub fn mouse_pointer_event(mouse_event: MouseEvent) -> Result<()> {
     unsafe { SIMPLE_WM.try_lock() }?.mouse_pointer_event(mouse_event)
 }
@@ -300,12 +294,8 @@ pub fn add_component_to_window(
     unsafe { SIMPLE_WM.try_lock() }?.add_component_to_window(layer_id, component)
 }
 
-pub fn remove_component_from_window(
-    window_layer_id: &LayerId,
-    component_layer_id: &LayerId,
-) -> Result<()> {
-    unsafe { SIMPLE_WM.try_lock() }?
-        .remove_component_from_window(window_layer_id, component_layer_id)
+pub fn remove_component(layer_id: &LayerId) -> Result<()> {
+    unsafe { SIMPLE_WM.try_lock() }?.remove_component(layer_id)
 }
 
 pub fn flush_components() -> Result<()> {

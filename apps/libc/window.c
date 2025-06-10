@@ -5,15 +5,55 @@
 #include "string.h"
 #include "syscalls.h"
 
-WindowDescriptor *create_window(const char *title, size_t x_pos, size_t y_pos, size_t width, size_t height) {
+int remove_component(ComponentDescriptor *cdesc) {
+    if (cdesc == NULL) {
+        return -1;
+    }
+
+    void *msgbuf = malloc(sizeof(iomsg_remove_component));
+    if (msgbuf == NULL) {
+        return -1;
+    }
+
+    iomsg_remove_component *msg = (iomsg_remove_component *)msgbuf;
+    msg->header.cmd_id = IOMSG_CMD_REMOVE_COMPONENT;
+    msg->header.payload_size = sizeof(iomsg_remove_component) - sizeof(iomsg_header);
+    msg->layer_id = cdesc->layer_id;
+
+    void *replymsgbuf = malloc(sizeof(iomsg_reply_remove_component));
+    if (replymsgbuf == NULL) {
+        free(msgbuf);
+        return -1;
+    }
+
+    iomsg_reply_remove_component *replymsg = (iomsg_reply_remove_component *)replymsgbuf;
+    if (sys_iomsg(msgbuf, replymsgbuf, sizeof(iomsg_reply_remove_component)) == -1) {
+        free(msgbuf);
+        free(replymsgbuf);
+        return -1;
+    }
+
+    if (replymsg->header.cmd_id != IOMSG_CMD_REMOVE_COMPONENT) {
+        free(msgbuf);
+        free(replymsgbuf);
+        return -1;
+    }
+
+    free(msgbuf);
+    free(replymsgbuf);
+    free(cdesc);
+    return 0;
+}
+
+ComponentDescriptor *create_component_window(const char *title, size_t x_pos, size_t y_pos, size_t width, size_t height) {
     size_t title_len = strlen(title) + 1;
-    void *msgbuf = malloc(sizeof(iomsg_create_window) + title_len);
+    void *msgbuf = malloc(sizeof(iomsg_create_component_window) + title_len);
     if (msgbuf == NULL) {
         return NULL;
     }
 
-    iomsg_create_window *msg = (iomsg_create_window *)msgbuf;
-    msg->header.cmd_id = IOMSG_CMD_CREATE_WINDOW;
+    iomsg_create_component_window *msg = (iomsg_create_component_window *)msgbuf;
+    msg->header.cmd_id = IOMSG_CMD_CREATE_COMPONENT_WINDOW;
     msg->header.payload_size = 8 * 4 + title_len;
     msg->x_pos = x_pos;
     msg->y_pos = y_pos;
@@ -21,120 +61,88 @@ WindowDescriptor *create_window(const char *title, size_t x_pos, size_t y_pos, s
     msg->height = height;
     memcpy(msg->title, title, title_len);
 
-    void *replymsgbuf = malloc(sizeof(iomsg_reply_create_window));
+    void *replymsgbuf = malloc(sizeof(iomsg_reply_create_component));
     if (replymsgbuf == NULL) {
         free(msgbuf);
         return NULL;
     }
 
-    iomsg_reply_create_window *replymsg = (iomsg_reply_create_window *)replymsgbuf;
+    iomsg_reply_create_component *replymsg = (iomsg_reply_create_component *)replymsgbuf;
 
-    if (sys_iomsg(msgbuf, replymsgbuf, sizeof(iomsg_reply_create_window)) == -1) {
+    if (sys_iomsg(msgbuf, replymsgbuf, sizeof(iomsg_reply_create_component)) == -1) {
         free(msgbuf);
         free(replymsgbuf);
         return NULL;
     }
 
-    if (replymsg->header.cmd_id != IOMSG_CMD_CREATE_WINDOW) {
+    if (replymsg->header.cmd_id != IOMSG_CMD_CREATE_COMPONENT_WINDOW) {
         free(msgbuf);
         free(replymsgbuf);
         return NULL;
     }
 
-    WindowDescriptor *wdesc = (WindowDescriptor *)malloc(sizeof(WindowDescriptor));
-    if (wdesc == NULL) {
+    ComponentDescriptor *cdesc = (ComponentDescriptor *)malloc(sizeof(ComponentDescriptor));
+    if (cdesc == NULL) {
         free(msgbuf);
         free(replymsgbuf);
         return NULL;
     }
 
-    wdesc->layer_id = replymsg->layer_id;
+    cdesc->layer_id = replymsg->layer_id;
 
     free(msgbuf);
     free(replymsgbuf);
-    return wdesc;
+    return cdesc;
 }
 
-int destroy_window(WindowDescriptor *wdesc) {
-    if (wdesc == NULL) {
-        return -1;
+ComponentDescriptor *create_component_image(ComponentDescriptor *cdesc, size_t image_width, size_t image_height, uint8_t pixel_format, const void *framebuf) {
+    if (cdesc == NULL || framebuf == NULL) {
+        return NULL;
     }
 
-    void *msgbuf = malloc(sizeof(iomsg_destroy_window));
+    void *msgbuf = malloc(sizeof(iomsg_create_component_image));
     if (msgbuf == NULL) {
-        return -1;
+        return NULL;
     }
 
-    iomsg_destroy_window *msg = (iomsg_destroy_window *)msgbuf;
-    msg->header.cmd_id = IOMSG_CMD_DESTROY_WINDOW;
-    msg->header.payload_size = sizeof(iomsg_destroy_window) - sizeof(iomsg_header);
-    msg->layer_id = wdesc->layer_id;
-
-    void *replymsgbuf = malloc(sizeof(iomsg_reply_destroy_window));
-    if (replymsgbuf == NULL) {
-        free(msgbuf);
-        return -1;
-    }
-
-    iomsg_reply_destroy_window *replymsg = (iomsg_reply_destroy_window *)replymsgbuf;
-    if (sys_iomsg(msgbuf, replymsgbuf, sizeof(iomsg_reply_destroy_window)) == -1) {
-        free(msgbuf);
-        free(replymsgbuf);
-        return -1;
-    }
-
-    if (replymsg->header.cmd_id != IOMSG_CMD_DESTROY_WINDOW) {
-        free(msgbuf);
-        free(replymsgbuf);
-        return -1;
-    }
-
-    free(msgbuf);
-    free(replymsgbuf);
-    free(wdesc);
-    return 0;
-}
-
-int add_image_to_window(WindowDescriptor *wdesc, size_t image_width, size_t image_height, uint8_t pixel_format, const void *framebuf) {
-    if (wdesc == NULL || framebuf == NULL) {
-        return -1;
-    }
-
-    void *msgbuf = malloc(sizeof(iomsg_add_image_to_window));
-    if (msgbuf == NULL) {
-        return -1;
-    }
-
-    iomsg_add_image_to_window *msg = (iomsg_add_image_to_window *)msgbuf;
-    msg->header.cmd_id = IOMSG_CMD_ADD_IMAGE_TO_WINDOW;
+    iomsg_create_component_image *msg = (iomsg_create_component_image *)msgbuf;
+    msg->header.cmd_id = IOMSG_CMD_CREATE_COMPONENT_IMAGE;
     msg->header.payload_size = 40;  // FIXME
-    msg->layer_id = wdesc->layer_id;
+    msg->layer_id = cdesc->layer_id;
     msg->image_width = image_width;
     msg->image_height = image_height;
     msg->pixel_format = pixel_format;
     msg->framebuf = framebuf;
 
-    void *replymsgbuf = malloc(sizeof(iomsg_reply_add_image_to_window));
+    void *replymsgbuf = malloc(sizeof(iomsg_reply_create_component));
     if (replymsgbuf == NULL) {
         free(msgbuf);
-        return -1;
+        return NULL;
     }
 
-    iomsg_reply_add_image_to_window *replymsg = (iomsg_reply_add_image_to_window *)replymsgbuf;
+    iomsg_reply_create_component *replymsg = (iomsg_reply_create_component *)replymsgbuf;
 
-    if (sys_iomsg(msgbuf, replymsgbuf, sizeof(iomsg_reply_add_image_to_window)) == -1) {
+    if (sys_iomsg(msgbuf, replymsgbuf, sizeof(iomsg_reply_create_component)) == -1) {
         free(msgbuf);
         free(replymsgbuf);
-        return -1;
+        return NULL;
     }
 
-    if (replymsg->header.cmd_id != IOMSG_CMD_ADD_IMAGE_TO_WINDOW) {
+    if (replymsg->header.cmd_id != IOMSG_CMD_CREATE_COMPONENT_IMAGE) {
         free(msgbuf);
         free(replymsgbuf);
-        return -1;
+        return NULL;
     }
+
+    ComponentDescriptor *new_cdesc = (ComponentDescriptor *)malloc(sizeof(ComponentDescriptor));
+    if (new_cdesc == NULL) {
+        free(msgbuf);
+        free(replymsgbuf);
+        return NULL;
+    }
+    new_cdesc->layer_id = replymsg->layer_id;
 
     free(msgbuf);
     free(replymsgbuf);
-    return 0;
+    return new_cdesc;
 }

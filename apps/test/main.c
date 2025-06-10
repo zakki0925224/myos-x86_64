@@ -9,8 +9,8 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    iomsg_create_window *msg = (iomsg_create_window *)msgbuf;
-    msg->header.cmd_id = IOMSG_CMD_CREATE_WINDOW;
+    iomsg_create_component_window *msg = (iomsg_create_component_window *)msgbuf;
+    msg->header.cmd_id = IOMSG_CMD_CREATE_COMPONENT_WINDOW;
     msg->header.payload_size = 8 * 4 + 12;
     msg->x_pos = 200;
     msg->y_pos = 50;
@@ -24,7 +24,7 @@ int main(int argc, char *argv[]) {
         free(msgbuf);
         return -1;
     }
-    iomsg_reply_create_window *replymsg = (iomsg_reply_create_window *)replymsgbuf;
+    iomsg_reply_create_component *replymsg = (iomsg_reply_create_component *)replymsgbuf;
 
     if (sys_iomsg(msgbuf, replymsgbuf, 4096) == -1) {
         printf("sys_iomsg failed\n");

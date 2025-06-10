@@ -187,10 +187,10 @@ def _build_kernel():
 def build():
     global is_kernel_test
 
+    _init()
     if not is_kernel_test:
         _build_apps()
 
-    _init()
     _build_cozette()
     # _build_qemu()
     _build_bootloader()

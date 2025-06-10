@@ -3,9 +3,9 @@ use crate::error::{Error, Result};
 #[derive(Debug, Clone, Copy)]
 #[repr(u32)]
 pub enum IomsgCommand {
-    CreateWindow = 0x80000000,
-    DestroyWindow = 0x80000001,
-    AddImageToWindow = 0x80000002,
+    RemoveComponent = 0x80000000,
+    CreateComponentWindow = 0x80000001,
+    CreateComponentImage = 0x80000002,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -29,9 +29,9 @@ impl IomsgHeader {
 
     pub fn cmd(&self) -> Result<IomsgCommand> {
         match self.cmd_id {
-            0x80000000 => Ok(IomsgCommand::CreateWindow),
-            0x80000001 => Ok(IomsgCommand::DestroyWindow),
-            0x80000002 => Ok(IomsgCommand::AddImageToWindow),
+            0x80000000 => Ok(IomsgCommand::RemoveComponent),
+            0x80000001 => Ok(IomsgCommand::CreateComponentWindow),
+            0x80000002 => Ok(IomsgCommand::CreateComponentImage),
             _ => Err(Error::Failed("Invalid command ID")),
         }
     }

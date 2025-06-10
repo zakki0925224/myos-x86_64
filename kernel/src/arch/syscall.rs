@@ -444,7 +444,30 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
     debug!("{:?}", header);
 
     match header.cmd()? {
-        IomsgCommand::CreateWindow => {
+        IomsgCommand::RemoveComponent => {
+            let layer_id: i32 = unsafe { *(msgbuf.offset(offset as isize) as *const i32) };
+            offset += size_of::<i32>();
+
+            if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
+                return Err(Error::Failed("Invalid payload size for RemoveComponent"));
+            }
+
+            let layer_id = LayerId::new_val(layer_id)?;
+            simple_window_manager::remove_component(&layer_id)?;
+            task::remove_layer_id(&layer_id);
+
+            // reply
+            let reply_header = IomsgHeader::new(IomsgCommand::RemoveComponent, 0);
+            if replymsgbuf_len < size_of::<IomsgHeader>() {
+                return Err(Error::Failed("Reply buffer is too small"));
+            }
+
+            unsafe {
+                let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
+                reply_header_ptr.write(reply_header);
+            }
+        }
+        IomsgCommand::CreateComponentWindow => {
             let x_pos: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
             offset += size_of::<usize>();
             let y_pos: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
@@ -461,15 +484,17 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             offset += title.len() + 1; // null terminator
 
             if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
-                return Err(Error::Failed("Invalid payload size for CreateWindow"));
+                return Err(Error::Failed(
+                    "Invalid payload size for CreateComponentWindow",
+                ));
             }
 
-            let wd = simple_window_manager::create_window(title, xy, wh)?;
-            task::push_wd(wd.clone());
+            let layer_id = simple_window_manager::create_window(title, xy, wh)?;
+            task::push_layer_id(layer_id.clone());
 
             // reply
             let reply_header =
-                IomsgHeader::new(IomsgCommand::CreateWindow, size_of::<u64>() as u32);
+                IomsgHeader::new(IomsgCommand::CreateComponentWindow, size_of::<u64>() as u32);
             if replymsgbuf_len < size_of::<IomsgHeader>() + reply_header.payload_size as usize {
                 return Err(Error::Failed("Reply buffer is too small"));
             }
@@ -477,34 +502,11 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             unsafe {
                 let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
                 reply_header_ptr.write(reply_header);
-                let reply_wd = wd.get() as u64;
+                let reply_wd = layer_id.get() as u64;
                 (replymsgbuf.offset(size_of::<IomsgHeader>() as isize) as *mut u64).write(reply_wd);
             }
         }
-        IomsgCommand::DestroyWindow => {
-            let layer_id: i32 = unsafe { *(msgbuf.offset(offset as isize) as *const i32) };
-            offset += size_of::<i32>();
-
-            if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
-                return Err(Error::Failed("Invalid payload size for DestroyWindow"));
-            }
-
-            let wd = LayerId::new_val(layer_id)?;
-            simple_window_manager::destroy_window(&wd)?;
-            task::remove_wd(&wd);
-
-            // reply
-            let reply_header = IomsgHeader::new(IomsgCommand::DestroyWindow, 0);
-            if replymsgbuf_len < size_of::<IomsgHeader>() {
-                return Err(Error::Failed("Reply buffer is too small"));
-            }
-
-            unsafe {
-                let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
-                reply_header_ptr.write(reply_header);
-            }
-        }
-        IomsgCommand::AddImageToWindow => {
+        IomsgCommand::CreateComponentImage => {
             let layer_id: i32 = unsafe { *(msgbuf.offset(offset as isize) as *const i32) };
             offset += size_of::<i32>();
             offset += 4; // padding
@@ -520,13 +522,14 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             offset += size_of::<usize>();
 
             if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
-                return Err(Error::Failed("Invalid payload size for AddImageToWindow"));
+                return Err(Error::Failed(
+                    "Invalid payload size for CreateComponentImage",
+                ));
             }
 
-            let wd = LayerId::new_val(layer_id)?;
+            let layer_id = LayerId::new_val(layer_id)?;
             let wh = (image_width, image_height);
             let framebuf_virt_addr: VirtualAddress = (framebuf_ptr as u64).into();
-            debug!("framebuf_virt_addr: 0x{:x}", framebuf_virt_addr.get());
 
             let image = simple_window_manager::components::Image::create_and_push_from_framebuf(
                 (0, 0),
@@ -535,11 +538,11 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
                 pixel_format.into(),
             )?;
             let new_layer_id =
-                simple_window_manager::add_component_to_window(&wd, Box::new(image))?;
+                simple_window_manager::add_component_to_window(&layer_id, Box::new(image))?;
 
             // reply
             let reply_header =
-                IomsgHeader::new(IomsgCommand::AddImageToWindow, size_of::<i32>() as u32);
+                IomsgHeader::new(IomsgCommand::CreateComponentImage, size_of::<i32>() as u32);
             if replymsgbuf_len < size_of::<IomsgHeader>() + reply_header.payload_size as usize {
                 return Err(Error::Failed("Reply buffer is too small"));
             }

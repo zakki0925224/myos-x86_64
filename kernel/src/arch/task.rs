@@ -44,7 +44,7 @@ struct Task {
     stack_mem_frame_info: MemoryFrameInfo,
     program_mem_info: Vec<(MemoryFrameInfo, MappingInfo)>,
     allocated_mem_frame_info: Vec<MemoryFrameInfo>,
-    created_wd: Vec<LayerId>,
+    created_layer_ids: Vec<LayerId>,
     opend_fd: Vec<FileDescriptorNumber>,
     dwarf: Option<Dwarf>,
 }
@@ -86,8 +86,8 @@ impl Drop for Task {
         }
 
         // destroy all created windows
-        for wd in self.created_wd.iter() {
-            simple_window_manager::destroy_window(wd).unwrap();
+        for layer_id in self.created_layer_ids.iter() {
+            let _ = simple_window_manager::remove_component(layer_id);
         }
 
         // close all opend files
@@ -228,7 +228,7 @@ impl Task {
             stack_mem_frame_info,
             program_mem_info,
             allocated_mem_frame_info: Vec::new(),
-            created_wd: Vec::new(),
+            created_layer_ids: Vec::new(),
             opend_fd: Vec::new(),
             dwarf,
         })
@@ -367,22 +367,24 @@ pub fn get_memory_frame_size_by_virt_addr(virt_addr: VirtualAddress) -> Result<O
     Ok(None)
 }
 
-pub fn push_wd(wd: LayerId) {
+pub fn push_layer_id(layer_id: LayerId) {
     let user_task = unsafe { USER_TASKS.get_force_mut() }
         .iter_mut()
         .last()
         .unwrap();
 
-    user_task.created_wd.push(wd);
+    user_task.created_layer_ids.push(layer_id);
 }
 
-pub fn remove_wd(wd: &LayerId) {
+pub fn remove_layer_id(layer_id: &LayerId) {
     let user_task = unsafe { USER_TASKS.get_force_mut() }
         .iter_mut()
         .last()
         .unwrap();
 
-    user_task.created_wd.retain(|cwd| cwd.get() != wd.get());
+    user_task
+        .created_layer_ids
+        .retain(|cwd| cwd.get() != layer_id.get());
 }
 
 pub fn push_fd(fd: FileDescriptorNumber) {
