@@ -60,13 +60,18 @@ impl Component for Image {
         };
 
         let (w, h) = self.get_layer_pos_info()?.wh;
+        let bytes = match pixel_format {
+            PixelFormat::Rgb => 3,
+            PixelFormat::Bgr => 3,
+            PixelFormat::Bgra => 4,
+        };
 
         unsafe {
             for y in 0..h {
                 for x in 0..w {
-                    let pixel_data: *const u32 =
-                        framebuf_virt_addr.offset((y * w + x) * 4).as_ptr();
-                    let color = ColorCode::from_pixel_data(*pixel_data, pixel_format);
+                    let pixel_data = framebuf_virt_addr.offset((y * w + x) * bytes).as_ptr();
+                    let slice = core::slice::from_raw_parts(pixel_data, bytes);
+                    let color = ColorCode::from_pixel_data(slice, pixel_format);
                     multi_layer::draw_layer(&self.layer_id, |l| l.draw_pixel((x, y), color))?;
                 }
             }

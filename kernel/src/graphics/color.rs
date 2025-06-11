@@ -83,25 +83,25 @@ impl ColorCode {
         Self { r, g, b, a }
     }
 
-    pub fn from_pixel_data(data: u32, pixel_format: PixelFormat) -> Self {
+    pub fn from_pixel_data(data: &[u8], pixel_format: PixelFormat) -> Self {
         match pixel_format {
             PixelFormat::Bgr => Self {
-                r: (data >> 16) as u8,
-                g: (data >> 8) as u8,
-                b: (data >> 0) as u8,
+                r: data[2],
+                g: data[1],
+                b: data[0],
                 a: 0,
             },
             PixelFormat::Rgb => Self {
-                r: (data >> 0) as u8,
-                g: (data >> 8) as u8,
-                b: (data >> 16) as u8,
+                r: data[0],
+                g: data[1],
+                b: data[2],
                 a: 0,
             },
             PixelFormat::Bgra => Self {
-                r: (data >> 16) as u8,
-                g: (data >> 8) as u8,
-                b: (data >> 0) as u8,
-                a: (data >> 24) as u8,
+                r: data[2],
+                g: data[1],
+                b: data[0],
+                a: data[3],
             },
         }
     }
