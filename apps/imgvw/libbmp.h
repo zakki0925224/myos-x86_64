@@ -11,7 +11,7 @@ typedef struct {
     uint32_t file_size;
     uint32_t _reserved;
     uint32_t data_offset;
-} bmp_header_t;
+} __attribute__((packed)) bmp_header_t;
 
 typedef struct {
     uint32_t header_size;
@@ -25,12 +25,12 @@ typedef struct {
     int32_t y_pixels_per_meter;
     uint32_t colors_used;
     uint32_t important_colors;
-} bmp_info_header_t;
+} __attribute__((packed)) bmp_info_header_t;
 
 typedef struct {
     bmp_header_t header;
     bmp_info_header_t info_header;
-} bmp_file_t;
+} __attribute__((packed)) bmp_file_t;
 
 typedef struct {
     uint8_t *data;

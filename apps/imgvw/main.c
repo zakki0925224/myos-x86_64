@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <syscalls.h>
 #include <window.h>
 
@@ -27,6 +28,37 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
+    int bmp_row_bytes = ((image->width * image->bytes_per_pixel + 3) / 4) * 4;
+    uint8_t *framebuf = malloc(image->width * image->height * image->bytes_per_pixel);
+    if (!framebuf) {
+        printf("Failed to allocate frame buffer\n");
+        bmp_free(image);
+        free(cdesc);
+        return -1;
+    }
+
+    for (size_t y = 0; y < image->height; ++y) {
+        size_t src_y = image->height - 1 - y;
+        memcpy(
+            framebuf + y * image->width * image->bytes_per_pixel,
+            image->data + src_y * bmp_row_bytes,
+            image->width * image->bytes_per_pixel);
+    }
+
+    ComponentDescriptor *img_desc = create_component_image(
+        cdesc,
+        image->width,
+        image->height,
+        PIXEL_FORMAT_BGR,
+        framebuf);
+    if (!img_desc) {
+        printf("Failed to create image component\n");
+        free(framebuf);
+        bmp_free(image);
+        free(cdesc);
+        return -1;
+    }
+
     printf("Enter any key to exit...\n");
     char input_key = '\0';
     for (;;) {
@@ -36,6 +68,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    free(framebuf);
+    bmp_free(image);
     if (remove_component(cdesc) == -1) {
         printf("Failed to remove window\n");
         free(cdesc);
