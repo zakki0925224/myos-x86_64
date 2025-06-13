@@ -1,0 +1,9 @@
+[package]
+name = "graphics-rs"
+version = "0.1.0"
+edition = "2021"
+authors = ["Zakki <zakki0925224@gmail.com>"]
+
+[dependencies]
+embedded-graphics = "0.8.1"
+libc-rs = { path = "../libc-rs" }

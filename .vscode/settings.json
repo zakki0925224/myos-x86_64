@@ -5,6 +5,7 @@
         "./bootloader/Cargo.toml",
         "./common/Cargo.toml",
         "./apps/libc-rs/Cargo.toml",
-        "./apps/hello-rs/Cargo.toml"
+        "./apps/hello-rs/Cargo.toml",
+        "./apps/graphics-rs/Cargo.toml"
     ]
 }
