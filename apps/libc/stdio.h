@@ -25,7 +25,7 @@ extern int printf(const char *fmt, ...);
 extern void exit(int status);
 extern int fprintf(FILE *stream, const char *fmt, ...);
 extern int snprintf(char *buf, size_t size, const char *format, ...);
-extern FILE *fopen(const char *filename, const char *mode);
+extern FILE *fopen(const char *filepath, const char *mode);
 extern int fclose(FILE *stream);
 extern long int ftell(FILE *stream);
 extern int fflush(FILE *__stream);

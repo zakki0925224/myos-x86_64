@@ -19,7 +19,7 @@ int atoi(const char *str) {
     return -1;
 }
 
-double atof(const char *__nptr) {
+double atof(const char *nptr) {
     printf("[DEBUG]atof called\n");
     return -1.0;
 }
@@ -62,12 +62,12 @@ int system(const char *command) {
     return -1;
 }
 
-int remove(const char *__filename) {
+int remove(const char *filepath) {
     printf("[DEBUG]remove called\n");
     return -1;
 }
 
-int rename(const char *__old, const char *__new) {
+int rename(const char *old, const char *_new) {
     printf("[DEBUG]rename called\n");
     return -1;
 }

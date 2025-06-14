@@ -10,7 +10,7 @@ static char buf[BUF_LEN] = {0};
 static char *splitted_buf[BUF_LEN];
 static char cwd_path[BUF_LEN] = {0};
 static char envpath[BUF_LEN] = {0};
-static char filename_buf[BUF_LEN] = {0};
+static char filepath_buf[BUF_LEN] = {0};
 
 void exec_cmd(char *cmd) {
     int cmdargs_len = split(cmd, ' ', splitted_buf, BUF_LEN);
@@ -73,8 +73,8 @@ void exec_cmd(char *cmd) {
     }
     // execute command with envpath
     else if (strlen(envpath) > 0) {
-        snprintf(filename_buf, sizeof(filename_buf), "%s/%s", envpath, splitted_buf[0]);
-        splitted_buf[0] = filename_buf;
+        snprintf(filepath_buf, sizeof(filepath_buf), "%s/%s", envpath, splitted_buf[0]);
+        splitted_buf[0] = filepath_buf;
         char *args = splitted_buf[0];
         if (cmdargs_len > 1) {
             args = concatenate((const char **)splitted_buf, cmdargs_len, " ");

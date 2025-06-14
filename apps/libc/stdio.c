@@ -16,7 +16,7 @@ int fprintf(FILE *stream, const char *fmt, ...) {
     return -1;
 }
 
-FILE *fopen(const char *filename, const char *mode) {
+FILE *fopen(const char *filepath, const char *mode) {
     // printf("[DEBUG]fopen called\n");
     uint32_t flags = OPEN_FLAG_NONE;
 
@@ -24,7 +24,7 @@ FILE *fopen(const char *filename, const char *mode) {
         flags |= OPEN_FLAG_CREATE;
     }
 
-    int fd = sys_open(filename, flags);
+    int fd = sys_open(filepath, flags);
     if (fd == -1)
         return NULL;
 

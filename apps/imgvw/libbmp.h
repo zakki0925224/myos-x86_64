@@ -39,7 +39,7 @@ typedef struct {
     size_t bytes_per_pixel;
 } bmp_image_t;
 
-bmp_image_t *bmp_load(const char *filename);
+bmp_image_t *bmp_load(const char *filepath);
 void bmp_free(bmp_image_t *image);
 
 #endif

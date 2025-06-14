@@ -8,7 +8,7 @@
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        printf("Usage: imgvw <filename>\n");
+        printf("Usage: imgvw <filepath>\n");
         return -1;
     }
 

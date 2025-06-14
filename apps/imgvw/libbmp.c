@@ -3,23 +3,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-bmp_image_t *bmp_load(const char *filename) {
-    FILE *file = fopen(filename, "");
+bmp_image_t *bmp_load(const char *filepath) {
+    FILE *file = fopen(filepath, "");
 
     if (file == NULL) {
-        printf("Failed to open file: %s\n", filename);
+        printf("Failed to open file: %s\n", filepath);
         return NULL;
     }
 
     bmp_file_t bmp_file;
     if (fread(&bmp_file, sizeof(bmp_file), 1, file) == 0) {
-        printf("Failed to read BMP header from file: %s\n", filename);
+        printf("Failed to read BMP header from file: %s\n", filepath);
         fclose(file);
         return NULL;
     }
 
     if (bmp_file.header.magic != MAGIC) {
-        printf("Invalid BMP file: %s\n", filename);
+        printf("Invalid BMP file: %s\n", filepath);
         fclose(file);
         return NULL;
     }
@@ -48,7 +48,7 @@ bmp_image_t *bmp_load(const char *filename) {
     fclose(file);
 
     if (bytes_read != image_size) {
-        printf("Failed to read complete BMP image data from file: %s\n", filename);
+        printf("Failed to read complete BMP image data from file: %s\n", filepath);
         free(image->data);
         free(image);
         return NULL;
