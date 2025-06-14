@@ -12,7 +12,7 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    ComponentDescriptor *cdesc = create_component_window("Imgvw", 50, 50, 500, 300);
+    component_descriptor *cdesc = create_component_window("Imgvw", 50, 50, 500, 300);
     if (cdesc == NULL) {
         printf("Failed to create window\n");
         return -1;
@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
             image->width * image->bytes_per_pixel);
     }
 
-    ComponentDescriptor *img_desc = create_component_image(
+    component_descriptor *img_desc = create_component_image(
         cdesc,
         image->width,
         image->height,

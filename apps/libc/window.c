@@ -5,7 +5,7 @@
 #include "string.h"
 #include "syscalls.h"
 
-int remove_component(ComponentDescriptor *cdesc) {
+int remove_component(component_descriptor *cdesc) {
     if (cdesc == NULL) {
         return -1;
     }
@@ -45,7 +45,7 @@ int remove_component(ComponentDescriptor *cdesc) {
     return 0;
 }
 
-ComponentDescriptor *create_component_window(const char *title, size_t x_pos, size_t y_pos, size_t width, size_t height) {
+component_descriptor *create_component_window(const char *title, size_t x_pos, size_t y_pos, size_t width, size_t height) {
     size_t title_len = strlen(title) + 1;
     void *msgbuf = malloc(sizeof(iomsg_create_component_window) + title_len);
     if (msgbuf == NULL) {
@@ -81,7 +81,7 @@ ComponentDescriptor *create_component_window(const char *title, size_t x_pos, si
         return NULL;
     }
 
-    ComponentDescriptor *cdesc = (ComponentDescriptor *)malloc(sizeof(ComponentDescriptor));
+    component_descriptor *cdesc = (component_descriptor *)malloc(sizeof(component_descriptor));
     if (cdesc == NULL) {
         free(msgbuf);
         free(replymsgbuf);
@@ -95,7 +95,7 @@ ComponentDescriptor *create_component_window(const char *title, size_t x_pos, si
     return cdesc;
 }
 
-ComponentDescriptor *create_component_image(ComponentDescriptor *cdesc, size_t image_width, size_t image_height, uint8_t pixel_format, const void *framebuf) {
+component_descriptor *create_component_image(component_descriptor *cdesc, size_t image_width, size_t image_height, uint8_t pixel_format, const void *framebuf) {
     if (cdesc == NULL || framebuf == NULL) {
         return NULL;
     }
@@ -134,7 +134,7 @@ ComponentDescriptor *create_component_image(ComponentDescriptor *cdesc, size_t i
         return NULL;
     }
 
-    ComponentDescriptor *new_cdesc = (ComponentDescriptor *)malloc(sizeof(ComponentDescriptor));
+    component_descriptor *new_cdesc = (component_descriptor *)malloc(sizeof(component_descriptor));
     if (new_cdesc == NULL) {
         free(msgbuf);
         free(replymsgbuf);

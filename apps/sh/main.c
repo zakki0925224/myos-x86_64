@@ -62,7 +62,7 @@ void exec_cmd(char *cmd) {
             return;
         }
     } else if (strcmp(splitted_buf[0], "window") == 0) {
-        ComponentDescriptor *cdesc = create_component_window("test window", 200, 50, 300, 200);
+        component_descriptor *cdesc = create_component_window("test window", 200, 50, 300, 200);
         if (cdesc == NULL) {
             printf("sh: window: failed to create window\n");
             return;
