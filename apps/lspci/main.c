@@ -1,35 +1,30 @@
-#include <stat.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <syscalls.h>
 
 int main(int argc, char *argv[]) {
-    int64_t fd = sys_open("/dev/pci-bus", OPEN_FLAG_NONE);
+    FILE *file = fopen("/dev/pci-bus", "r");
 
-    if (fd == -1) {
+    if (file == NULL) {
         printf("lspci: failed to open the file\n");
         return -1;
     }
 
-    f_stat *file_stat = (f_stat *)malloc(sizeof(f_stat));
-    if (sys_stat(fd, file_stat) == -1) {
-        printf("cat: failed to get the file status\n");
+    size_t file_size = file->stat->size;
+
+    char *f_buf = (char *)malloc(file_size + 1);
+    if (f_buf == NULL) {
+        printf("lspci: failed to allocate memory\n");
+        fclose(file);
         return -1;
     }
 
-    char *f_buf = (char *)malloc(file_stat->size);
-    if (sys_read(fd, f_buf, file_stat->size) == -1) {
-        printf("cat: failed to read the file\n");
-        return -1;
-    }
+    fread(f_buf, 1, file_size, file);
+    fclose(file);
 
-    if (sys_close(fd) == -1) {
-        printf("cat: failed to close the file\n");
-        return -1;
-    }
-
-    f_buf[file_stat->size] = '\0';  // Null-terminate the string
+    f_buf[file_size] = '\0';
     printf("%s\n", f_buf);
+
+    free(f_buf);
 
     return 0;
 }

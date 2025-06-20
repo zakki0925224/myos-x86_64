@@ -1,43 +1,35 @@
-#include <stat.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <syscalls.h>
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         return 0;
     }
 
-    int64_t fd = sys_open(argv[1], OPEN_FLAG_NONE);
-
-    if (fd == -1) {
+    FILE *file = fopen(argv[1], "r");
+    if (file == NULL) {
         printf("hexdump: failed to open the file\n");
         return -1;
     }
 
-    f_stat *file_stat = (f_stat *)malloc(sizeof(f_stat));
-    if (sys_stat(fd, file_stat) == -1) {
-        printf("hexdump: failed to get the file status\n");
+    size_t file_size = file->stat->size;
+
+    char *f_buf = (char *)malloc(file_size);
+    if (f_buf == NULL) {
+        printf("hexdump: failed to allocate memory\n");
+        fclose(file);
         return -1;
     }
 
-    char *f_buf = (char *)malloc(file_stat->size);
-    if (sys_read(fd, f_buf, file_stat->size) == -1) {
-        printf("hexdump: failed to read the file\n");
-        return -1;
-    }
+    fread(f_buf, 1, file_size, file);
+    fclose(file);
 
-    if (sys_close(fd) == -1) {
-        printf("hexdump: failed to close the file\n");
-        return -1;
-    }
-
-    for (int i = 0; i < (file_stat->size + 15) / 16; i++) {
+    for (int i = 0; i < ((int)file_size + 15) / 16; i++) {
         int j = i * 16;
         int j_end = j + 16;
 
-        if (j_end > file_stat->size) {
-            j_end = file_stat->size;
+        if (j_end > (int)file_size) {
+            j_end = (int)file_size;
         }
 
         printf("%08x ", i * 16);
@@ -70,5 +62,6 @@ int main(int argc, char *argv[]) {
     }
 
     printf("\n");
+    free(f_buf);
     return 0;
 }
