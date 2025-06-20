@@ -6,6 +6,7 @@ authors = ["Zakki <zakki0925224@gmail.com>"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
+linked_list_allocator = "0.10.5"
 
 [build-dependencies]
-bindgen = "0.71.1"
+bindgen = "0.72.0"

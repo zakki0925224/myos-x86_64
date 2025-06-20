@@ -58,6 +58,9 @@ impl DrawTarget for Framebuffer {
 
 #[no_mangle]
 pub unsafe fn _start() {
+    // init heap
+    init_heap();
+
     // create window
     let title = "graphics-rs\0";
     let cdesc_window = create_component_window(
@@ -68,16 +71,14 @@ pub unsafe fn _start() {
         HEIGHT + 50,
     );
     if cdesc_window.is_null() {
-        let msg = "Failed to create component window\n\0";
-        printf(msg.as_ptr() as *const _);
+        println!("Failed to create component window");
         exit(-1);
     }
 
     // initialize framebuffer
     let fb = malloc((WIDTH * HEIGHT * 4) as u64);
     if fb.is_null() {
-        let msg = "Failed to allocate framebuffer memory\n\0";
-        printf(msg.as_ptr() as *const _);
+        println!("Failed to allocate framebuffer memory");
         exit(-1);
     }
 
@@ -85,8 +86,7 @@ pub unsafe fn _start() {
     let cdesc_image =
         create_component_image(cdesc_window, WIDTH, HEIGHT, PIXEL_FORMAT_BGRA as u8, fb);
     if cdesc_image.is_null() {
-        let msg = "Failed to create component image\n\0";
-        printf(msg.as_ptr() as *const _);
+        println!("Failed to create component image");
         exit(-1);
     }
 
