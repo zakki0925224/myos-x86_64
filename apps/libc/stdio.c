@@ -103,6 +103,14 @@ int putchar(int c) {
     return printf("%c", c);
 }
 
+char getchar(void) {
+    char c;
+    int ret = sys_read(FDN_STDIN, &c, 1);
+    if (ret == -1)
+        return EOF;
+    return c;
+}
+
 int vfprintf(FILE *stream, const char *fmt, va_list ap) {
     printf("[DEBUG]vfprintf called\n");
     return -1;

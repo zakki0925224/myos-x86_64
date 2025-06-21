@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <syscalls.h>
 
 #define SIZE 4
 #define CELL_WIDTH 16
@@ -134,16 +133,12 @@ void update(int turn, int board[SIZE][SIZE]) {
 
     // user input
     printf("w/a/s/d to move, q to quit: ");
-    char input = '\0';
     printf("\e[8m");  // hide input character
+    char input = '\0';
     while (input == '\0') {
-        if (sys_read(FDN_STDIN, &input, 1) == -1) {
-            printf("\e[0m");
-            printf("Error reading input\n");
-            exit(-1);
-        }
+        input = getchar();
     }
-    printf("\e[0m");
+    printf("\e[0m");  // show input character
 
     switch (input) {
         case 'w':

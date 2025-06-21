@@ -11,6 +11,8 @@
 #define SEEK_CUR 1
 #define SEEK_END 2
 
+#define EOF (-1)
+
 typedef struct
 {
     int fd;
@@ -31,6 +33,7 @@ extern long int ftell(FILE *stream);
 extern int fflush(FILE *__stream);
 extern int puts(const char *c);
 extern int putchar(int c);
+extern char getchar(void);
 extern int vfprintf(FILE *stream, const char *fmt, va_list ap);
 extern int sscanf(const char *buf, const char *fmt, ...);
 extern size_t fread(void *buf, size_t size, size_t count, FILE *stream);
