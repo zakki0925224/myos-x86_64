@@ -91,23 +91,29 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     device::ps2_keyboard::probe_and_attach().unwrap();
     device::ps2_mouse::probe_and_attach().unwrap();
 
+    // initialize speaker driver
+    if let Err(err) = device::speaker::probe_and_attach() {
+        let name = device::speaker::get_device_driver_info().unwrap().name;
+        error!("{}: Failed to probe or attach device: {:?}", name, err);
+    }
+
     // initialize my flavor driver
     device::zakki::probe_and_attach().unwrap();
 
     // initialize pci-bus driver
     device::pci_bus::probe_and_attach().unwrap();
 
+    // initialize xHC driver
+    if let Err(err) = device::xhc::probe_and_attach() {
+        let name = device::xhc::get_device_driver_info().unwrap().name;
+        error!("{}: Failed to probe or attach device: {:?}", name, err);
+    }
+
     // initalize virtio-net driver
     // if let Err(err) = device::virtio::net::probe_and_attach() {
     //     let name = device::virtio::net::get_device_driver_info().unwrap().name;
     //     error!("{}: Failed to probe or attach device: {:?}", name, err);
     // }
-
-    // initialize speaker driver
-    if let Err(err) = device::speaker::probe_and_attach() {
-        let name = device::speaker::get_device_driver_info().unwrap().name;
-        error!("{}: Failed to probe or attach device: {:?}", name, err);
-    }
 
     // initialize RTL8139 driver
     if let Err(err) = device::rtl8139::probe_and_attach() {

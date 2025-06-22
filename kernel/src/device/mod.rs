@@ -12,6 +12,7 @@ pub mod tty;
 pub mod uart;
 pub mod virtio;
 pub mod zakki;
+pub mod xhc;
 
 #[derive(Debug, Clone)]
 pub struct DeviceDriverInfo {

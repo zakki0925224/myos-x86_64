@@ -1,7 +1,7 @@
 use crate::{
     acpi::AcpiError,
     device::{
-        tty::TtyError,
+        tty::TtyError, xhc::XhcDriverError,
     },
     fs::vfs::VirtualFileSystemError,
     graphics::{
@@ -29,6 +29,7 @@ pub enum Error {
     AllocationError(AllocationError),
     DrawError(DrawError),
     TtyError(TtyError),
+    XhcDriverError(XhcDriverError),
 }
 
 impl From<&'static str> for Error {
@@ -106,6 +107,12 @@ impl From<DrawError> for Error {
 impl From<TtyError> for Error {
     fn from(err: TtyError) -> Self {
         Self::TtyError(err)
+    }
+}
+
+impl From<XhcDriverError> for Error {
+    fn from(err: XhcDriverError) -> Self {
+        Self::XhcDriverError(err)
     }
 }
 
