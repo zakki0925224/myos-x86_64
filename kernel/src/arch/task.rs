@@ -70,6 +70,7 @@ impl Drop for Task {
                 rw: ReadWrite::Write,
                 us: EntryMode::Supervisor,
                 pwt: PageWriteThroughLevel::WriteThrough,
+                pcd: false,
             })
             .unwrap();
 
@@ -154,6 +155,7 @@ impl Task {
                     rw: ReadWrite::Write,
                     us: EntryMode::User,
                     pwt: PageWriteThroughLevel::WriteThrough,
+                    pcd: false,
                 };
                 paging::update_mapping(&mapping_info)?;
                 program_mem_info.push((user_mem_frame_info, mapping_info));
@@ -244,6 +246,7 @@ impl Task {
                 rw: ReadWrite::Write,
                 us: EntryMode::Supervisor,
                 pwt: PageWriteThroughLevel::WriteThrough,
+                pcd: false,
             })?;
 
             // assert_eq!(

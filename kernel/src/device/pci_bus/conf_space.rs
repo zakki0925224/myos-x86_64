@@ -293,6 +293,7 @@ impl ConfigurationSpaceNonBridgeField {
                             rw: ReadWrite::Write,
                             us: EntryMode::Supervisor,
                             pwt: PageWriteThroughLevel::WriteThrough,
+                            pcd: true, // page cache disable
                         })?;
 
                         let base_addr =
@@ -313,6 +314,7 @@ impl ConfigurationSpaceNonBridgeField {
                             rw: ReadWrite::Write,
                             us: EntryMode::Supervisor,
                             pwt: PageWriteThroughLevel::WriteThrough,
+                            pcd: true, // page cache disable
                         })?;
                         result.push((i, base_addr));
                     }

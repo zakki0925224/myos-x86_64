@@ -8,7 +8,6 @@ use crate::{
     info,
     mem::bitmap,
 };
-use alloc::string::String;
 
 const PAGE_TABLE_ENTRY_LEN: usize = 512;
 pub const PAGE_SIZE: usize = 4096;
@@ -40,14 +39,13 @@ pub struct PageTableEntry(u64);
 
 impl core::fmt::Debug for PageTableEntry {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let mut fmt = String::from("PageTableEntry");
-        fmt = format!(
-            "{}(0x{:x}) {{ p: {}, rw: {:?}, us: {:?}, a: {}, d: {}, page_size: {}, addr: 0x{:x}, xd: {} }}",
-            fmt,
+        let fmt = format!(
+            "PageTableEntry(0x{:x}) {{ p: {}, rw: {:?}, us: {:?}, pcd: {}, a: {}, d: {}, page_size: {}, addr: 0x{:x}, xd: {} }}",
             self.0,
             self.p(),
             self.rw(),
             self.us(),
+            self.pcd(),
             self.accessed(),
             self.dirty(),
             self.page_size(),
@@ -103,6 +101,15 @@ impl PageTableEntry {
         }
     }
 
+    // page cache disable
+    pub fn set_pcd(&mut self, value: bool) {
+        self.0 = (self.0 & !0x10) | ((value as u64) << 4);
+    }
+
+    pub fn pcd(&self) -> bool {
+        (self.0 & 0x10) != 0
+    }
+
     pub fn accessed(&self) -> bool {
         (self.0 & 0x20) != 0
     }
@@ -143,11 +150,13 @@ impl PageTableEntry {
         rw: ReadWrite,
         mode: EntryMode,
         write_through_level: PageWriteThroughLevel,
+        disable_cache: bool,
     ) {
         self.set_p(true);
         self.set_rw(rw);
         self.set_us(mode);
         self.set_pwt(write_through_level);
+        self.set_pcd(disable_cache);
         self.set_addr(addr);
     }
 }
@@ -166,6 +175,7 @@ pub struct MappingInfo {
     pub rw: ReadWrite,
     pub us: EntryMode,
     pub pwt: PageWriteThroughLevel,
+    pub pcd: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -334,6 +344,7 @@ impl PageManager {
                 rw,
                 mode,
                 write_through_level,
+                false,
             )?;
         }
 
@@ -355,6 +366,7 @@ impl PageManager {
             rw,
             pwt,
             us,
+            pcd,
         } = *new_mapping_info;
 
         for i in (start.get() as usize..end.get() as usize).step_by(PAGE_SIZE) {
@@ -367,6 +379,7 @@ impl PageManager {
                 rw,
                 us,
                 pwt,
+                pcd,
             )?;
         }
 
@@ -431,6 +444,7 @@ impl PageManager {
         rw: ReadWrite,
         mode: EntryMode,
         write_through_level: PageWriteThroughLevel,
+        disable_cache: bool,
     ) -> Result<()> {
         if virt_addr.get() == 0 {
             return Err(PageManagerError::VirtualAddressNotAllowedToMapError(virt_addr).into());
@@ -453,7 +467,7 @@ impl PageManager {
             let mem_info = bitmap::alloc_mem_frame(1)?;
             self.mem_clear(&mem_info)?;
             let virt_addr = self.calc_virt_addr(mem_info.frame_start_phys_addr)?;
-            entry.set_entry(virt_addr.get(), rw, mode, write_through_level);
+            entry.set_entry(virt_addr.get(), rw, mode, write_through_level, disable_cache);
         }
 
         if entry.rw() < rw {
@@ -471,7 +485,7 @@ impl PageManager {
             let mem_info = bitmap::alloc_mem_frame(1)?;
             self.mem_clear(&mem_info)?;
             let virt_addr = self.calc_virt_addr(mem_info.frame_start_phys_addr)?;
-            entry.set_entry(virt_addr.get(), rw, mode, write_through_level);
+            entry.set_entry(virt_addr.get(), rw, mode, write_through_level, disable_cache);
         }
 
         if entry.rw() < rw {
@@ -489,7 +503,7 @@ impl PageManager {
             let mem_info = bitmap::alloc_mem_frame(1)?;
             self.mem_clear(&mem_info)?;
             let virt_addr = self.calc_virt_addr(mem_info.frame_start_phys_addr)?;
-            entry.set_entry(virt_addr.get(), rw, mode, write_through_level);
+            entry.set_entry(virt_addr.get(), rw, mode, write_through_level, disable_cache);
         }
 
         if entry.rw() < rw {
@@ -502,7 +516,7 @@ impl PageManager {
 
         let pml1_table = entry.page_table().unwrap();
         let entry = &mut pml1_table.entries[pml1e_index];
-        entry.set_entry(phys_addr.get(), rw, mode, write_through_level);
+        entry.set_entry(phys_addr.get(), rw, mode, write_through_level, disable_cache);
 
         Ok(())
     }
@@ -585,6 +599,7 @@ fn test_page_table_entry() {
         rw: ReadWrite::Read,
         us: EntryMode::User,
         pwt: PageWriteThroughLevel::WriteThrough,
+        pcd: false,
     })
     .is_ok());
 
@@ -603,6 +618,7 @@ fn test_page_table_entry() {
         rw: ReadWrite::Write,
         us: EntryMode::Supervisor,
         pwt: PageWriteThroughLevel::WriteThrough,
+        pcd: false,
     })
     .is_ok());
 

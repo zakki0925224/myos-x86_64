@@ -22,6 +22,7 @@ impl MemoryFrameInfo {
             ReadWrite::Write,
             EntryMode::Supervisor,
             PageWriteThroughLevel::WriteThrough,
+            false,
         )
     }
 
@@ -30,6 +31,7 @@ impl MemoryFrameInfo {
             ReadWrite::Write,
             EntryMode::User,
             PageWriteThroughLevel::WriteThrough,
+            false,
         )
     }
 
@@ -42,6 +44,7 @@ impl MemoryFrameInfo {
         rw: ReadWrite,
         us: EntryMode,
         pwt: PageWriteThroughLevel,
+        pcd: bool,
     ) -> Result<()> {
         let page_len = self.frame_size / PAGE_SIZE;
         let mut start = self.frame_start_virt_addr()?;
@@ -54,6 +57,7 @@ impl MemoryFrameInfo {
                 rw,
                 us,
                 pwt,
+                pcd,
             })?;
             start = start.offset(PAGE_SIZE);
         }
