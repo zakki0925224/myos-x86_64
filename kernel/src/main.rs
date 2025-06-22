@@ -97,18 +97,6 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     // initialize pci-bus driver
     device::pci_bus::probe_and_attach().unwrap();
 
-    // initialize xhc driver
-    // if let Err(err) = device::usb::xhc::probe_and_attach() {
-    //     let name = device::usb::xhc::get_device_driver_info().unwrap().name;
-    //     error!("{}: Failed to probe or attach device: {:?}", name, err);
-    // }
-
-    // initialize usb-bus driver
-    // if let Err(err) = device::usb::bus::probe_and_attach() {
-    //     let name = device::usb::bus::get_device_driver_info().unwrap().name;
-    //     error!("{}: Failed to probe or attach device: {:?}", name, err);
-    // }
-
     // initalize virtio-net driver
     // if let Err(err) = device::virtio::net::probe_and_attach() {
     //     let name = device::virtio::net::get_device_driver_info().unwrap().name;

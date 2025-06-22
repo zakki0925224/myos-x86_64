@@ -2,10 +2,6 @@ use crate::{
     acpi::AcpiError,
     device::{
         tty::TtyError,
-        usb::{
-            bus::{device::UsbDeviceError, UsbBusDriverError},
-            xhc::{ringbuf::RingBufferError, XhcDriverError},
-        },
     },
     fs::vfs::VirtualFileSystemError,
     graphics::{
@@ -23,10 +19,6 @@ pub enum Error {
     LayerError(LayerError),
     BitmapMemoryManagerError(BitmapMemoryManagerError),
     PageManagerError(PageManagerError),
-    UsbBusDriverError(UsbBusDriverError),
-    UsbDeviceError(UsbDeviceError),
-    XhcDriverError(XhcDriverError),
-    RingBufferError(RingBufferError),
     FifoError(FifoError),
     LifoError(LifoError),
     IndexOutOfBoundsError(usize),
@@ -60,30 +52,6 @@ impl From<BitmapMemoryManagerError> for Error {
 impl From<PageManagerError> for Error {
     fn from(err: PageManagerError) -> Self {
         Self::PageManagerError(err)
-    }
-}
-
-impl From<UsbBusDriverError> for Error {
-    fn from(err: UsbBusDriverError) -> Self {
-        Self::UsbBusDriverError(err)
-    }
-}
-
-impl From<UsbDeviceError> for Error {
-    fn from(err: UsbDeviceError) -> Self {
-        Self::UsbDeviceError(err)
-    }
-}
-
-impl From<XhcDriverError> for Error {
-    fn from(err: XhcDriverError) -> Self {
-        Self::XhcDriverError(err)
-    }
-}
-
-impl From<RingBufferError> for Error {
-    fn from(err: RingBufferError) -> Self {
-        Self::RingBufferError(err)
     }
 }
 

@@ -25,14 +25,14 @@ This is a replacement project for the previous **[myos](https://github.com/Zakki
 -   [x] Paging
 -   Bus support
     -   [x] PCI
-    -   [x] USB
+    -   [ ] USB
 -   Device support
     -   [x] PS/2 Keyboard and Mouse
     -   [x] UART 16650A
     -   [x] RTL8139
-    -   [ ] xHCI (WIP)
-    -   [ ] VirtIO (WIP)
-        -   [ ] virtio-net (WIP)
+    -   [ ] xHCI
+    -   [ ] VirtIO
+        -   [ ] virtio-net
 -   [x] File system
     -   [x] Own VFS (read/write, in-memory)
     -   [x] FAT32 (read only)
@@ -41,7 +41,7 @@ This is a replacement project for the previous **[myos](https://github.com/Zakki
     -   [x] ARP
     -   [x] IPv4
         -   [x] ICMP
-        -   [ ] TCP (WIP)
+        -   [ ] TCP
         -   [x] UDP (receive only)
 -   [x] Simple window manager
 -   [x] [Userland applications](/apps/) (libc for myos available [here](/apps/libc/))

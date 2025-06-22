@@ -10,7 +10,6 @@ pub mod rtl8139;
 pub mod speaker;
 pub mod tty;
 pub mod uart;
-pub mod usb;
 pub mod virtio;
 pub mod zakki;
 
