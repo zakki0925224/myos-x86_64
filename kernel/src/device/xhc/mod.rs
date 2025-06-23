@@ -1,11 +1,6 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    arch::mmio::Mmio,
-    device::{self, pci_bus::conf_space::BaseAddress, xhc::register::*},
-    error::{Error, Result},
-    fs::vfs,
-    info,
-    util::mutex::Mutex,
+    arch::mmio::Mmio, device::{self, pci_bus::conf_space::BaseAddress, xhc::register::*}, error::{Error, Result}, fs::vfs, info, trace, util::mutex::Mutex, debug
 };
 use alloc::vec::Vec;
 
@@ -17,6 +12,7 @@ static mut XHC_DRIVER: Mutex<XhcDriver> = Mutex::new(XhcDriver::new());
 pub enum XhcDriverError {
     InvalidRegisterAddress,
     RegisterNotInitialized,
+    HostControllerIsNotHalted,
 }
 
 struct XhcDriver {
@@ -38,21 +34,21 @@ impl XhcDriver {
         }
     }
 
-    fn cap_reg(&self) -> Result<&Mmio<CapabilityRegisters>> {
+    fn cap_reg(&mut self) -> Result<&mut Mmio<CapabilityRegisters>> {
         self.cap_reg
-            .as_ref()
+            .as_mut()
             .ok_or(XhcDriverError::RegisterNotInitialized.into())
     }
 
-    fn ope_reg(&self) -> Result<&Mmio<OperationalRegisters>> {
+    fn ope_reg(&mut self) -> Result<&mut Mmio<OperationalRegisters>> {
         self.ope_reg
-            .as_ref()
+            .as_mut()
             .ok_or(XhcDriverError::RegisterNotInitialized.into())
     }
 
-    fn rt_reg(&self) -> Result<&Mmio<RuntimeRegisters>> {
+    fn rt_reg(&mut self) -> Result<&mut Mmio<RuntimeRegisters>> {
         self.rt_reg
-            .as_ref()
+            .as_mut()
             .ok_or(XhcDriverError::RegisterNotInitialized.into())
     }
 }
@@ -109,6 +105,33 @@ impl DeviceDriverFunction for XhcDriver {
             let rt_reg =
                 unsafe { Mmio::from_raw(cap_reg_virt_addr.offset(rt_reg_offset).as_ptr_mut()) };
             self.rt_reg = Some(rt_reg);
+
+            // stop controller
+            if !self.ope_reg()?.as_ref().usb_status.hchalted() {
+                return Err(XhcDriverError::HostControllerIsNotHalted.into());
+            }
+
+            // reset controller
+            self.ope_reg()?.as_mut().usb_cmd.set_host_controller_reset(true);
+
+            loop {
+                trace!("{}: Waiting xHC...", driver_name);
+                if !self.ope_reg()?.as_ref().usb_cmd.host_controller_reset() {
+                    break;
+                }
+            }
+            trace!("{}: xHC reset complete", driver_name);
+
+            // set max device slots
+            let num_of_ports = self.cap_reg()?.as_ref().num_of_ports();
+            let num_of_slots = self.cap_reg()?.as_ref().num_of_device_slots();
+            self.ope_reg()?.as_mut().set_max_device_slots_enabled(num_of_slots as u8);
+            debug!("{}: Number of ports: {}, Number of slots: {}", driver_name, num_of_ports, num_of_slots);
+
+            // initialize scratchpad
+            // TODO
+
+            // initialize device context
 
             Ok(())
         })?;

@@ -12,7 +12,13 @@ impl<T> AsRef<T> for Mmio<T> {
     }
 }
 
-impl<T: Sized> Mmio<T> {
+impl <T: Unpin> AsMut<T> for Mmio<T> {
+    fn as_mut(&mut self) -> &mut T {
+        self.inner.as_mut().get_mut()
+    }
+}
+
+impl<T: Sized + Unpin> Mmio<T> {
     pub unsafe fn from_raw(ptr: *mut T) -> Self {
         Self {
             inner: ManuallyDrop::new(Box::into_pin(Box::from_raw(ptr))),
