@@ -1,8 +1,10 @@
+use core::{cmp::max, pin::Pin, slice};
+
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    arch::mmio::Mmio, device::{self, pci_bus::conf_space::BaseAddress, xhc::register::*}, error::{Error, Result}, fs::vfs, info, trace, util::mutex::Mutex, debug
+    arch::mmio::Mmio, debug, device::{self, pci_bus::conf_space::BaseAddress, xhc::register::*}, error::{Error, Result}, fs::vfs, info, mem::{bitmap, paging::PAGE_SIZE}, trace, util::mutex::Mutex
 };
-use alloc::vec::Vec;
+use alloc::{boxed::Box, vec::Vec};
 
 pub mod register;
 
@@ -129,7 +131,35 @@ impl DeviceDriverFunction for XhcDriver {
             debug!("{}: Number of ports: {}, Number of slots: {}", driver_name, num_of_ports, num_of_slots);
 
             // initialize scratchpad
-            // TODO
+            let num_scratchpad_bufs = max(self.cap_reg()?.as_ref().num_scratchpad_bufs(), 1);
+            debug!("{}: Number of scratchpad buffers: {}", driver_name, num_scratchpad_bufs);
+
+            // buffer table
+            // non-deallocate memory
+            let mem_frame_info = bitmap::alloc_mem_frame((size_of::<usize>() * num_scratchpad_bufs).div_ceil(PAGE_SIZE))?;
+            let table = unsafe {
+                slice::from_raw_parts(mem_frame_info.frame_start_virt_addr()?.as_ptr_mut() as *mut *const u8, num_scratchpad_bufs)
+            };
+            let mut table: Pin<Box<[*const u8]>> = Pin::new(Box::from(table));
+
+            // buffer
+            let mut bufs = Vec::new();
+            for sb in table.iter_mut() {
+                // non-deallocate memory
+                let sb_frame_info = bitmap::alloc_mem_frame(1)?;
+                let buf_ptr = sb_frame_info.frame_start_virt_addr()?.as_ptr();
+                let buf = unsafe {
+                    slice::from_raw_parts(buf_ptr as *const u8, PAGE_SIZE)
+                };
+                let buf: Pin<Box<[u8]>> = Pin::new(Box::from(buf));
+                *sb = buf.as_ref().as_ptr();
+                bufs.push(buf);
+            }
+            let _scratchpad_bufs = ScratchpadBuffers {
+                table,
+                bufs,
+            };
+            trace!("{}: Scratchpad buffers initialized", driver_name);
 
             // initialize device context
 

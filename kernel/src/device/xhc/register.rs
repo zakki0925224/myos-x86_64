@@ -1,5 +1,6 @@
+use alloc::{boxed::Box, vec::Vec};
 use crate::arch::volatile::Volatile;
-use core::marker::PhantomPinned;
+use core::{marker::PhantomPinned, pin::Pin};
 
 #[repr(C)]
 pub struct CapabilityRegisters {
@@ -36,6 +37,11 @@ impl CapabilityRegisters {
     pub fn num_of_ports(&self) -> usize {
         let hcs_params1 = self.hcs_params1.read();
         ((hcs_params1 >> 16) & 0xff) as usize
+    }
+
+    pub fn num_scratchpad_bufs(&self) -> usize {
+        let hcs_params2 = self.hcs_params2.read();
+        (((hcs_params2 & 0xf_8000) >> 16 ) | ((hcs_params2 & 0x7c00_0000) >> 26)) as usize
     }
 }
 
@@ -156,4 +162,9 @@ pub struct RuntimeRegisters {
     pub mfindex: Volatile<u32>,
     reserved: [u32; 7],
     pub int_reg_set: [InterrupterRegisterSet; 1024],
+}
+
+pub struct ScratchpadBuffers {
+    pub table: Pin<Box<[*const u8]>>,
+    pub bufs: Vec<Pin<Box<[u8]>>>,
 }
