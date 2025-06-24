@@ -1,6 +1,6 @@
 use alloc::{boxed::Box, vec::Vec};
-use crate::arch::volatile::Volatile;
-use core::{marker::PhantomPinned, pin::Pin};
+use crate::{arch::volatile::Volatile, device::xhc::context::OutputContext};
+use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin};
 
 #[repr(C)]
 pub struct CapabilityRegisters {
@@ -46,9 +46,39 @@ impl CapabilityRegisters {
 }
 
 #[repr(C, align(64))]
-pub struct DeviceContextBaseAddressArray {
-    ctx: [u64; 256],
+pub struct DeviceContextBaseAddressArrayInner {
+    scratchpad_table_ptr: *const *const u8,
+    context: [u64; 255],
     _pinned: PhantomPinned,
+}
+
+impl DeviceContextBaseAddressArrayInner {
+    pub fn new() -> Self {
+        unsafe { MaybeUninit::zeroed().assume_init() }
+    }
+}
+
+pub struct DeviceContextBaseAddressArray {
+    inner: Pin<Box<DeviceContextBaseAddressArrayInner>>,
+    context: [Option<Pin<Box<OutputContext>>>; 255],
+    scratchpad_bufs: ScratchpadBuffers,
+}
+
+impl DeviceContextBaseAddressArray {
+    pub fn new(scratchpad_bufs: ScratchpadBuffers) -> Self {
+        let mut inner = DeviceContextBaseAddressArrayInner::new();
+        inner.scratchpad_table_ptr = scratchpad_bufs.table.as_ref().as_ptr();
+
+        Self {
+            inner: Box::pin(inner),
+            context: unsafe { MaybeUninit::uninit().assume_init() },
+            scratchpad_bufs,
+        }
+    }
+
+    pub fn inner_mut_ptr(&self) -> *const DeviceContextBaseAddressArrayInner {
+        self.inner.as_ref().get_ref()
+    }
 }
 
 pub struct UsbCommandRegister(Volatile<u32>);
@@ -144,7 +174,7 @@ pub struct OperationalRegisters {
     pub dn_ctrl: Volatile<u32>,
     pub cmd_ring_ctrl: Volatile<u64>,
     reserved1: [u64; 2],
-    pub dev_ctx_baa_ptr: Volatile<*mut DeviceContextBaseAddressArray>,
+    pub dcbaa_ptr: Volatile<*const DeviceContextBaseAddressArrayInner>,
     pub config: Volatile<u32>,
 }
 
@@ -167,4 +197,11 @@ pub struct RuntimeRegisters {
 pub struct ScratchpadBuffers {
     pub table: Pin<Box<[*const u8]>>,
     pub bufs: Vec<Pin<Box<[u8]>>>,
+}
+
+#[repr(C, align(4096))]
+pub struct EventRingSegmentTableEntry {
+    pub ring_seg_base_addr: u64,
+    pub ring_seg_size: u16,
+    reserved: [u16; 3],
 }

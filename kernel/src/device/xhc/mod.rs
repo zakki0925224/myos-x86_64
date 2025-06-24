@@ -7,6 +7,8 @@ use crate::{
 use alloc::{boxed::Box, vec::Vec};
 
 pub mod register;
+pub mod context;
+pub mod trb;
 
 static mut XHC_DRIVER: Mutex<XhcDriver> = Mutex::new(XhcDriver::new());
 
@@ -23,6 +25,7 @@ struct XhcDriver {
     cap_reg: Option<Mmio<CapabilityRegisters>>,
     ope_reg: Option<Mmio<OperationalRegisters>>,
     rt_reg: Option<Mmio<RuntimeRegisters>>,
+    dcbaa: Option<DeviceContextBaseAddressArray>
 }
 
 impl XhcDriver {
@@ -33,6 +36,7 @@ impl XhcDriver {
             cap_reg: None,
             ope_reg: None,
             rt_reg: None,
+            dcbaa: None,
         }
     }
 
@@ -52,6 +56,107 @@ impl XhcDriver {
         self.rt_reg
             .as_mut()
             .ok_or(XhcDriverError::RegisterNotInitialized.into())
+    }
+
+    fn reset(&mut self) -> Result<()> {
+        let driver_name = self.device_driver_info.name;
+
+        // stop controller
+        if !self.ope_reg()?.as_ref().usb_status.hchalted() {
+            return Err(XhcDriverError::HostControllerIsNotHalted.into());
+        }
+
+        // reset controller
+        self.ope_reg()?.as_mut().usb_cmd.set_host_controller_reset(true);
+
+        loop {
+            trace!("{}: Waiting xHC...", driver_name);
+            if !self.ope_reg()?.as_ref().usb_cmd.host_controller_reset() {
+                break;
+            }
+        }
+        trace!("{}: xHC reset complete", driver_name);
+
+        Ok(())
+    }
+
+    fn set_max_dev_slots(&mut self) -> Result<()> {
+        let num_of_ports = self.cap_reg()?.as_ref().num_of_ports();
+        let num_of_slots = self.cap_reg()?.as_ref().num_of_device_slots();
+        self.ope_reg()?.as_mut().set_max_device_slots_enabled(num_of_slots as u8);
+        debug!("{}: Number of ports: {}, Number of slots: {}", self.device_driver_info.name, num_of_ports, num_of_slots);
+
+        Ok(())
+    }
+
+    fn init_scratchpad_bufs(&mut self) -> Result<ScratchpadBuffers> {
+        let driver_name = self.device_driver_info.name;
+
+        let num_scratchpad_bufs = max(self.cap_reg()?.as_ref().num_scratchpad_bufs(), 1);
+        debug!("{}: Number of scratchpad buffers: {}", driver_name, num_scratchpad_bufs);
+
+        // buffer table
+        // non-deallocate memory
+        let mem_frame_info = bitmap::alloc_mem_frame((size_of::<usize>() * num_scratchpad_bufs).div_ceil(PAGE_SIZE))?;
+        let table = unsafe {
+            slice::from_raw_parts(mem_frame_info.frame_start_virt_addr()?.as_ptr_mut() as *mut *const u8, num_scratchpad_bufs)
+        };
+        let mut table: Pin<Box<[*const u8]>> = Pin::new(Box::from(table));
+
+        // buffer
+        let mut bufs = Vec::new();
+        for sb in table.iter_mut() {
+            // non-deallocate memory
+            let sb_frame_info = bitmap::alloc_mem_frame(1)?;
+            let buf_ptr = sb_frame_info.frame_start_virt_addr()?.as_ptr();
+            let buf = unsafe {
+                slice::from_raw_parts(buf_ptr as *const u8, PAGE_SIZE)
+            };
+            let buf: Pin<Box<[u8]>> = Pin::new(Box::from(buf));
+            *sb = buf.as_ref().as_ptr();
+            bufs.push(buf);
+        }
+        let scratchpad_bufs = ScratchpadBuffers {
+            table,
+            bufs,
+        };
+        trace!("{}: Scratchpad buffers initialized", driver_name);
+        Ok(scratchpad_bufs)
+    }
+
+    fn init_dev_ctx(&mut self, scratchpad_bufs: ScratchpadBuffers) -> Result<()> {
+        let driver_name = self.device_driver_info.name;
+
+        // initialize device context
+        let dcbaa = DeviceContextBaseAddressArray::new(scratchpad_bufs);
+        self.ope_reg()?.as_mut().dcbaa_ptr.write(dcbaa.inner_mut_ptr());
+        self.dcbaa = Some(dcbaa);
+        trace!("{}: Device context base address array initialized", driver_name);
+
+        Ok(())
+    }
+
+    fn init_primary_event_ring(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn init_cmd_ring(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn start(&mut self) -> Result<()> {
+        let driver_name = self.device_driver_info.name;
+        self.ope_reg()?.as_mut().usb_cmd.set_run_stop(true);
+
+        loop {
+            trace!("{}: Waiting xHC...", driver_name);
+            if !self.ope_reg()?.as_ref().usb_status.hchalted() {
+                break;
+            }
+        }
+        trace!("{}: xHC started", driver_name);
+
+        Ok(())
     }
 }
 
@@ -108,60 +213,13 @@ impl DeviceDriverFunction for XhcDriver {
                 unsafe { Mmio::from_raw(cap_reg_virt_addr.offset(rt_reg_offset).as_ptr_mut()) };
             self.rt_reg = Some(rt_reg);
 
-            // stop controller
-            if !self.ope_reg()?.as_ref().usb_status.hchalted() {
-                return Err(XhcDriverError::HostControllerIsNotHalted.into());
-            }
-
-            // reset controller
-            self.ope_reg()?.as_mut().usb_cmd.set_host_controller_reset(true);
-
-            loop {
-                trace!("{}: Waiting xHC...", driver_name);
-                if !self.ope_reg()?.as_ref().usb_cmd.host_controller_reset() {
-                    break;
-                }
-            }
-            trace!("{}: xHC reset complete", driver_name);
-
-            // set max device slots
-            let num_of_ports = self.cap_reg()?.as_ref().num_of_ports();
-            let num_of_slots = self.cap_reg()?.as_ref().num_of_device_slots();
-            self.ope_reg()?.as_mut().set_max_device_slots_enabled(num_of_slots as u8);
-            debug!("{}: Number of ports: {}, Number of slots: {}", driver_name, num_of_ports, num_of_slots);
-
-            // initialize scratchpad
-            let num_scratchpad_bufs = max(self.cap_reg()?.as_ref().num_scratchpad_bufs(), 1);
-            debug!("{}: Number of scratchpad buffers: {}", driver_name, num_scratchpad_bufs);
-
-            // buffer table
-            // non-deallocate memory
-            let mem_frame_info = bitmap::alloc_mem_frame((size_of::<usize>() * num_scratchpad_bufs).div_ceil(PAGE_SIZE))?;
-            let table = unsafe {
-                slice::from_raw_parts(mem_frame_info.frame_start_virt_addr()?.as_ptr_mut() as *mut *const u8, num_scratchpad_bufs)
-            };
-            let mut table: Pin<Box<[*const u8]>> = Pin::new(Box::from(table));
-
-            // buffer
-            let mut bufs = Vec::new();
-            for sb in table.iter_mut() {
-                // non-deallocate memory
-                let sb_frame_info = bitmap::alloc_mem_frame(1)?;
-                let buf_ptr = sb_frame_info.frame_start_virt_addr()?.as_ptr();
-                let buf = unsafe {
-                    slice::from_raw_parts(buf_ptr as *const u8, PAGE_SIZE)
-                };
-                let buf: Pin<Box<[u8]>> = Pin::new(Box::from(buf));
-                *sb = buf.as_ref().as_ptr();
-                bufs.push(buf);
-            }
-            let _scratchpad_bufs = ScratchpadBuffers {
-                table,
-                bufs,
-            };
-            trace!("{}: Scratchpad buffers initialized", driver_name);
-
-            // initialize device context
+            self.reset()?;
+            self.set_max_dev_slots()?;
+            let scratchpad_bufs = self.init_scratchpad_bufs()?;
+            self.init_dev_ctx(scratchpad_bufs)?;
+            self.init_primary_event_ring()?;
+            self.init_cmd_ring()?;
+            self.start()?;
 
             Ok(())
         })?;
