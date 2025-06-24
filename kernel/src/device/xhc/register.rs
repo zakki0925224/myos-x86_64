@@ -1,6 +1,6 @@
-use alloc::{boxed::Box, vec::Vec};
-use crate::{arch::volatile::Volatile, device::xhc::context::OutputContext};
-use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin};
+use alloc::{boxed::Box, rc::Rc, vec::Vec};
+use crate::{arch::{addr::VirtualAddress, mmio::IoBox, volatile::Volatile}, device::xhc::{context::OutputContext, trb::{GenericTrbEntry, TrbRing}}, error::{Error, Result}, util::mutex::Mutex};
+use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin, ptr::{read_volatile, write_volatile}, ops::Range};
 
 #[repr(C)]
 pub struct CapabilityRegisters {
@@ -36,7 +36,7 @@ impl CapabilityRegisters {
 
     pub fn num_of_ports(&self) -> usize {
         let hcs_params1 = self.hcs_params1.read();
-        ((hcs_params1 >> 16) & 0xff) as usize
+        (hcs_params1 & 0xff) as usize
     }
 
     pub fn num_scratchpad_bufs(&self) -> usize {
@@ -112,7 +112,7 @@ impl UsbCommandRegister {
 pub struct UsbStatusRegister(Volatile<u32>);
 
 impl UsbStatusRegister {
-    fn read(&self) -> u32 {
+    pub fn read(&self) -> u32 {
         self.0.read()
     }
 
@@ -175,23 +175,52 @@ pub struct OperationalRegisters {
     pub cmd_ring_ctrl: Volatile<u64>,
     reserved1: [u64; 2],
     pub dcbaa_ptr: Volatile<*const DeviceContextBaseAddressArrayInner>,
-    pub config: Volatile<u32>,
+    pub config: Volatile<u64>,
 }
 
 impl OperationalRegisters {
     pub fn set_max_device_slots_enabled(&mut self, value: u8) {
-        self.config.write((self.config.read() & !0xff) | (value as u32));
+        self.config.write((self.config.read() & !0xff) | (value as u64));
+    }
+
+    pub fn set_cmd_ring_ctrl(&mut self, ring: &mut CommandRing) {
+        let cycle_state = 1;
+        self.cmd_ring_ctrl.write(ring.ring_phys_addr() | cycle_state);
     }
 }
 
 #[repr(C)]
-struct InterrupterRegisterSet([u64; 4]);
+struct InterrupterRegisterSet {
+    manage: u32,
+    moderation: u32,
+    erst_size: u32,
+    rsvdp: u32,
+    erst_base: u64,
+    erdp: u64,
+}
 
 #[repr(C)]
 pub struct RuntimeRegisters {
-    pub mfindex: Volatile<u32>,
+    mfindex: Volatile<u32>,
     reserved: [u32; 7],
-    pub int_reg_set: [InterrupterRegisterSet; 1024],
+    int_reg_set: [InterrupterRegisterSet; 1024],
+}
+
+impl RuntimeRegisters {
+    pub fn init_int_reg_set(&mut self, index: usize, ring: &mut EventRing) -> Result<()> {
+        let int_reg_set = self.int_reg_set.get_mut(index).ok_or(Error::IndexOutOfBoundsError(index))?;
+        int_reg_set.erst_size = 1;
+        int_reg_set.erdp = ring.ring_phys_addr();
+        int_reg_set.erst_base = ring.erst_phys_addr();
+        int_reg_set.manage = 0;
+        ring.set_erdp(&mut int_reg_set.erdp as *mut u64);
+
+        Ok(())
+    }
+
+    pub fn mfindex(&self) -> usize {
+        self.mfindex.read() as usize
+    }
 }
 
 pub struct ScratchpadBuffers {
@@ -204,4 +233,196 @@ pub struct EventRingSegmentTableEntry {
     pub ring_seg_base_addr: u64,
     pub ring_seg_size: u16,
     reserved: [u16; 3],
+}
+
+impl EventRingSegmentTableEntry {
+    pub fn new(ring: &IoBox<TrbRing>) -> Result<IoBox<Self>> {
+        let mut erst: IoBox<Self> = IoBox::new();
+        {
+            let erst = unsafe { erst.get_unchecked_mut() };
+            erst.ring_seg_base_addr = ring.as_ref() as *const _ as u64;
+            erst.ring_seg_size = ring.as_ref().num_trbs().try_into().or(Err(Error::Failed("Too large num trbs")))?;
+        }
+
+        Ok(erst)
+    }
+}
+
+pub struct EventRing {
+    ring: IoBox<TrbRing>,
+    erst: IoBox<EventRingSegmentTableEntry>,
+    cycle_state_ours: bool,
+    erdp: Option<*mut u64>,
+}
+
+impl EventRing {
+    pub fn new() -> Result<Self> {
+        let ring = TrbRing::new();
+        let erst = EventRingSegmentTableEntry::new(&ring)?;
+
+        Ok(Self {
+            ring,
+            erst,
+            cycle_state_ours: true,
+            erdp: None
+        })
+    }
+
+    pub fn ring_phys_addr(&self) -> u64 {
+        self.ring.as_ref() as *const _ as u64
+    }
+
+    pub fn set_erdp(&mut self, erdp: *mut u64) {
+        self.erdp = Some(erdp);
+    }
+
+    pub fn erst_phys_addr(&self) -> u64 {
+        self.erst.as_ref() as *const _ as u64
+    }
+
+    pub fn pop(&mut self) -> Result<Option<GenericTrbEntry>> {
+        if !self.has_next_event() {
+            return Ok(None);
+        }
+
+        let trb = self.ring.as_ref().current();
+        let trb_ptr = self.ring.as_ref().current_ptr();
+        unsafe { self.ring.get_unchecked_mut() }.advance_index_notoggle(self.cycle_state_ours)?;
+
+        unsafe {
+            let erdp = self.erdp.ok_or(Error::Failed("ERDP not set"))?;
+            write_volatile(erdp, (trb_ptr as u64) | (*erdp & 0b1111));
+        }
+
+        if self.ring.as_ref().index() == 0 {
+            self.cycle_state_ours = !self.cycle_state_ours;
+        }
+
+        Ok(Some(trb))
+    }
+
+    fn has_next_event(&self) -> bool {
+        let trb_cycle = self.ring.as_ref().current().cycle_state();
+        trb_cycle == self.cycle_state_ours
+    }
+}
+
+pub struct CommandRing {
+    ring: IoBox<TrbRing>,
+    _cycle_state_ours: bool,
+}
+
+impl Default for CommandRing {
+    fn default() -> Self {
+        let mut me = Self {
+            ring: TrbRing::new(),
+            _cycle_state_ours: false,
+        };
+
+        let link_trb = GenericTrbEntry::trb_link(me.ring.as_ref());
+        unsafe { me.ring.get_unchecked_mut() }
+            .write(TrbRing::NUM_TRBS - 1, link_trb)
+            .unwrap();
+
+        me
+    }
+}
+
+impl CommandRing {
+    pub fn ring_phys_addr(&self) -> u64 {
+        self.ring.as_ref() as *const _ as u64
+    }
+}
+
+#[repr(C)]
+pub struct PortScEntry {
+    ptr: Mutex<*mut u32>,
+}
+
+impl PortScEntry {
+    pub fn new(ptr: *mut u32) -> Self {
+        Self {
+            ptr: Mutex::new(ptr),
+        }
+    }
+
+    fn read(&self) -> u32 {
+        let portsc = self.ptr.spin_lock();
+        unsafe { read_volatile(*portsc) }
+    }
+
+    fn write(&self, value: u32) {
+        let portsc = self.ptr.spin_lock();
+        unsafe { write_volatile(*portsc, value) };
+    }
+
+    // current connect status
+    pub fn ccs(&self) -> bool {
+        self.read() & 0x1 != 0
+    }
+
+    // port power
+    pub fn pp(&self) -> bool {
+        self.read() & 0x200 != 0
+    }
+
+    pub fn set_pp(&self, value: bool) {
+        let e_value = self.read();
+        self.write((e_value & !0x200) | ((value as u32) << 9));
+    }
+
+    // port reset
+    pub fn pr(&self) -> bool {
+        self.read() & 0x10 != 0
+    }
+
+    pub fn set_pr(&self, value: bool) {
+        let e_value = self.read();
+        self.write((e_value & !0x10) | ((value as u32) << 4));
+    }
+
+    // port enabled/disabled
+    pub fn ped(&self) -> bool {
+        self.read() & 0x2 != 0
+    }
+
+    pub fn reset_port(&self) {
+        self.set_pp(true);
+        while !self.pp() {} // wait
+
+        self.set_pr(true);
+        while self.pr() {} // wait
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.pp() && self.ccs() && self.ped() && !self.pr()
+    }
+}
+
+pub struct PortSc {
+    entries: Vec<Rc<PortScEntry>>,
+}
+
+impl PortSc {
+    pub fn new(bar: &VirtualAddress, cap_regs: &CapabilityRegisters) -> Self {
+        let base: *mut u32 = bar.offset(cap_regs.cap_reg_len() + 0x400).as_ptr_mut();
+        let num_of_ports = cap_regs.num_of_ports();
+        let mut entries = Vec::new();
+        for port in 1..=num_of_ports {
+            let ptr = unsafe { base.add((port - 1) * 4) };
+            entries.push(Rc::new(PortScEntry::new(ptr)));
+        }
+
+        Self {
+            entries,
+        }
+    }
+
+    pub fn port_range(&self) -> Range<usize> {
+        1..self.entries.len() + 1
+    }
+
+    pub fn get(&self, port: usize) -> Option<Rc<PortScEntry>> {
+        self.entries.get(port.wrapping_sub(1)).cloned()
+    }
 }

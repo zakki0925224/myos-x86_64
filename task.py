@@ -78,6 +78,8 @@ def _qemu_cmd() -> str:
 
 
 def _own_qemu_cmd() -> str:
+    _build_qemu()
+
     return f"./{THIRD_PARTY_DIR}/{QEMU_DIR}/build/{_qemu_cmd()} --display sdl --trace events=./{QEMU_TRACE_FILE}"
 
 
@@ -192,7 +194,6 @@ def build():
         _build_apps()
 
     _build_cozette()
-    # _build_qemu()
     _build_bootloader()
     _build_kernel()
 
@@ -282,8 +283,8 @@ def run():
 
     build()
     _make_img()
-    # cmd = qemu_cmd() if is_kernel_test else _own_qemu_cmd()
-    cmd = _qemu_cmd()
+    cmd = _qemu_cmd() if is_kernel_test else _own_qemu_cmd()
+    # cmd = _qemu_cmd()
 
     _run_cmd(cmd, ignore_error=not is_kernel_test, check_qemu_exit_code=is_kernel_test)
 

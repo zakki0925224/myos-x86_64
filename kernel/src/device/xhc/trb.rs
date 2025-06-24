@@ -1,4 +1,8 @@
+use core::{marker::PhantomPinned, ptr::{read_volatile, write_volatile}};
+use crate::{arch::{mmio::IoBox, volatile::Volatile}, error::{Error, Result}};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(unused)]
 #[repr(u32)]
 pub enum TrbType {
     Normal = 1,
@@ -15,4 +19,104 @@ pub enum TrbType {
     CommandCompletionEvent = 33,
     PortStatusChangeEvent = 34,
     HostControllerEvent = 37,
+}
+
+#[derive(Default, Clone)]
+#[repr(C, align(16))]
+pub struct GenericTrbEntry {
+    data: Volatile<u64>,
+    option: Volatile<u32>,
+    ctrl: Volatile<u32>,
+}
+
+impl GenericTrbEntry {
+    pub fn trb_link(ring: &TrbRing) -> Self {
+        let mut trb = GenericTrbEntry::default();
+        trb.set_trb_type(TrbType::Link);
+        trb.data.write(ring.phys_addr());
+        trb.set_toggle_cycle(true);
+        trb
+    }
+
+    pub fn set_trb_type(&mut self, trb_type: TrbType) {
+        self.ctrl.write(self.ctrl.read() & !0xfc00 | ((trb_type as u32) << 10));
+    }
+
+    pub fn set_toggle_cycle(&mut self, value: bool) {
+        self.ctrl.write(self.ctrl.read() & !0x1 | (value as u32));
+    }
+
+    pub fn data(&self) -> u64 {
+        self.data.read()
+    }
+
+    pub fn slot_id(&self) -> u8 {
+        (self.ctrl.read() >> 8) as u8
+    }
+
+    pub fn trb_type(&self) -> u32 {
+        (self.ctrl.read() >> 10) & 0x3f
+    }
+
+    pub fn cycle_state(&self) -> bool {
+        self.ctrl.read() & 0x1 != 0
+    }
+}
+
+#[repr(C, align(4096))]
+pub struct TrbRing {
+    trb: [GenericTrbEntry; Self::NUM_TRBS],
+    index: usize,
+    _pinned: PhantomPinned,
+}
+
+impl TrbRing {
+    pub const NUM_TRBS: usize = 16;
+
+    pub fn new() -> IoBox<Self> {
+        IoBox::new()
+    }
+
+    pub const fn num_trbs(&self) -> usize {
+        Self::NUM_TRBS
+    }
+
+    pub fn write(&mut self, index: usize, trb: GenericTrbEntry) -> Result<()> {
+        if index < self.trb.len() {
+            unsafe {
+                write_volatile(&mut self.trb[index], trb);
+            }
+
+            Ok(())
+        } else {
+            Err(Error::IndexOutOfBoundsError(index))
+        }
+    }
+
+    pub fn phys_addr(&self) -> u64 {
+        &self.trb[0] as *const _ as u64
+    }
+
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    pub fn advance_index_notoggle(&mut self, cycle_ours: bool) -> Result<()> {
+        if self.current().cycle_state() != cycle_ours {
+            return Err(Error::Failed("Invalid cycle state"));
+        }
+
+        self.index = (self.index + 1) % self.trb.len();
+        Ok(())
+    }
+
+    pub fn current(&self) -> GenericTrbEntry {
+        unsafe {
+            read_volatile(&self.trb[self.index])
+        }
+    }
+
+    pub fn current_ptr(&self) -> *const GenericTrbEntry {
+        &self.trb[self.index] as *const _
+    }
 }

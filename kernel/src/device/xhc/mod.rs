@@ -1,8 +1,7 @@
 use core::{cmp::max, pin::Pin, slice};
-
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    arch::mmio::Mmio, debug, device::{self, pci_bus::conf_space::BaseAddress, xhc::register::*}, error::{Error, Result}, fs::vfs, info, mem::{bitmap, paging::PAGE_SIZE}, trace, util::mutex::Mutex
+    arch::mmio::Mmio, device::{self, pci_bus::conf_space::BaseAddress, xhc::register::*}, error::{Error, Result}, fs::vfs, info, mem::{bitmap, paging::PAGE_SIZE}, trace, util::mutex::Mutex
 };
 use alloc::{boxed::Box, vec::Vec};
 
@@ -17,6 +16,8 @@ pub enum XhcDriverError {
     InvalidRegisterAddress,
     RegisterNotInitialized,
     HostControllerIsNotHalted,
+    EventRingNotInitialized,
+    CommandRingNotInitialized,
 }
 
 struct XhcDriver {
@@ -25,7 +26,10 @@ struct XhcDriver {
     cap_reg: Option<Mmio<CapabilityRegisters>>,
     ope_reg: Option<Mmio<OperationalRegisters>>,
     rt_reg: Option<Mmio<RuntimeRegisters>>,
-    dcbaa: Option<DeviceContextBaseAddressArray>
+    dcbaa: Option<DeviceContextBaseAddressArray>,
+    primary_event_ring: Option<EventRing>,
+    cmd_ring: Option<CommandRing>,
+    portsc: Option<PortSc>,
 }
 
 impl XhcDriver {
@@ -37,6 +41,9 @@ impl XhcDriver {
             ope_reg: None,
             rt_reg: None,
             dcbaa: None,
+            primary_event_ring: None,
+            cmd_ring: None,
+            portsc: None,
         }
     }
 
@@ -55,6 +62,24 @@ impl XhcDriver {
     fn rt_reg(&mut self) -> Result<&mut Mmio<RuntimeRegisters>> {
         self.rt_reg
             .as_mut()
+            .ok_or(XhcDriverError::RegisterNotInitialized.into())
+    }
+
+    fn primary_event_ring(&mut self) -> Result<&mut EventRing> {
+        self.primary_event_ring
+            .as_mut()
+            .ok_or(XhcDriverError::EventRingNotInitialized.into())
+    }
+
+    fn cmd_ring(&mut self) -> Result<&mut CommandRing> {
+        self.cmd_ring
+            .as_mut()
+            .ok_or(XhcDriverError::CommandRingNotInitialized.into())
+    }
+
+    fn portsc(&self) -> Result<&PortSc> {
+        self.portsc
+            .as_ref()
             .ok_or(XhcDriverError::RegisterNotInitialized.into())
     }
 
@@ -81,10 +106,12 @@ impl XhcDriver {
     }
 
     fn set_max_dev_slots(&mut self) -> Result<()> {
+        let driver_name = self.device_driver_info.name;
+
         let num_of_ports = self.cap_reg()?.as_ref().num_of_ports();
         let num_of_slots = self.cap_reg()?.as_ref().num_of_device_slots();
         self.ope_reg()?.as_mut().set_max_device_slots_enabled(num_of_slots as u8);
-        debug!("{}: Number of ports: {}, Number of slots: {}", self.device_driver_info.name, num_of_ports, num_of_slots);
+        trace!("{}: Number of ports: {}", driver_name, num_of_ports);
 
         Ok(())
     }
@@ -93,7 +120,7 @@ impl XhcDriver {
         let driver_name = self.device_driver_info.name;
 
         let num_scratchpad_bufs = max(self.cap_reg()?.as_ref().num_scratchpad_bufs(), 1);
-        debug!("{}: Number of scratchpad buffers: {}", driver_name, num_scratchpad_bufs);
+        trace!("{}: Number of scratchpad buffers: {}", driver_name, num_scratchpad_bufs);
 
         // buffer table
         // non-deallocate memory
@@ -137,10 +164,26 @@ impl XhcDriver {
     }
 
     fn init_primary_event_ring(&mut self) -> Result<()> {
+        let driver_name = self.device_driver_info.name;
+
+        self.primary_event_ring = Some(EventRing::new()?);
+        let event_ring = self.primary_event_ring.as_mut().unwrap();
+        let rt_reg = unsafe { self.rt_reg.as_mut().unwrap().get_unchecked_mut() };
+        rt_reg.init_int_reg_set(0, event_ring)?;
+        trace!("{}: Primary event ring initialized", driver_name);
+
         Ok(())
     }
 
     fn init_cmd_ring(&mut self) -> Result<()> {
+        let driver_name = self.device_driver_info.name;
+
+        self.cmd_ring = Some(CommandRing::default());
+        let cmd_ring = self.cmd_ring.as_mut().unwrap();
+        let ope_reg = unsafe { self.ope_reg.as_mut().unwrap().get_unchecked_mut() };
+        ope_reg.set_cmd_ring_ctrl(cmd_ring);
+        trace!("{}: Command ring initialized", driver_name);
+
         Ok(())
     }
 
@@ -155,6 +198,27 @@ impl XhcDriver {
             }
         }
         trace!("{}: xHC started", driver_name);
+        trace!("{}: op_regs.usb_status: 0x{:x}", driver_name, self.ope_reg()?.as_ref().usb_status.read());
+        trace!("{}: rt_regs.mfindex: 0x{:x}", driver_name, self.rt_reg()?.as_ref().mfindex());
+
+        trace!("{}: portsc values for port {:?}", driver_name, self.portsc()?.port_range());
+        let mut connected_port = None;
+        for port in self.portsc()?.port_range() {
+            if let Some(e) = self.portsc()?.get(port) {
+                if e.ccs() {
+                    connected_port = Some(port);
+                }
+            }
+        }
+
+        if let Some(port) = connected_port {
+            info!("{}: Port {} is connected", driver_name, port);
+            if let Some(portsc) = self.portsc()?.get(port) {
+                portsc.reset_port();
+                assert!(portsc.is_enabled());
+                trace!("{}: Port {} has been reset and is enabled", driver_name, port);
+            }
+        }
 
         Ok(())
     }
@@ -213,6 +277,8 @@ impl DeviceDriverFunction for XhcDriver {
                 unsafe { Mmio::from_raw(cap_reg_virt_addr.offset(rt_reg_offset).as_ptr_mut()) };
             self.rt_reg = Some(rt_reg);
 
+            self.portsc = Some(PortSc::new(&cap_reg_virt_addr, self.cap_reg()?.as_ref()));
+
             self.reset()?;
             self.set_max_dev_slots()?;
             let scratchpad_bufs = self.init_scratchpad_bufs()?;
@@ -237,7 +303,17 @@ impl DeviceDriverFunction for XhcDriver {
     }
 
     fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
-        unimplemented!()
+        if !self.device_driver_info.attached {
+            return Err(Error::Failed("Device driver is not attached"));
+        }
+
+        let driver_name = self.device_driver_info.name;
+
+        if let Some(trb) = self.primary_event_ring()?.pop()? {
+            trace!("{}: Processed TRB: 0x{:x}", driver_name, trb.trb_type());
+        }
+
+        Ok(())
     }
 
     fn poll_int(&mut self) -> Result<Self::PollInterruptOutput> {

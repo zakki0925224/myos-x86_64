@@ -163,6 +163,13 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
         }
     };
 
+    let task_poll_xhc = async {
+        loop {
+            let _ = device::xhc::poll_normal();
+            async_task::exec_yield().await;
+        }
+    };
+
     let task_poll_rtl8139 = async {
         loop {
             let _ = device::rtl8139::poll_normal();
@@ -174,6 +181,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     // async_task::spawn(task_poll_virtio_net, None).unwrap();
     async_task::spawn(task_poll_uart, Some(Duration::from_millis(4))).unwrap();
     async_task::spawn(task_poll_ps2_keyboard, Some(Duration::from_millis(4))).unwrap();
+    async_task::spawn(task_poll_xhc, None).unwrap();
     async_task::spawn(task_poll_rtl8139, Some(Duration::from_millis(2))).unwrap();
     async_task::spawn(
         poll_ps2_mouse(boot_info.kernel_config.mouse_pointer_bmp_path.to_string()),
