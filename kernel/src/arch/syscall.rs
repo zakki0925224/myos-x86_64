@@ -17,7 +17,7 @@ use crate::{
     graphics::{multi_layer::LayerId, simple_window_manager},
     info,
     mem::{bitmap, paging::PAGE_SIZE},
-    print, trace, util,
+    print, util,
 };
 use alloc::{boxed::Box, ffi::CString, string::*, vec::Vec};
 use common::libc::{Stat, Utsname};
@@ -56,7 +56,7 @@ extern "sysv64" fn syscall_handler(
     arg5: u64, // (sysv abi) r9
 ) -> i64 /* rax */ {
     // let args = [arg0, arg1, arg2, arg3, arg4, arg5];
-    // trace!("syscall: Called!(args: {:?})", args);
+    // debug!("syscall: Called!(args: {:?})", args);
 
     match arg0 {
         // read syscall
@@ -322,7 +322,7 @@ fn sys_sbrk(len: usize) -> Result<*const u8> {
     let mem_frame_info = bitmap::alloc_mem_frame((len + PAGE_SIZE).div_ceil(PAGE_SIZE))?;
     mem_frame_info.set_permissions_to_user()?;
     let virt_addr = mem_frame_info.frame_start_virt_addr()?;
-    trace!(
+    debug!(
         "syscall: sbrk: allocated {} bytes at 0x{:x}",
         mem_frame_info.frame_size,
         virt_addr.get()

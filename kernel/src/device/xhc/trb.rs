@@ -1,5 +1,5 @@
-use core::{marker::PhantomPinned, ptr::{read_volatile, write_volatile}};
-use crate::{arch::{mmio::IoBox, volatile::Volatile}, error::{Error, Result}};
+use core::{marker::PhantomPinned, pin::Pin, ptr::{read_volatile, write_volatile}};
+use crate::{arch::{mmio::IoBox, volatile::Volatile}, device::xhc::context::InputContext, error::{Error, Result}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(unused)]
@@ -44,6 +44,29 @@ impl GenericTrbEntry {
         trb
     }
 
+    pub fn trb_cmd_address_device(input_context: Pin<&InputContext>, slot: u8) -> Self {
+        let mut trb = Self::default();
+        trb.set_trb_type(TrbType::AddressDeviceCommand);
+        trb.data.write(input_context.get_ref() as *const InputContext as u64);
+        trb.set_slot_id(slot);
+        trb
+    }
+
+    pub fn completion_code(&self) -> u32 {
+        (self.option.read() >> 24) & 0xff
+    }
+
+    pub fn cmd_result_ok(&self) -> Result<()> {
+        if self.trb_type() != TrbType::CommandCompletionEvent as u32 {
+            Err(Error::Failed("Not a command completion event TRB"))
+        }
+        else if self.completion_code() != 1 {
+            Err(Error::Failed("Command completion code was not success"))
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn set_trb_type(&mut self, trb_type: TrbType) {
         self.ctrl.write(self.ctrl.read() & !0xfc00 | ((trb_type as u32) << 10));
     }
@@ -62,6 +85,10 @@ impl GenericTrbEntry {
 
     pub fn slot_id(&self) -> u8 {
         (self.ctrl.read() >> 24) as u8
+    }
+
+    pub fn set_slot_id(&mut self, slot_id: u8) {
+        self.ctrl.write((self.ctrl.read() & !(0xff << 24)) | ((slot_id as u32) << 24));
     }
 
     pub fn trb_type(&self) -> u32 {

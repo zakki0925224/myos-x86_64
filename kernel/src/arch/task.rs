@@ -9,7 +9,6 @@ use crate::{
         bitmap::{self, MemoryFrameInfo},
         paging::{self, *},
     },
-    trace,
     util::mutex::Mutex,
 };
 use alloc::{ffi::CString, string::ToString, vec::Vec};
@@ -96,7 +95,7 @@ impl Drop for Task {
             fs::vfs::close_file(fd).unwrap();
         }
 
-        trace!("task: Dropped tid: {}", self.id.get());
+        debug!("task: Dropped tid: {}", self.id.get());
     }
 }
 
@@ -267,7 +266,7 @@ impl Task {
     }
 
     fn switch_to(&self, next_task: &Task) {
-        trace!(
+        debug!(
             "task: Switch context tid: {} to {}",
             self.id.get(),
             next_task.id.get()

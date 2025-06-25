@@ -1,7 +1,7 @@
 use super::task::TaskId;
 use crate::{
     error::Result,
-    trace,
+    debug,
     util::{self, mutex::Mutex},
 };
 use alloc::{boxed::Box, collections::VecDeque};
@@ -114,7 +114,7 @@ impl Executor {
             let waker = dummy_waker();
             let mut context = Context::from_waker(&waker);
             match task.poll(&mut context) {
-                Poll::Ready(()) => trace!("task: Done (id: {})", task.id.get()),
+                Poll::Ready(()) => debug!("task: Done (id: {})", task.id.get()),
                 Poll::Pending => self.task_queue.push_back(task),
             }
         }

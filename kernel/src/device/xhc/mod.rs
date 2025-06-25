@@ -1,12 +1,28 @@
-use core::{cmp::max, pin::Pin, slice};
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    arch::mmio::Mmio, device::{self, pci_bus::conf_space::BaseAddress, xhc::{register::*, trb::{GenericTrbEntry, TrbType}}}, error::{Error, Result}, fs::vfs, info, mem::{bitmap, paging::PAGE_SIZE}, trace, util::mutex::Mutex
+    arch::mmio::Mmio,
+    device::{
+        self,
+        pci_bus::conf_space::BaseAddress,
+        xhc::{
+            context::{EndpointContext, InputContext, InputControlContext, OutputContext},
+            register::*,
+            trb::{GenericTrbEntry, TrbType},
+        },
+    },
+    error::{Error, Result},
+    fs::vfs,
+    info,
+    mem::{bitmap, paging::PAGE_SIZE},
+    debug,
+    util::mutex::Mutex,
+    trace,
 };
 use alloc::{boxed::Box, rc::Rc, vec::Vec};
+use core::{cmp::max, pin::Pin, slice};
 
-pub mod register;
 pub mod context;
+pub mod register;
 pub mod trb;
 
 static mut XHC_DRIVER: Mutex<XhcDriver> = Mutex::new(XhcDriver::new());
@@ -17,6 +33,7 @@ pub enum XhcDriverError {
     RegisterNotInitialized,
     HostControllerIsNotHalted,
     EventRingNotInitialized,
+    DeviceContextBaseAddressArrayNotInitialized,
     CommandRingNotInitialized,
     PortScNotInitialized,
     PortNotConnected(usize),
@@ -32,7 +49,7 @@ struct XhcDriver {
     primary_event_ring: Option<EventRing>,
     cmd_ring: Option<CommandRing>,
     portsc: Option<PortSc>,
-    doorbell_regs: Vec<Rc<Doorbell>>
+    doorbell_regs: Vec<Rc<Doorbell>>,
 }
 
 impl XhcDriver {
@@ -69,6 +86,12 @@ impl XhcDriver {
             .ok_or(XhcDriverError::RegisterNotInitialized.into())
     }
 
+    fn dcbaa(&mut self) -> Result<&mut DeviceContextBaseAddressArray> {
+        self.dcbaa
+            .as_mut()
+            .ok_or(XhcDriverError::DeviceContextBaseAddressArrayNotInitialized.into())
+    }
+
     fn primary_event_ring(&mut self) -> Result<&mut EventRing> {
         self.primary_event_ring
             .as_mut()
@@ -98,13 +121,16 @@ impl XhcDriver {
         Ok(())
     }
 
-    fn send_cmd(&mut self, cmd: GenericTrbEntry) -> Result<Option<GenericTrbEntry>> {
+    fn send_cmd(&mut self, cmd: GenericTrbEntry) -> Result<GenericTrbEntry> {
         let _cmd_ptr = self.cmd_ring()?.push(cmd)?;
         self.notify()?;
         loop {
             if let Some(trb) = self.primary_event_ring()?.pop()? {
                 if trb.trb_type() == TrbType::CommandCompletionEvent as u32 {
-                    return Ok(Some(trb));
+                    return Ok(trb);
+                }
+                else {
+                    trace!("Invalid TRB type: 0x{:x}", trb.trb_type());
                 }
             }
         }
@@ -119,15 +145,18 @@ impl XhcDriver {
         }
 
         // reset controller
-        self.ope_reg()?.as_mut().usb_cmd.set_host_controller_reset(true);
+        self.ope_reg()?
+            .as_mut()
+            .usb_cmd
+            .set_host_controller_reset(true);
 
         loop {
-            trace!("{}: Waiting xHC...", driver_name);
+            debug!("{}: Waiting xHC...", driver_name);
             if !self.ope_reg()?.as_ref().usb_cmd.host_controller_reset() {
                 break;
             }
         }
-        trace!("{}: xHC reset complete", driver_name);
+        debug!("{}: xHC reset complete", driver_name);
 
         Ok(())
     }
@@ -137,8 +166,10 @@ impl XhcDriver {
 
         let num_of_ports = self.cap_reg()?.as_ref().num_of_ports();
         let num_of_slots = self.cap_reg()?.as_ref().num_of_device_slots();
-        self.ope_reg()?.as_mut().set_max_device_slots_enabled(num_of_slots as u8);
-        trace!("{}: Number of ports: {}", driver_name, num_of_ports);
+        self.ope_reg()?
+            .as_mut()
+            .set_max_device_slots_enabled(num_of_slots as u8);
+        debug!("{}: Number of ports: {}", driver_name, num_of_ports);
 
         Ok(())
     }
@@ -147,13 +178,21 @@ impl XhcDriver {
         let driver_name = self.device_driver_info.name;
 
         let num_scratchpad_bufs = max(self.cap_reg()?.as_ref().num_scratchpad_bufs(), 1);
-        trace!("{}: Number of scratchpad buffers: {}", driver_name, num_scratchpad_bufs);
+        debug!(
+            "{}: Number of scratchpad buffers: {}",
+            driver_name, num_scratchpad_bufs
+        );
 
         // buffer table
         // non-deallocate memory
-        let mem_frame_info = bitmap::alloc_mem_frame((size_of::<usize>() * num_scratchpad_bufs).div_ceil(PAGE_SIZE))?;
+        let mem_frame_info = bitmap::alloc_mem_frame(
+            (size_of::<usize>() * num_scratchpad_bufs).div_ceil(PAGE_SIZE),
+        )?;
         let table = unsafe {
-            slice::from_raw_parts(mem_frame_info.frame_start_virt_addr()?.as_ptr_mut() as *mut *const u8, num_scratchpad_bufs)
+            slice::from_raw_parts(
+                mem_frame_info.frame_start_virt_addr()?.as_ptr_mut() as *mut *const u8,
+                num_scratchpad_bufs,
+            )
         };
         let mut table: Pin<Box<[*const u8]>> = Pin::new(Box::from(table));
 
@@ -163,18 +202,13 @@ impl XhcDriver {
             // non-deallocate memory
             let sb_frame_info = bitmap::alloc_mem_frame(1)?;
             let buf_ptr = sb_frame_info.frame_start_virt_addr()?.as_ptr();
-            let buf = unsafe {
-                slice::from_raw_parts(buf_ptr as *const u8, PAGE_SIZE)
-            };
+            let buf = unsafe { slice::from_raw_parts(buf_ptr as *const u8, PAGE_SIZE) };
             let buf: Pin<Box<[u8]>> = Pin::new(Box::from(buf));
             *sb = buf.as_ref().as_ptr();
             bufs.push(buf);
         }
-        let scratchpad_bufs = ScratchpadBuffers {
-            table,
-            bufs,
-        };
-        trace!("{}: Scratchpad buffers initialized", driver_name);
+        let scratchpad_bufs = ScratchpadBuffers { table, bufs };
+        debug!("{}: Scratchpad buffers initialized", driver_name);
         Ok(scratchpad_bufs)
     }
 
@@ -183,9 +217,15 @@ impl XhcDriver {
 
         // initialize device context
         let dcbaa = DeviceContextBaseAddressArray::new(scratchpad_bufs);
-        self.ope_reg()?.as_mut().dcbaa_ptr.write(dcbaa.inner_mut_ptr());
+        self.ope_reg()?
+            .as_mut()
+            .dcbaa_ptr
+            .write(dcbaa.inner_mut_ptr());
         self.dcbaa = Some(dcbaa);
-        trace!("{}: Device context base address array initialized", driver_name);
+        debug!(
+            "{}: Device context base address array initialized",
+            driver_name
+        );
 
         Ok(())
     }
@@ -197,7 +237,7 @@ impl XhcDriver {
         let event_ring = self.primary_event_ring.as_mut().unwrap();
         let rt_reg = unsafe { self.rt_reg.as_mut().unwrap().get_unchecked_mut() };
         rt_reg.init_int_reg_set(0, event_ring)?;
-        trace!("{}: Primary event ring initialized", driver_name);
+        debug!("{}: Primary event ring initialized", driver_name);
 
         Ok(())
     }
@@ -209,22 +249,84 @@ impl XhcDriver {
         let cmd_ring = self.cmd_ring.as_mut().unwrap();
         let ope_reg = unsafe { self.ope_reg.as_mut().unwrap().get_unchecked_mut() };
         ope_reg.set_cmd_ring_ctrl(cmd_ring);
-        trace!("{}: Command ring initialized", driver_name);
+        debug!("{}: Command ring initialized", driver_name);
 
         Ok(())
     }
 
     fn init_port(&mut self, port: usize) -> Result<u8> {
-        let e = self.portsc()?.get(port).ok_or(Error::IndexOutOfBoundsError(port))?;
+        let driver_name = self.device_driver_info.name;
+
+        let e = self
+            .portsc()?
+            .get(port)
+            .ok_or(Error::IndexOutOfBoundsError(port))?;
         if !e.ccs() {
             return Err(XhcDriverError::PortNotConnected(port).into());
         }
         e.reset_port();
         assert!(e.is_enabled());
 
-        let trb = self.send_cmd(GenericTrbEntry::trb_enable_slot_cmd())?.ok_or(Error::Failed("Failed to enable slot"))?;
+        let trb = self.send_cmd(GenericTrbEntry::trb_enable_slot_cmd())?;
         let slot = trb.slot_id();
+
+        debug!(
+            "{}: Port {} is connected to slot {}",
+            driver_name, port, slot
+        );
         Ok(slot)
+    }
+
+    fn set_output_context_for_slot(
+        &mut self,
+        slot: u8,
+        output_context: Pin<Box<OutputContext>>,
+    ) -> Result<()> {
+        self.dcbaa()?.set_output_context(slot, output_context)?;
+        Ok(())
+    }
+
+    fn address_device(&mut self, port: usize, slot: u8) -> Result<()> {
+        let driver_name = self.device_driver_info.name;
+
+        let output_context = Box::pin(OutputContext::default());
+        self.set_output_context_for_slot(slot, output_context)?;
+        let mut input_ctrl_context = InputControlContext::default();
+        input_ctrl_context.add_context(0)?;
+        input_ctrl_context.add_context(1)?;
+        let mut input_context = Box::pin(InputContext::default());
+        input_context
+            .as_mut()
+            .set_input_ctrl_context(input_ctrl_context);
+        input_context.as_mut().set_root_hub_port_num(port)?;
+        input_context.as_mut().set_last_valid_dci(1)?;
+
+        let portsc_e = self
+            .portsc()?
+            .get(port)
+            .ok_or(Error::IndexOutOfBoundsError(port))?;
+        let port_speed = portsc_e.port_speed();
+        trace!("{:?}", port_speed);
+        input_context
+            .as_mut()
+            .set_port_speed(port_speed)?;
+        let ctrl_ep_ring = CommandRing::default();
+        input_context.as_mut().set_ep_context(
+            1,
+            EndpointContext::new_ctrl_endpoint(
+                portsc_e.max_packet_size()?,
+                ctrl_ep_ring.ring_phys_addr(),
+            )?,
+        );
+
+        let cmd = GenericTrbEntry::trb_cmd_address_device(input_context.as_ref(), slot);
+        self.send_cmd(cmd)?.cmd_result_ok()?;
+
+        debug!(
+            "{}: Addressed device on port {} with slot {}",
+            driver_name, port, slot
+        );
+        Ok(())
     }
 
     fn start(&mut self) -> Result<()> {
@@ -232,16 +334,14 @@ impl XhcDriver {
         self.ope_reg()?.as_mut().usb_cmd.set_run_stop(true);
 
         loop {
-            trace!("{}: Waiting xHC...", driver_name);
+            debug!("{}: Waiting xHC...", driver_name);
             if !self.ope_reg()?.as_ref().usb_status.hchalted() {
                 break;
             }
         }
-        trace!("{}: xHC started", driver_name);
-        trace!("{}: op_regs.usb_status: 0x{:x}", driver_name, self.ope_reg()?.as_ref().usb_status.read());
-        trace!("{}: rt_regs.mfindex: 0x{:x}", driver_name, self.rt_reg()?.as_ref().mfindex());
+        debug!("{}: xHC started", driver_name);
 
-        trace!("{}: portsc values for port {:?}", driver_name, self.portsc()?.port_range());
+        // initialize ports
         let mut connected_port = None;
         for port in self.portsc()?.port_range() {
             if let Some(e) = self.portsc()?.get(port) {
@@ -253,8 +353,7 @@ impl XhcDriver {
 
         if let Some(port) = connected_port {
             let slot = self.init_port(port)?;
-            trace!("{}: Port {} is connected to slot {}", driver_name, port, slot);
-
+            self.address_device(port, slot)?;
         }
 
         Ok(())
@@ -320,8 +419,8 @@ impl DeviceDriverFunction for XhcDriver {
             let num_of_slots = self.cap_reg()?.as_ref().num_of_ports();
             for i in 0..=num_of_slots {
                 let ptr: *mut u32 = cap_reg_virt_addr
-                .offset(self.cap_reg()?.as_ref().db_offset() + i * 4)
-                .as_ptr_mut();
+                    .offset(self.cap_reg()?.as_ref().db_offset() + i * 4)
+                    .as_ptr_mut();
                 doorbell_regs.push(Rc::new(Doorbell::new(ptr)));
             }
             self.doorbell_regs = doorbell_regs;
@@ -357,7 +456,7 @@ impl DeviceDriverFunction for XhcDriver {
         let driver_name = self.device_driver_info.name;
 
         if let Some(trb) = self.primary_event_ring()?.pop()? {
-            trace!("{}: Processed TRB: 0x{:x}", driver_name, trb.trb_type());
+            debug!("{}: Processed TRB: 0x{:x}", driver_name, trb.trb_type());
         }
 
         Ok(())

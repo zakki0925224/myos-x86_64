@@ -1,6 +1,28 @@
 use alloc::{boxed::Box, rc::Rc, vec::Vec};
 use crate::{arch::{addr::VirtualAddress, mmio::IoBox, volatile::Volatile}, device::xhc::{context::OutputContext, trb::{GenericTrbEntry, TrbRing, TrbType}}, error::{Error, Result}, util::mutex::Mutex};
-use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin, ptr::{read_volatile, write_volatile}, ops::Range};
+use core::{marker::PhantomPinned, mem::MaybeUninit, ops::Range, pin::Pin, ptr::{read_volatile, write_volatile}};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsbMode {
+    Unknown(u32),
+    FullSpeed,
+    LowSpeed,
+    HighSpeed,
+    SuperSpeed,
+}
+
+impl UsbMode {
+    pub fn psi(&self) -> u32 {
+        match *self {
+            UsbMode::Unknown(psi) => psi,
+            UsbMode::FullSpeed => 0,
+            UsbMode::LowSpeed => 1,
+            UsbMode::HighSpeed => 2,
+            UsbMode::SuperSpeed => 3,
+        }
+    }
+}
+
 
 #[repr(C)]
 pub struct CapabilityRegisters {
@@ -71,13 +93,22 @@ impl DeviceContextBaseAddressArray {
 
         Self {
             inner: Box::pin(inner),
-            context: unsafe { MaybeUninit::uninit().assume_init() },
+            context: [(); 255].map(|_| None),
             scratchpad_bufs,
         }
     }
 
     pub fn inner_mut_ptr(&self) -> *const DeviceContextBaseAddressArrayInner {
         self.inner.as_ref().get_ref()
+    }
+
+    pub fn set_output_context(&mut self, slot: u8, output_context: Pin<Box<OutputContext>>) -> Result<()> {
+        let index = slot as usize - 1;
+        self.context[index] = Some(output_context);
+        unsafe {
+            self.inner.as_mut().get_unchecked_mut().context[index] = self.context[index].as_ref().ok_or(Error::Failed("Output context not set"))?.as_ref().get_ref() as *const _ as u64;
+        }
+        Ok(())
     }
 }
 
@@ -415,6 +446,26 @@ impl PortScEntry {
 
     pub fn is_enabled(&self) -> bool {
         self.pp() && self.ccs() && self.ped() && !self.pr()
+    }
+
+    pub fn port_speed(&self) -> UsbMode {
+        let value = (self.read() >> 20) & 0x1f;
+        match value {
+            1 => UsbMode::FullSpeed,
+            2 => UsbMode::LowSpeed,
+            3 => UsbMode::HighSpeed,
+            4 => UsbMode::SuperSpeed,
+            v => UsbMode::Unknown(v),
+        }
+    }
+
+    pub fn max_packet_size(&self) -> Result<u16> {
+        match self.port_speed() {
+            UsbMode::FullSpeed | UsbMode::LowSpeed => Ok(8),
+            UsbMode::HighSpeed => Ok(64),
+            UsbMode::SuperSpeed => Ok(512),
+            _ => Err(Error::Failed("Unknown Protocol speed ID")),
+        }
     }
 }
 
