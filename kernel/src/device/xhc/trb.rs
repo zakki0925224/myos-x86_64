@@ -38,12 +38,22 @@ impl GenericTrbEntry {
         trb
     }
 
+    pub fn trb_enable_slot_cmd() -> Self {
+        let mut trb = Self::default();
+        trb.set_trb_type(TrbType::EnableSlotCommand);
+        trb
+    }
+
     pub fn set_trb_type(&mut self, trb_type: TrbType) {
         self.ctrl.write(self.ctrl.read() & !0xfc00 | ((trb_type as u32) << 10));
     }
 
+    pub fn set_cycle_state(&mut self, cycle: bool) {
+        self.ctrl.write(self.ctrl.read() & !0x1 | (cycle as u32));
+    }
+
     pub fn set_toggle_cycle(&mut self, value: bool) {
-        self.ctrl.write(self.ctrl.read() & !0x1 | (value as u32));
+        self.ctrl.write(self.ctrl.read() & !0x2 | (value as u32));
     }
 
     pub fn data(&self) -> u64 {
@@ -51,7 +61,7 @@ impl GenericTrbEntry {
     }
 
     pub fn slot_id(&self) -> u8 {
-        (self.ctrl.read() >> 8) as u8
+        (self.ctrl.read() >> 24) as u8
     }
 
     pub fn trb_type(&self) -> u32 {
@@ -110,10 +120,25 @@ impl TrbRing {
         Ok(())
     }
 
+    pub fn advance_index(&mut self, new_cycle: bool) -> Result<()> {
+        if self.current().cycle_state() == new_cycle {
+            return Err(Error::Failed("Invalid cycle state"));
+        }
+
+        self.trb[self.index].set_cycle_state(new_cycle);
+        self.index = (self.index + 1) % self.trb.len();
+        Ok(())
+    }
+
     pub fn current(&self) -> GenericTrbEntry {
         unsafe {
             read_volatile(&self.trb[self.index])
         }
+    }
+
+    pub fn write_current(&mut self, trb: GenericTrbEntry) -> Result<()> {
+        self.write(self.index, trb);
+        Ok(())
     }
 
     pub fn current_ptr(&self) -> *const GenericTrbEntry {

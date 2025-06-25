@@ -1,5 +1,5 @@
 use alloc::{boxed::Box, rc::Rc, vec::Vec};
-use crate::{arch::{addr::VirtualAddress, mmio::IoBox, volatile::Volatile}, device::xhc::{context::OutputContext, trb::{GenericTrbEntry, TrbRing}}, error::{Error, Result}, util::mutex::Mutex};
+use crate::{arch::{addr::VirtualAddress, mmio::IoBox, volatile::Volatile}, device::xhc::{context::OutputContext, trb::{GenericTrbEntry, TrbRing, TrbType}}, error::{Error, Result}, util::mutex::Mutex};
 use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin, ptr::{read_volatile, write_volatile}, ops::Range};
 
 #[repr(C)]
@@ -309,14 +309,14 @@ impl EventRing {
 
 pub struct CommandRing {
     ring: IoBox<TrbRing>,
-    _cycle_state_ours: bool,
+    cycle_state_ours: bool,
 }
 
 impl Default for CommandRing {
     fn default() -> Self {
         let mut me = Self {
             ring: TrbRing::new(),
-            _cycle_state_ours: false,
+            cycle_state_ours: false,
         };
 
         let link_trb = GenericTrbEntry::trb_link(me.ring.as_ref());
@@ -331,6 +331,25 @@ impl Default for CommandRing {
 impl CommandRing {
     pub fn ring_phys_addr(&self) -> u64 {
         self.ring.as_ref() as *const _ as u64
+    }
+
+    pub fn push(&mut self, mut src: GenericTrbEntry) -> Result<u64> {
+        let ring = unsafe { self.ring.get_unchecked_mut() };
+        if ring.current().cycle_state() != self.cycle_state_ours {
+            return Err(Error::Failed("Command ring is full"));
+        }
+
+        src.set_cycle_state(self.cycle_state_ours);
+        let dst_ptr = ring.current_ptr();
+        ring.write_current(src)?;
+        ring.advance_index(!self.cycle_state_ours)?;
+
+        if ring.current().trb_type() == TrbType::Link as u32 {
+            ring.advance_index(!self.cycle_state_ours)?;
+            self.cycle_state_ours = !self.cycle_state_ours;
+        }
+
+        Ok(dst_ptr as u64)
     }
 }
 
@@ -424,5 +443,24 @@ impl PortSc {
 
     pub fn get(&self, port: usize) -> Option<Rc<PortScEntry>> {
         self.entries.get(port.wrapping_sub(1)).cloned()
+    }
+}
+
+pub struct Doorbell {
+    ptr: Mutex<*mut u32>,
+}
+
+impl Doorbell {
+    pub fn new(ptr: *mut u32) -> Self {
+        Self {
+            ptr: Mutex::new(ptr),
+        }
+    }
+
+    pub fn notify(&self, target: u8, task: u16) {
+        let value = (target as u32) | (task as u32) << 16;
+        unsafe {
+            write_volatile(*self.ptr.spin_lock(), value);
+        }
     }
 }

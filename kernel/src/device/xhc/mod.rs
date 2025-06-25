@@ -1,9 +1,9 @@
 use core::{cmp::max, pin::Pin, slice};
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    arch::mmio::Mmio, device::{self, pci_bus::conf_space::BaseAddress, xhc::register::*}, error::{Error, Result}, fs::vfs, info, mem::{bitmap, paging::PAGE_SIZE}, trace, util::mutex::Mutex
+    arch::mmio::Mmio, device::{self, pci_bus::conf_space::BaseAddress, xhc::{register::*, trb::{GenericTrbEntry, TrbType}}}, error::{Error, Result}, fs::vfs, info, mem::{bitmap, paging::PAGE_SIZE}, trace, util::mutex::Mutex
 };
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, rc::Rc, vec::Vec};
 
 pub mod register;
 pub mod context;
@@ -18,6 +18,8 @@ pub enum XhcDriverError {
     HostControllerIsNotHalted,
     EventRingNotInitialized,
     CommandRingNotInitialized,
+    PortScNotInitialized,
+    PortNotConnected(usize),
 }
 
 struct XhcDriver {
@@ -30,6 +32,7 @@ struct XhcDriver {
     primary_event_ring: Option<EventRing>,
     cmd_ring: Option<CommandRing>,
     portsc: Option<PortSc>,
+    doorbell_regs: Vec<Rc<Doorbell>>
 }
 
 impl XhcDriver {
@@ -44,6 +47,7 @@ impl XhcDriver {
             primary_event_ring: None,
             cmd_ring: None,
             portsc: None,
+            doorbell_regs: Vec::new(),
         }
     }
 
@@ -80,7 +84,30 @@ impl XhcDriver {
     fn portsc(&self) -> Result<&PortSc> {
         self.portsc
             .as_ref()
-            .ok_or(XhcDriverError::RegisterNotInitialized.into())
+            .ok_or(XhcDriverError::PortScNotInitialized.into())
+    }
+
+    fn doorbell(&self, index: usize) -> Result<&Rc<Doorbell>> {
+        self.doorbell_regs
+            .get(index)
+            .ok_or(Error::IndexOutOfBoundsError(index))
+    }
+
+    fn notify(&self) -> Result<()> {
+        self.doorbell(0)?.notify(0, 0);
+        Ok(())
+    }
+
+    fn send_cmd(&mut self, cmd: GenericTrbEntry) -> Result<Option<GenericTrbEntry>> {
+        let _cmd_ptr = self.cmd_ring()?.push(cmd)?;
+        self.notify()?;
+        loop {
+            if let Some(trb) = self.primary_event_ring()?.pop()? {
+                if trb.trb_type() == TrbType::CommandCompletionEvent as u32 {
+                    return Ok(Some(trb));
+                }
+            }
+        }
     }
 
     fn reset(&mut self) -> Result<()> {
@@ -187,6 +214,19 @@ impl XhcDriver {
         Ok(())
     }
 
+    fn init_port(&mut self, port: usize) -> Result<u8> {
+        let e = self.portsc()?.get(port).ok_or(Error::IndexOutOfBoundsError(port))?;
+        if !e.ccs() {
+            return Err(XhcDriverError::PortNotConnected(port).into());
+        }
+        e.reset_port();
+        assert!(e.is_enabled());
+
+        let trb = self.send_cmd(GenericTrbEntry::trb_enable_slot_cmd())?.ok_or(Error::Failed("Failed to enable slot"))?;
+        let slot = trb.slot_id();
+        Ok(slot)
+    }
+
     fn start(&mut self) -> Result<()> {
         let driver_name = self.device_driver_info.name;
         self.ope_reg()?.as_mut().usb_cmd.set_run_stop(true);
@@ -212,12 +252,9 @@ impl XhcDriver {
         }
 
         if let Some(port) = connected_port {
-            info!("{}: Port {} is connected", driver_name, port);
-            if let Some(portsc) = self.portsc()?.get(port) {
-                portsc.reset_port();
-                assert!(portsc.is_enabled());
-                trace!("{}: Port {} has been reset and is enabled", driver_name, port);
-            }
+            let slot = self.init_port(port)?;
+            trace!("{}: Port {} is connected to slot {}", driver_name, port, slot);
+
         }
 
         Ok(())
@@ -278,6 +315,16 @@ impl DeviceDriverFunction for XhcDriver {
             self.rt_reg = Some(rt_reg);
 
             self.portsc = Some(PortSc::new(&cap_reg_virt_addr, self.cap_reg()?.as_ref()));
+
+            let mut doorbell_regs = Vec::new();
+            let num_of_slots = self.cap_reg()?.as_ref().num_of_ports();
+            for i in 0..=num_of_slots {
+                let ptr: *mut u32 = cap_reg_virt_addr
+                .offset(self.cap_reg()?.as_ref().db_offset() + i * 4)
+                .as_ptr_mut();
+                doorbell_regs.push(Rc::new(Doorbell::new(ptr)));
+            }
+            self.doorbell_regs = doorbell_regs;
 
             self.reset()?;
             self.set_max_dev_slots()?;
