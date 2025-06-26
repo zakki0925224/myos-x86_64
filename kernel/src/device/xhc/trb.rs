@@ -119,7 +119,8 @@ impl GenericTrbEntry {
     }
 
     pub fn set_toggle_cycle(&mut self, value: bool) {
-        self.ctrl.write(self.ctrl.read() & !0x2 | (value as u32));
+        self.ctrl
+            .write(self.ctrl.read() & !0x2 | (value as u32) << 1);
     }
 
     pub fn data(&self) -> u64 {

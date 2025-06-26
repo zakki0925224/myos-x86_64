@@ -5,11 +5,7 @@ use crate::{
     device::{
         self,
         pci_bus::conf_space::BaseAddress,
-        xhc::{
-            context::{EndpointContext, InputContext, InputControlContext, OutputContext},
-            register::*,
-            trb::{DataStageTrb, GenericTrbEntry, SetupStageTrb, StatusStageTrb, TrbType},
-        },
+        xhc::{context::*, register::*, trb::*},
     },
     error::{Error, Result},
     fs::vfs,
@@ -18,7 +14,12 @@ use crate::{
     trace,
     util::mutex::Mutex,
 };
-use alloc::{boxed::Box, rc::Rc, vec::Vec};
+use alloc::{
+    boxed::Box,
+    rc::Rc,
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::{cmp::max, pin::Pin, slice};
 
 pub mod context;
@@ -382,6 +383,78 @@ impl XhcDriver {
         Ok(*desc)
     }
 
+    fn request_string_desc(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        lang_id: u16,
+        index: u8,
+    ) -> Result<String> {
+        let buf = vec![0; 128];
+        let mut buf = Box::into_pin(buf.into_boxed_slice());
+        self.request_desc(
+            slot,
+            ctrl_ep_ring,
+            UsbDescriptorType::String,
+            index,
+            lang_id,
+            buf.as_mut(),
+        )?;
+        let s = String::from_utf8_lossy(&buf[2..])
+            .to_string()
+            .replace("\0", "");
+        Ok(s)
+    }
+
+    fn request_string_desc_zero(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+    ) -> Result<Vec<u16>> {
+        let buf = vec![0; 8];
+        let mut buf = Box::into_pin(buf.into_boxed_slice());
+        self.request_desc(
+            slot,
+            ctrl_ep_ring,
+            UsbDescriptorType::String,
+            0,
+            0,
+            buf.as_mut(),
+        )?;
+        Ok(buf.as_ref().get_ref().to_vec())
+    }
+
+    fn request_conf_desc_and_rest(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+    ) -> Result<Vec<UsbDescriptor>> {
+        let mut conf_desc = Box::pin(ConfigDescriptor::default());
+        self.request_desc(
+            slot,
+            ctrl_ep_ring,
+            UsbDescriptorType::Config,
+            0,
+            0,
+            conf_desc.as_mut().as_mut_slice(),
+        )?;
+
+        let buf = vec![0; conf_desc.total_len()];
+        let mut buf = Box::into_pin(buf.into_boxed_slice());
+        self.request_desc(
+            slot,
+            ctrl_ep_ring,
+            UsbDescriptorType::Config,
+            0,
+            0,
+            buf.as_mut(),
+        )?;
+
+        let iter = DescriptorIterator::new(&buf);
+        let descs: Vec<UsbDescriptor> = iter.collect();
+        Ok(descs)
+    }
+
     fn start(&mut self) -> Result<()> {
         let driver_name = self.device_driver_info.name;
         self.ope_reg()?.as_mut().usb_cmd.set_run_stop(true);
@@ -409,6 +482,50 @@ impl XhcDriver {
             let mut ctrl_ep_ring = self.address_device(port, slot)?;
             let dev_desc = self.request_dev_desc(slot, &mut ctrl_ep_ring)?;
             trace!("{:?}", dev_desc);
+            let vendor_id = dev_desc.vendor_id;
+            let product_id = dev_desc.product_id;
+
+            if let Ok(e) = self.request_string_desc_zero(slot, &mut ctrl_ep_ring) {
+                let lang_id = e[1];
+                let vendor = if dev_desc.manufacturer_index != 0 {
+                    Some(self.request_string_desc(
+                        slot,
+                        &mut ctrl_ep_ring,
+                        lang_id,
+                        dev_desc.manufacturer_index,
+                    )?)
+                } else {
+                    None
+                };
+                let product = if dev_desc.product_index != 0 {
+                    Some(self.request_string_desc(
+                        slot,
+                        &mut ctrl_ep_ring,
+                        lang_id,
+                        dev_desc.product_index,
+                    )?)
+                } else {
+                    None
+                };
+                let serial = if dev_desc.serial_index != 0 {
+                    Some(self.request_string_desc(
+                        slot,
+                        &mut ctrl_ep_ring,
+                        lang_id,
+                        dev_desc.serial_index,
+                    )?)
+                } else {
+                    None
+                };
+
+                debug!(
+                    "{}: Device attached: VID: 0x{:04x}, PID: 0x{:04x}, Manufacturer: {:?}, Product: {:?}, Serial: {:?}",
+                    driver_name, vendor_id, product_id, vendor, product, serial
+                );
+            }
+
+            let descs = self.request_conf_desc_and_rest(slot, &mut ctrl_ep_ring)?;
+            debug!("{}: Configuration descriptors: {:?}", driver_name, descs);
         }
 
         Ok(())

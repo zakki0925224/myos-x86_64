@@ -13,6 +13,7 @@ pub mod mmio;
 pub mod pin;
 pub mod qemu;
 pub mod register;
+pub mod slice;
 pub mod syscall;
 pub mod task;
 pub mod tss;
