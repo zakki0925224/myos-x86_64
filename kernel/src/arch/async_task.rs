@@ -1,7 +1,7 @@
 use super::task::TaskId;
 use crate::{
-    error::Result,
     debug,
+    error::Result,
     util::{self, mutex::Mutex},
 };
 use alloc::{boxed::Box, collections::VecDeque};

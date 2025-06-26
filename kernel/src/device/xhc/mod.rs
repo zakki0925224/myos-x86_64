@@ -1,22 +1,22 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    arch::mmio::Mmio,
+    arch::{mmio::Mmio, pin::IntoPinnedMutableSlice},
+    debug,
     device::{
         self,
         pci_bus::conf_space::BaseAddress,
         xhc::{
             context::{EndpointContext, InputContext, InputControlContext, OutputContext},
             register::*,
-            trb::{GenericTrbEntry, TrbType},
+            trb::{DataStageTrb, GenericTrbEntry, SetupStageTrb, StatusStageTrb, TrbType},
         },
     },
     error::{Error, Result},
     fs::vfs,
     info,
     mem::{bitmap, paging::PAGE_SIZE},
-    debug,
-    util::mutex::Mutex,
     trace,
+    util::mutex::Mutex,
 };
 use alloc::{boxed::Box, rc::Rc, vec::Vec};
 use core::{cmp::max, pin::Pin, slice};
@@ -121,15 +121,20 @@ impl XhcDriver {
         Ok(())
     }
 
+    fn notify_ep(&self, slot: u8, dci: usize) -> Result<()> {
+        let db = self.doorbell(slot as usize)?;
+        db.notify(dci as u8, 0);
+        Ok(())
+    }
+
     fn send_cmd(&mut self, cmd: GenericTrbEntry) -> Result<GenericTrbEntry> {
-        let _cmd_ptr = self.cmd_ring()?.push(cmd)?;
+        self.cmd_ring()?.push(cmd)?;
         self.notify()?;
         loop {
             if let Some(trb) = self.primary_event_ring()?.pop()? {
                 if trb.trb_type() == TrbType::CommandCompletionEvent as u32 {
                     return Ok(trb);
-                }
-                else {
+                } else {
                     trace!("Invalid TRB type: 0x{:x}", trb.trb_type());
                 }
             }
@@ -286,7 +291,7 @@ impl XhcDriver {
         Ok(())
     }
 
-    fn address_device(&mut self, port: usize, slot: u8) -> Result<()> {
+    fn address_device(&mut self, port: usize, slot: u8) -> Result<CommandRing> {
         let driver_name = self.device_driver_info.name;
 
         let output_context = Box::pin(OutputContext::default());
@@ -307,9 +312,7 @@ impl XhcDriver {
             .ok_or(Error::IndexOutOfBoundsError(port))?;
         let port_speed = portsc_e.port_speed();
         trace!("{:?}", port_speed);
-        input_context
-            .as_mut()
-            .set_port_speed(port_speed)?;
+        input_context.as_mut().set_port_speed(port_speed)?;
         let ctrl_ep_ring = CommandRing::default();
         input_context.as_mut().set_ep_context(
             1,
@@ -326,7 +329,57 @@ impl XhcDriver {
             "{}: Addressed device on port {} with slot {}",
             driver_name, port, slot
         );
+        Ok(ctrl_ep_ring)
+    }
+
+    fn request_desc<T: Sized>(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        desc_type: UsbDescriptorType,
+        desc_index: u8,
+        lang_id: u16,
+        buf: Pin<&mut [T]>,
+    ) -> Result<()> {
+        ctrl_ep_ring.push(
+            SetupStageTrb::new(
+                SetupStageTrb::REQ_TYPE_DIR_DEV_TO_HOST,
+                SetupStageTrb::REQ_GET_DESC,
+                (desc_type as u16) << 8 | (desc_index as u16),
+                lang_id,
+                (buf.len() * size_of::<T>()) as u16,
+            )
+            .into(),
+        )?;
+        ctrl_ep_ring.push(DataStageTrb::new_in(buf).into())?;
+        ctrl_ep_ring.push(StatusStageTrb::new_out().into())?;
+        self.notify_ep(slot, 1)?;
+        loop {
+            if let Some(trb) = self.primary_event_ring()?.pop()? {
+                if trb.transfer_result_ok().is_ok() {
+                    break;
+                }
+            }
+        }
+
         Ok(())
+    }
+
+    fn request_dev_desc(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+    ) -> Result<UsbDeviceDescriptor> {
+        let mut desc = Box::pin(UsbDeviceDescriptor::default());
+        self.request_desc(
+            slot,
+            ctrl_ep_ring,
+            UsbDescriptorType::Device,
+            0,
+            0,
+            desc.as_mut().as_mut_slice(),
+        )?;
+        Ok(*desc)
     }
 
     fn start(&mut self) -> Result<()> {
@@ -353,7 +406,9 @@ impl XhcDriver {
 
         if let Some(port) = connected_port {
             let slot = self.init_port(port)?;
-            self.address_device(port, slot)?;
+            let mut ctrl_ep_ring = self.address_device(port, slot)?;
+            let dev_desc = self.request_dev_desc(slot, &mut ctrl_ep_ring)?;
+            trace!("{:?}", dev_desc);
         }
 
         Ok(())

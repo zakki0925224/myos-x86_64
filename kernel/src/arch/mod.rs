@@ -10,6 +10,7 @@ pub mod gdt;
 pub mod idt;
 pub mod iomsg;
 pub mod mmio;
+pub mod pin;
 pub mod qemu;
 pub mod register;
 pub mod syscall;

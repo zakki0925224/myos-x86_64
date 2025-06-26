@@ -467,7 +467,13 @@ impl PageManager {
             let mem_info = bitmap::alloc_mem_frame(1)?;
             self.mem_clear(&mem_info)?;
             let virt_addr = self.calc_virt_addr(mem_info.frame_start_phys_addr)?;
-            entry.set_entry(virt_addr.get(), rw, mode, write_through_level, disable_cache);
+            entry.set_entry(
+                virt_addr.get(),
+                rw,
+                mode,
+                write_through_level,
+                disable_cache,
+            );
         }
 
         if entry.rw() < rw {
@@ -485,7 +491,13 @@ impl PageManager {
             let mem_info = bitmap::alloc_mem_frame(1)?;
             self.mem_clear(&mem_info)?;
             let virt_addr = self.calc_virt_addr(mem_info.frame_start_phys_addr)?;
-            entry.set_entry(virt_addr.get(), rw, mode, write_through_level, disable_cache);
+            entry.set_entry(
+                virt_addr.get(),
+                rw,
+                mode,
+                write_through_level,
+                disable_cache,
+            );
         }
 
         if entry.rw() < rw {
@@ -503,7 +515,13 @@ impl PageManager {
             let mem_info = bitmap::alloc_mem_frame(1)?;
             self.mem_clear(&mem_info)?;
             let virt_addr = self.calc_virt_addr(mem_info.frame_start_phys_addr)?;
-            entry.set_entry(virt_addr.get(), rw, mode, write_through_level, disable_cache);
+            entry.set_entry(
+                virt_addr.get(),
+                rw,
+                mode,
+                write_through_level,
+                disable_cache,
+            );
         }
 
         if entry.rw() < rw {
@@ -516,7 +534,13 @@ impl PageManager {
 
         let pml1_table = entry.page_table().unwrap();
         let entry = &mut pml1_table.entries[pml1e_index];
-        entry.set_entry(phys_addr.get(), rw, mode, write_through_level, disable_cache);
+        entry.set_entry(
+            phys_addr.get(),
+            rw,
+            mode,
+            write_through_level,
+            disable_cache,
+        );
 
         Ok(())
     }

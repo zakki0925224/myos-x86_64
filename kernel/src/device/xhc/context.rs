@@ -1,4 +1,8 @@
-use crate::{arch::volatile::Volatile, device::xhc::register::UsbMode, error::{Error, Result}};
+use crate::{
+    arch::volatile::Volatile,
+    device::xhc::register::UsbMode,
+    error::{Error, Result},
+};
 use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,7 +45,8 @@ impl EndpointContext {
     }
 
     fn set_ring_dequeue_ptr(&mut self, tr_dequeue_ptr: u64) {
-        self.tr_dequeue_ptr.write(self.tr_dequeue_ptr.read() & 0x1 | (tr_dequeue_ptr & !0x1));
+        self.tr_dequeue_ptr
+            .write(self.tr_dequeue_ptr.read() & 0x1 | (tr_dequeue_ptr & !0x1));
     }
 
     fn set_max_packet_size(&mut self, max_packet_size: u16) {
@@ -61,7 +66,8 @@ impl EndpointContext {
     }
 
     fn set_dequeue_cycle_state(&mut self, dcs: bool) {
-        self.tr_dequeue_ptr.write(self.tr_dequeue_ptr.read() & !0x1 | (dcs as u64));
+        self.tr_dequeue_ptr
+            .write(self.tr_dequeue_ptr.read() & !0x1 | (dcs as u64));
     }
 
     fn set_ep_type(&mut self, ep_type: EndpointType) -> Result<()> {
@@ -158,7 +164,10 @@ impl InputContext {
         }
     }
 
-    pub fn set_input_ctrl_context(self: &mut Pin<&mut Self>, input_ctrl_context: InputControlContext) {
+    pub fn set_input_ctrl_context(
+        self: &mut Pin<&mut Self>,
+        input_ctrl_context: InputControlContext,
+    ) {
         unsafe {
             self.as_mut().get_unchecked_mut().input_ctrl_context = input_ctrl_context;
         }
@@ -166,19 +175,28 @@ impl InputContext {
 
     pub fn set_port_speed(self: &mut Pin<&mut Self>, mode: UsbMode) -> Result<()> {
         unsafe {
-            self.as_mut().get_unchecked_mut().device_context.set_port_speed(mode)
+            self.as_mut()
+                .get_unchecked_mut()
+                .device_context
+                .set_port_speed(mode)
         }
     }
 
     pub fn set_root_hub_port_num(self: &mut Pin<&mut Self>, port: usize) -> Result<()> {
         unsafe {
-            self.as_mut().get_unchecked_mut().device_context.set_root_hub_port_num(port)
+            self.as_mut()
+                .get_unchecked_mut()
+                .device_context
+                .set_root_hub_port_num(port)
         }
     }
 
     pub fn set_last_valid_dci(self: &mut Pin<&mut Self>, dci: usize) -> Result<()> {
         unsafe {
-            self.as_mut().get_unchecked_mut().device_context.set_last_valid_dci(dci)
+            self.as_mut()
+                .get_unchecked_mut()
+                .device_context
+                .set_last_valid_dci(dci)
         }
     }
 }

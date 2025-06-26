@@ -1,6 +1,13 @@
+use crate::{
+    arch::addr::VirtualAddress,
+    mem::paging::{self, EntryMode, MappingInfo, PageWriteThroughLevel, ReadWrite, PAGE_SIZE},
+};
 use alloc::boxed::Box;
-use core::{marker::PhantomPinned, mem::{ManuallyDrop, MaybeUninit}, pin::Pin};
-use crate::{arch::addr::VirtualAddress, mem::paging::{self, EntryMode, MappingInfo, PageWriteThroughLevel, ReadWrite, PAGE_SIZE}};
+use core::{
+    marker::PhantomPinned,
+    mem::{ManuallyDrop, MaybeUninit},
+    pin::Pin,
+};
 
 #[derive(Debug)]
 pub struct Mmio<T: Sized> {
@@ -13,7 +20,7 @@ impl<T> AsRef<T> for Mmio<T> {
     }
 }
 
-impl <T: Unpin> AsMut<T> for Mmio<T> {
+impl<T: Unpin> AsMut<T> for Mmio<T> {
     fn as_mut(&mut self) -> &mut T {
         self.inner.as_mut().get_mut()
     }
@@ -36,7 +43,6 @@ pub struct IoBoxInner<T: Sized> {
     data: T,
     _pinned: PhantomPinned,
 }
-
 
 impl<T: Sized> IoBoxInner<T> {
     pub fn new(data: T) -> Self {
@@ -81,7 +87,8 @@ impl<T: Sized> IoBox<T> {
             us: EntryMode::Supervisor,
             pwt: PageWriteThroughLevel::WriteThrough,
             pcd: true, // page cache disable
-        }).unwrap();
+        })
+        .unwrap();
 
         me
     }

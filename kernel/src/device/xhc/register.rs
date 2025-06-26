@@ -1,6 +1,20 @@
+use crate::{
+    arch::{addr::VirtualAddress, mmio::IoBox, pin::IntoPinnedMutableSlice, volatile::Volatile},
+    device::xhc::{
+        context::OutputContext,
+        trb::{GenericTrbEntry, TrbRing, TrbType},
+    },
+    error::{Error, Result},
+    util::mutex::Mutex,
+};
 use alloc::{boxed::Box, rc::Rc, vec::Vec};
-use crate::{arch::{addr::VirtualAddress, mmio::IoBox, volatile::Volatile}, device::xhc::{context::OutputContext, trb::{GenericTrbEntry, TrbRing, TrbType}}, error::{Error, Result}, util::mutex::Mutex};
-use core::{marker::PhantomPinned, mem::MaybeUninit, ops::Range, pin::Pin, ptr::{read_volatile, write_volatile}};
+use core::{
+    marker::PhantomPinned,
+    mem::MaybeUninit,
+    ops::Range,
+    pin::Pin,
+    ptr::{read_volatile, write_volatile},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsbMode {
@@ -22,7 +36,6 @@ impl UsbMode {
         }
     }
 }
-
 
 #[repr(C)]
 pub struct CapabilityRegisters {
@@ -63,7 +76,7 @@ impl CapabilityRegisters {
 
     pub fn num_scratchpad_bufs(&self) -> usize {
         let hcs_params2 = self.hcs_params2.read();
-        (((hcs_params2 & 0xf_8000) >> 16 ) | ((hcs_params2 & 0x7c00_0000) >> 26)) as usize
+        (((hcs_params2 & 0xf_8000) >> 16) | ((hcs_params2 & 0x7c00_0000) >> 26)) as usize
     }
 }
 
@@ -102,11 +115,20 @@ impl DeviceContextBaseAddressArray {
         self.inner.as_ref().get_ref()
     }
 
-    pub fn set_output_context(&mut self, slot: u8, output_context: Pin<Box<OutputContext>>) -> Result<()> {
+    pub fn set_output_context(
+        &mut self,
+        slot: u8,
+        output_context: Pin<Box<OutputContext>>,
+    ) -> Result<()> {
         let index = slot as usize - 1;
         self.context[index] = Some(output_context);
         unsafe {
-            self.inner.as_mut().get_unchecked_mut().context[index] = self.context[index].as_ref().ok_or(Error::Failed("Output context not set"))?.as_ref().get_ref() as *const _ as u64;
+            self.inner.as_mut().get_unchecked_mut().context[index] =
+                self.context[index]
+                    .as_ref()
+                    .ok_or(Error::Failed("Output context not set"))?
+                    .as_ref()
+                    .get_ref() as *const _ as u64;
         }
         Ok(())
     }
@@ -211,12 +233,14 @@ pub struct OperationalRegisters {
 
 impl OperationalRegisters {
     pub fn set_max_device_slots_enabled(&mut self, value: u8) {
-        self.config.write((self.config.read() & !0xff) | (value as u64));
+        self.config
+            .write((self.config.read() & !0xff) | (value as u64));
     }
 
     pub fn set_cmd_ring_ctrl(&mut self, ring: &mut CommandRing) {
         let cycle_state = 1;
-        self.cmd_ring_ctrl.write(ring.ring_phys_addr() | cycle_state);
+        self.cmd_ring_ctrl
+            .write(ring.ring_phys_addr() | cycle_state);
     }
 }
 
@@ -239,7 +263,10 @@ pub struct RuntimeRegisters {
 
 impl RuntimeRegisters {
     pub fn init_int_reg_set(&mut self, index: usize, ring: &mut EventRing) -> Result<()> {
-        let int_reg_set = self.int_reg_set.get_mut(index).ok_or(Error::IndexOutOfBoundsError(index))?;
+        let int_reg_set = self
+            .int_reg_set
+            .get_mut(index)
+            .ok_or(Error::IndexOutOfBoundsError(index))?;
         int_reg_set.erst_size = 1;
         int_reg_set.erdp = ring.ring_phys_addr();
         int_reg_set.erst_base = ring.erst_phys_addr();
@@ -272,7 +299,11 @@ impl EventRingSegmentTableEntry {
         {
             let erst = unsafe { erst.get_unchecked_mut() };
             erst.ring_seg_base_addr = ring.as_ref() as *const _ as u64;
-            erst.ring_seg_size = ring.as_ref().num_trbs().try_into().or(Err(Error::Failed("Too large num trbs")))?;
+            erst.ring_seg_size = ring
+                .as_ref()
+                .num_trbs()
+                .try_into()
+                .or(Err(Error::Failed("Too large num trbs")))?;
         }
 
         Ok(erst)
@@ -295,7 +326,7 @@ impl EventRing {
             ring,
             erst,
             cycle_state_ours: true,
-            erdp: None
+            erdp: None,
         })
     }
 
@@ -483,9 +514,7 @@ impl PortSc {
             entries.push(Rc::new(PortScEntry::new(ptr)));
         }
 
-        Self {
-            entries,
-        }
+        Self { entries }
     }
 
     pub fn port_range(&self) -> Range<usize> {
@@ -515,3 +544,36 @@ impl Doorbell {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+#[allow(unused)]
+pub enum UsbDescriptorType {
+    Device = 1,
+    Config = 2,
+    String = 3,
+    Interface = 4,
+    Endpoint = 5,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+#[allow(unused)]
+#[repr(packed)]
+pub struct UsbDeviceDescriptor {
+    pub desc_len: u8,
+    pub desc_type: u8,
+    pub version: u16,
+    pub dev_class: u8,
+    pub dev_subclass: u8,
+    pub dev_protocol: u8,
+    pub max_packet_size: u8,
+    pub vendor_id: u16,
+    pub product_id: u16,
+    pub device_version: u16,
+    pub manufacturer_index: u8,
+    pub product_index: u8,
+    pub serial_index: u8,
+    pub num_of_config: u8,
+}
+
+unsafe impl IntoPinnedMutableSlice for UsbDeviceDescriptor {}
