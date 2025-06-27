@@ -5,7 +5,8 @@ use crate::{
     device::{
         self,
         pci_bus::conf_space::BaseAddress,
-        xhc::{context::*, register::*, trb::*},
+        usb_bus::{UsbDevice, UsbDeviceAttachInfo},
+        xhc::{context::*, desc::*, register::*, trb::*},
     },
     error::{Error, Result},
     fs::vfs,
@@ -16,7 +17,6 @@ use crate::{
 };
 use alloc::{
     boxed::Box,
-    collections::btree_set::BTreeSet,
     rc::Rc,
     string::{String, ToString},
     vec::Vec,
@@ -24,6 +24,7 @@ use alloc::{
 use core::{cmp::max, pin::Pin, slice};
 
 pub mod context;
+pub mod desc;
 pub mod register;
 pub mod trb;
 
@@ -39,6 +40,30 @@ pub enum XhcDriverError {
     CommandRingNotInitialized,
     PortScNotInitialized,
     PortNotConnected(usize),
+}
+
+pub trait XhcRequestFunction {
+    fn set_config(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        config_value: u8,
+    ) -> Result<()>;
+    fn set_interface(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        interface_num: u8,
+        alt_setting: u8,
+    ) -> Result<()>;
+    fn set_protocol(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        interface_num: u8,
+        protocol: u8,
+    ) -> Result<()>;
+    fn hid_report(&mut self, slot: u8, ctrl_ep_ring: &mut CommandRing) -> Result<Vec<u8>>;
 }
 
 struct XhcDriver {
@@ -590,125 +615,106 @@ impl XhcDriver {
         debug!("{}: xHC started", driver_name);
 
         // initialize ports
-        let mut connected_port = None;
         for port in self.portsc()?.port_range() {
             if let Some(e) = self.portsc()?.get(port) {
-                if e.ccs() {
-                    connected_port = Some(port);
+                // skip disconnected devices
+                if !e.ccs() {
+                    continue;
                 }
-            }
-        }
 
-        if let Some(port) = connected_port {
-            let slot = self.init_port(port)?;
-            let mut ctrl_ep_ring = self.address_device(port, slot)?;
-            let dev_desc = self.request_dev_desc(slot, &mut ctrl_ep_ring)?;
-            trace!("{:?}", dev_desc);
-            let vendor_id = dev_desc.vendor_id;
-            let product_id = dev_desc.product_id;
+                let slot = self.init_port(port)?;
+                let mut ctrl_ep_ring = self.address_device(port, slot)?;
+                let dev_desc = self.request_dev_desc(slot, &mut ctrl_ep_ring)?;
 
-            if let Ok(e) = self.request_string_desc_zero(slot, &mut ctrl_ep_ring) {
-                let lang_id = e[1];
-                let vendor = if dev_desc.manufacturer_index != 0 {
-                    Some(self.request_string_desc(
-                        slot,
-                        &mut ctrl_ep_ring,
-                        lang_id,
-                        dev_desc.manufacturer_index,
-                    )?)
-                } else {
-                    None
-                };
-                let product = if dev_desc.product_index != 0 {
-                    Some(self.request_string_desc(
-                        slot,
-                        &mut ctrl_ep_ring,
-                        lang_id,
-                        dev_desc.product_index,
-                    )?)
-                } else {
-                    None
-                };
-                let serial = if dev_desc.serial_index != 0 {
-                    Some(self.request_string_desc(
-                        slot,
-                        &mut ctrl_ep_ring,
-                        lang_id,
-                        dev_desc.serial_index,
-                    )?)
-                } else {
-                    None
-                };
+                let mut vendor = None;
+                let mut product = None;
+                let mut serial = None;
+                if let Ok(e) = self.request_string_desc_zero(slot, &mut ctrl_ep_ring) {
+                    let lang_id = e[1];
+                    if dev_desc.manufacturer_index != 0 {
+                        vendor = Some(self.request_string_desc(
+                            slot,
+                            &mut ctrl_ep_ring,
+                            lang_id,
+                            dev_desc.manufacturer_index,
+                        )?);
+                    }
 
-                debug!(
-                    "{}: Device attached: VID: 0x{:04x}, PID: 0x{:04x}, Manufacturer: {:?}, Product: {:?}, Serial: {:?}",
-                    driver_name, vendor_id, product_id, vendor, product, serial
+                    if dev_desc.product_index != 0 {
+                        product = Some(self.request_string_desc(
+                            slot,
+                            &mut ctrl_ep_ring,
+                            lang_id,
+                            dev_desc.product_index,
+                        )?);
+                    }
+
+                    if dev_desc.serial_index != 0 {
+                        serial = Some(self.request_string_desc(
+                            slot,
+                            &mut ctrl_ep_ring,
+                            lang_id,
+                            dev_desc.serial_index,
+                        )?);
+                    }
+                }
+
+                let descs = self.request_conf_desc_and_rest(slot, &mut ctrl_ep_ring)?;
+                debug!("{}: Port {} initialized", driver_name, port);
+
+                // attach usb device
+                let attach_info = UsbDeviceAttachInfo::new_xhci(
+                    port,
+                    slot,
+                    vendor,
+                    product,
+                    serial,
+                    dev_desc,
+                    descs,
+                    Box::new(ctrl_ep_ring),
                 );
-            }
 
-            let descs = self.request_conf_desc_and_rest(slot, &mut ctrl_ep_ring)?;
-            debug!("{}: Configuration descriptors: {:?}", driver_name, descs);
-
-            let mut last_config: Option<ConfigDescriptor> = None;
-            let mut boot_keyboard_interface: Option<InterfaceDescriptor> = None;
-            let mut ep_desc_list: Vec<EndpointDescriptor> = Vec::new();
-            for d in descs {
-                match d {
-                    UsbDescriptor::Config(e) => {
-                        if boot_keyboard_interface.is_some() {
-                            break;
-                        }
-                        last_config = Some(e);
-                        ep_desc_list.clear();
-                    }
-                    UsbDescriptor::Interface(e) => {
-                        if let (3, 1, 1) = e.triple() {
-                            boot_keyboard_interface = Some(e);
-                        }
-                    }
-                    UsbDescriptor::Endpoint(e) => {
-                        ep_desc_list.push(e);
-                    }
-                    _ => (),
-                }
-            }
-
-            let config_desc = last_config.ok_or(Error::Failed("No USB KBD boot config found"))?;
-            let interface_desc =
-                boot_keyboard_interface.ok_or(Error::Failed("No USB KBD boot interface found"))?;
-            self.request_set_config(slot, &mut ctrl_ep_ring, config_desc.conf_value())?;
-            self.request_set_interface(
-                slot,
-                &mut ctrl_ep_ring,
-                interface_desc.interface_num,
-                interface_desc.alt_setting,
-            )?;
-            self.request_set_protocol(
-                slot,
-                &mut ctrl_ep_ring,
-                interface_desc.interface_num,
-                UsbHidProtocol::BootProtocol as u8,
-            )?;
-
-            let mut prev_pressed = BTreeSet::new();
-            loop {
-                let pressed = {
-                    let report = self.request_hid_report(slot, &mut ctrl_ep_ring)?;
-                    BTreeSet::from_iter(report.into_iter().skip(2).filter(|id| *id != 0))
-                };
-                let diff = pressed.symmetric_difference(&prev_pressed);
-                for id in diff {
-                    if pressed.contains(id) {
-                        info!("{}: Key pressed: {}", driver_name, id);
-                    } else {
-                        info!("{}: Key released: {}", driver_name, id);
-                    }
-                }
-                prev_pressed = pressed;
+                let usb_device = UsbDevice::new(attach_info);
+                device::usb_bus::attach_usb_device(usb_device)?;
             }
         }
 
         Ok(())
+    }
+}
+
+impl XhcRequestFunction for XhcDriver {
+    fn set_config(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        config_value: u8,
+    ) -> Result<()> {
+        self.request_set_config(slot, ctrl_ep_ring, config_value)
+    }
+
+    fn set_interface(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        interface_num: u8,
+        alt_setting: u8,
+    ) -> Result<()> {
+        self.request_set_interface(slot, ctrl_ep_ring, interface_num, alt_setting)
+    }
+
+    fn set_protocol(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        interface_num: u8,
+        protocol: u8,
+    ) -> Result<()> {
+        self.request_set_protocol(slot, ctrl_ep_ring, interface_num, protocol)
+    }
+
+    fn hid_report(&mut self, slot: u8, ctrl_ep_ring: &mut CommandRing) -> Result<Vec<u8>> {
+        self.request_hid_report(slot, ctrl_ep_ring)
     }
 }
 
@@ -871,4 +877,9 @@ pub fn write(data: &[u8]) -> Result<()> {
 pub fn poll_normal() -> Result<()> {
     let mut driver = unsafe { XHC_DRIVER.try_lock() }?;
     driver.poll_normal()
+}
+
+pub fn request<R, F: FnOnce(&mut dyn XhcRequestFunction) -> R>(f: F) -> R {
+    let mut driver = unsafe { XHC_DRIVER.try_lock() }.unwrap();
+    f(&mut *driver)
 }
