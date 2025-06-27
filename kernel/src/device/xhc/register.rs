@@ -615,8 +615,8 @@ unsafe impl Sliceable for ConfigDescriptor {}
 pub struct InterfaceDescriptor {
     desc_len: u8,
     desc_type: u8,
-    interface_num: u8,
-    alt_setting: u8,
+    pub interface_num: u8,
+    pub alt_setting: u8,
     num_of_endpoints: u8,
     interface_class: u8,
     interface_subclass: u8,
@@ -626,6 +626,16 @@ pub struct InterfaceDescriptor {
 
 unsafe impl IntoPinnedMutableSlice for InterfaceDescriptor {}
 unsafe impl Sliceable for InterfaceDescriptor {}
+
+impl InterfaceDescriptor {
+    pub fn triple(&self) -> (u8, u8, u8) {
+        (
+            self.interface_class,
+            self.interface_subclass,
+            self.interface_protocol,
+        )
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 #[allow(unused)]
@@ -690,4 +700,9 @@ impl<'a> Iterator for DescriptorIterator<'a> {
             Some(desc)
         }
     }
+}
+
+#[repr(u8)]
+pub enum UsbHidProtocol {
+    BootProtocol = 0,
 }

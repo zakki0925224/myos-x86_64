@@ -283,8 +283,8 @@ def run():
 
     build()
     _make_img()
-    cmd = _qemu_cmd() if is_kernel_test else _own_qemu_cmd()
-    # cmd = _qemu_cmd()
+    # cmd = _qemu_cmd() if is_kernel_test else _own_qemu_cmd()
+    cmd = _qemu_cmd()
 
     _run_cmd(cmd, ignore_error=not is_kernel_test, check_qemu_exit_code=is_kernel_test)
 

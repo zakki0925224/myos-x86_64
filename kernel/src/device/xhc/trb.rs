@@ -309,4 +309,15 @@ impl StatusStageTrb {
             ctrl: (TrbType::StatusStage as u32) << 10,
         }
     }
+
+    pub fn new_in() -> Self {
+        Self {
+            reserved: 0,
+            option: 0,
+            ctrl: (TrbType::StatusStage as u32) << 10
+                | GenericTrbEntry::CTRL_DATA_DIR_IN
+                | GenericTrbEntry::CTRL_INT_ON_COMPLETION
+                | GenericTrbEntry::CTRL_INT_ON_SHOT_PACKET,
+        }
+    }
 }

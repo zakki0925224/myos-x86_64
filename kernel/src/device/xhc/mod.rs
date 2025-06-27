@@ -16,6 +16,7 @@ use crate::{
 };
 use alloc::{
     boxed::Box,
+    collections::btree_set::BTreeSet,
     rc::Rc,
     string::{String, ToString},
     vec::Vec,
@@ -455,6 +456,127 @@ impl XhcDriver {
         Ok(descs)
     }
 
+    fn request_set_protocol(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        interface_num: u8,
+        protocol: u8,
+    ) -> Result<()> {
+        ctrl_ep_ring.push(
+            SetupStageTrb::new(
+                SetupStageTrb::REQ_TYPE_TO_INTERFACE,
+                SetupStageTrb::REQ_SET_PROTOCOL,
+                protocol as u16,
+                interface_num as u16,
+                0,
+            )
+            .into(),
+        )?;
+        ctrl_ep_ring.push(StatusStageTrb::new_in().into())?;
+        self.notify_ep(slot, 1)?;
+        loop {
+            if let Some(trb) = self.primary_event_ring()?.pop()? {
+                if trb.transfer_result_ok().is_ok() {
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn request_set_interface(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        interface_num: u8,
+        alt_setting: u8,
+    ) -> Result<()> {
+        ctrl_ep_ring.push(
+            SetupStageTrb::new(
+                SetupStageTrb::REQ_TYPE_TO_INTERFACE,
+                SetupStageTrb::REQ_SET_INTERFACE,
+                alt_setting as u16,
+                interface_num as u16,
+                0,
+            )
+            .into(),
+        )?;
+        ctrl_ep_ring.push(StatusStageTrb::new_in().into())?;
+        self.notify_ep(slot, 1)?;
+        loop {
+            if let Some(trb) = self.primary_event_ring()?.pop()? {
+                if trb.transfer_result_ok().is_ok() {
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn request_set_config(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        config_value: u8,
+    ) -> Result<()> {
+        ctrl_ep_ring.push(
+            SetupStageTrb::new(0, SetupStageTrb::REQ_SET_CONF, config_value as u16, 0, 0).into(),
+        )?;
+        ctrl_ep_ring.push(StatusStageTrb::new_in().into())?;
+        self.notify_ep(slot, 1)?;
+        loop {
+            if let Some(trb) = self.primary_event_ring()?.pop()? {
+                if trb.transfer_result_ok().is_ok() {
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn request_report_bytes(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        buf: Pin<&mut [u8]>,
+    ) -> Result<()> {
+        ctrl_ep_ring.push(
+            SetupStageTrb::new(
+                SetupStageTrb::REQ_TYPE_DIR_DEV_TO_HOST
+                    | SetupStageTrb::REQ_TYPE_TYPE_CLASS
+                    | SetupStageTrb::REQ_TYPE_TO_INTERFACE,
+                SetupStageTrb::REQ_GET_REPORT,
+                0x0200,
+                0,
+                buf.len() as u16,
+            )
+            .into(),
+        )?;
+        ctrl_ep_ring.push(DataStageTrb::new_in(buf).into())?;
+        ctrl_ep_ring.push(StatusStageTrb::new_out().into())?;
+        self.notify_ep(slot, 1)?;
+        loop {
+            if let Some(trb) = self.primary_event_ring()?.pop()? {
+                if trb.transfer_result_ok().is_ok() {
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn request_hid_report(&mut self, slot: u8, ctrl_ep_ring: &mut CommandRing) -> Result<Vec<u8>> {
+        let buf = [0u8; 8];
+        let mut buf = Box::into_pin(Box::new(buf));
+        self.request_report_bytes(slot, ctrl_ep_ring, buf.as_mut())?;
+        Ok(buf.to_vec())
+    }
+
     fn start(&mut self) -> Result<()> {
         let driver_name = self.device_driver_info.name;
         self.ope_reg()?.as_mut().usb_cmd.set_run_stop(true);
@@ -526,6 +648,64 @@ impl XhcDriver {
 
             let descs = self.request_conf_desc_and_rest(slot, &mut ctrl_ep_ring)?;
             debug!("{}: Configuration descriptors: {:?}", driver_name, descs);
+
+            let mut last_config: Option<ConfigDescriptor> = None;
+            let mut boot_keyboard_interface: Option<InterfaceDescriptor> = None;
+            let mut ep_desc_list: Vec<EndpointDescriptor> = Vec::new();
+            for d in descs {
+                match d {
+                    UsbDescriptor::Config(e) => {
+                        if boot_keyboard_interface.is_some() {
+                            break;
+                        }
+                        last_config = Some(e);
+                        ep_desc_list.clear();
+                    }
+                    UsbDescriptor::Interface(e) => {
+                        if let (3, 1, 1) = e.triple() {
+                            boot_keyboard_interface = Some(e);
+                        }
+                    }
+                    UsbDescriptor::Endpoint(e) => {
+                        ep_desc_list.push(e);
+                    }
+                    _ => (),
+                }
+            }
+
+            let config_desc = last_config.ok_or(Error::Failed("No USB KBD boot config found"))?;
+            let interface_desc =
+                boot_keyboard_interface.ok_or(Error::Failed("No USB KBD boot interface found"))?;
+            self.request_set_config(slot, &mut ctrl_ep_ring, config_desc.conf_value())?;
+            self.request_set_interface(
+                slot,
+                &mut ctrl_ep_ring,
+                interface_desc.interface_num,
+                interface_desc.alt_setting,
+            )?;
+            self.request_set_protocol(
+                slot,
+                &mut ctrl_ep_ring,
+                interface_desc.interface_num,
+                UsbHidProtocol::BootProtocol as u8,
+            )?;
+
+            let mut prev_pressed = BTreeSet::new();
+            loop {
+                let pressed = {
+                    let report = self.request_hid_report(slot, &mut ctrl_ep_ring)?;
+                    BTreeSet::from_iter(report.into_iter().skip(2).filter(|id| *id != 0))
+                };
+                let diff = pressed.symmetric_difference(&prev_pressed);
+                for id in diff {
+                    if pressed.contains(id) {
+                        info!("{}: Key pressed: {}", driver_name, id);
+                    } else {
+                        info!("{}: Key released: {}", driver_name, id);
+                    }
+                }
+                prev_pressed = pressed;
+            }
         }
 
         Ok(())
