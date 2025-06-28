@@ -1,12 +1,15 @@
-use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     arch::{mmio::Mmio, pin::IntoPinnedMutableSlice},
     debug,
     device::{
         self,
         pci_bus::conf_space::BaseAddress,
-        usb_bus::{UsbDevice, UsbDeviceAttachInfo},
-        xhc::{context::*, desc::*, register::*, trb::*},
+        usb::{
+            hid_keyboard::UsbHidKeyboardDriver,
+            usb_bus::{UsbDevice, UsbDeviceAttachInfo, XhciAttachInfo},
+            xhc::{context::*, desc::*, register::*, trb::*},
+        },
+        DeviceDriverFunction, DeviceDriverInfo,
     },
     error::{Error, Result},
     fs::vfs,
@@ -662,8 +665,8 @@ impl XhcDriver {
                 let descs = self.request_conf_desc_and_rest(slot, &mut ctrl_ep_ring)?;
                 debug!("{}: Port {} initialized", driver_name, port);
 
-                // attach usb device
-                let attach_info = UsbDeviceAttachInfo::new_xhci(
+                // detect and attach usb device
+                let xhci_attach_info = XhciAttachInfo {
                     port,
                     slot,
                     vendor,
@@ -671,11 +674,26 @@ impl XhcDriver {
                     serial,
                     dev_desc,
                     descs,
-                    Box::new(ctrl_ep_ring),
-                );
+                    ctrl_ep_ring: Box::new(ctrl_ep_ring),
+                };
 
-                let usb_device = UsbDevice::new(attach_info);
-                device::usb_bus::attach_usb_device(usb_device)?;
+                if xhci_attach_info
+                    .interface_descs()
+                    .iter()
+                    .find(|d| d.triple() == (3, 1, 1))
+                    .is_some()
+                {
+                    let attach_info = UsbDeviceAttachInfo::new_xhci(xhci_attach_info);
+                    let driver = UsbHidKeyboardDriver::new();
+                    let usb_device = UsbDevice::new(attach_info, Box::new(driver));
+                    device::usb::usb_bus::attach_usb_device(usb_device)?;
+                    info!("{}: USB HID keyboard device attached", driver_name);
+                } else {
+                    info!(
+                        "{}: Unsupported USB device detected, no attached",
+                        driver_name
+                    );
+                }
             }
         }
 

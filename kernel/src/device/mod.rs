@@ -10,9 +10,8 @@ pub mod rtl8139;
 pub mod speaker;
 pub mod tty;
 pub mod uart;
-pub mod usb_bus;
+pub mod usb;
 pub mod virtio;
-pub mod xhc;
 pub mod zakki;
 
 #[derive(Debug, Clone)]

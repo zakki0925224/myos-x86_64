@@ -1,34 +1,33 @@
-use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     device::{
-        self,
-        xhc::{
-            desc::*,
-            register::{CommandRing, UsbHidProtocol},
+        usb::{
+            xhc::{desc::*, register::*},
+            UsbDeviceDriverFunction,
         },
+        DeviceDriverFunction, DeviceDriverInfo,
     },
-    error::{Error, Result},
+    error::Result,
     fs::vfs,
-    info, trace,
+    info,
     util::mutex::Mutex,
 };
-use alloc::{boxed::Box, collections::btree_set::BTreeSet, string::String, vec::Vec};
+use alloc::{boxed::Box, string::String, vec::Vec};
 
 static mut USB_BUS_DRIVER: Mutex<UsbBusDriver> = Mutex::new(UsbBusDriver::new());
 
 pub struct XhciAttachInfo {
-    port: usize,
-    slot: u8,
-    vendor: Option<String>,
-    product: Option<String>,
-    serial: Option<String>,
-    dev_desc: UsbDeviceDescriptor,
-    descs: Vec<UsbDescriptor>,
-    ctrl_ep_ring: Box<CommandRing>,
+    pub port: usize,
+    pub slot: u8,
+    pub vendor: Option<String>,
+    pub product: Option<String>,
+    pub serial: Option<String>,
+    pub dev_desc: UsbDeviceDescriptor,
+    pub descs: Vec<UsbDescriptor>,
+    pub ctrl_ep_ring: Box<CommandRing>,
 }
 
 impl XhciAttachInfo {
-    fn last_config_desc(&self) -> Option<&ConfigDescriptor> {
+    pub fn last_config_desc(&self) -> Option<&ConfigDescriptor> {
         self.descs.iter().rev().find_map(|d| {
             if let UsbDescriptor::Config(c) = d {
                 Some(c)
@@ -38,7 +37,7 @@ impl XhciAttachInfo {
         })
     }
 
-    fn interface_descs(&self) -> Vec<&InterfaceDescriptor> {
+    pub fn interface_descs(&self) -> Vec<&InterfaceDescriptor> {
         self.descs
             .iter()
             .filter_map(|d| {
@@ -51,7 +50,7 @@ impl XhciAttachInfo {
             .collect()
     }
 
-    fn endpoint_descs(&self) -> Vec<&EndpointDescriptor> {
+    pub fn endpoint_descs(&self) -> Vec<&EndpointDescriptor> {
         self.descs
             .iter()
             .filter_map(|d| {
@@ -64,7 +63,7 @@ impl XhciAttachInfo {
             .collect()
     }
 
-    fn ctrl_ep_ring_mut(&mut self) -> &mut CommandRing {
+    pub fn ctrl_ep_ring_mut(&mut self) -> &mut CommandRing {
         &mut self.ctrl_ep_ring
     }
 }
@@ -74,26 +73,8 @@ pub enum UsbDeviceAttachInfo {
 }
 
 impl UsbDeviceAttachInfo {
-    pub fn new_xhci(
-        port: usize,
-        slot: u8,
-        vendor: Option<String>,
-        product: Option<String>,
-        serial: Option<String>,
-        dev_desc: UsbDeviceDescriptor,
-        descs: Vec<UsbDescriptor>,
-        ctrl_ep_ring: Box<CommandRing>,
-    ) -> Self {
-        Self::Xhci(XhciAttachInfo {
-            port,
-            slot,
-            vendor,
-            product,
-            serial,
-            dev_desc,
-            descs,
-            ctrl_ep_ring,
-        })
+    pub fn new_xhci(info: XhciAttachInfo) -> Self {
+        Self::Xhci(info)
     }
 }
 
@@ -106,84 +87,16 @@ pub enum UsbDeviceState {
 pub struct UsbDevice {
     attach_info: UsbDeviceAttachInfo,
     state: UsbDeviceState,
+    driver: Box<dyn UsbDeviceDriverFunction>,
 }
 
 impl UsbDevice {
-    pub fn new(attach_info: UsbDeviceAttachInfo) -> Self {
+    pub fn new(attach_info: UsbDeviceAttachInfo, driver: Box<dyn UsbDeviceDriverFunction>) -> Self {
         Self {
             attach_info,
             state: UsbDeviceState::Attached,
+            driver,
         }
-    }
-
-    fn configure_xhci_keyboard(&mut self) -> Result<()> {
-        let xhci_info = match &mut self.attach_info {
-            UsbDeviceAttachInfo::Xhci(info) => info,
-        };
-        let slot = xhci_info.slot;
-
-        // set config
-        let config_desc = xhci_info
-            .last_config_desc()
-            .ok_or(Error::Failed("No configuration descriptor found"))?;
-        let config_value = config_desc.config_value();
-        device::xhc::request(|xhc| {
-            xhc.set_config(slot, xhci_info.ctrl_ep_ring_mut(), config_value)
-        })?;
-
-        // set interface
-        let interface_descs = xhci_info.interface_descs();
-        let target_interface_desc = *interface_descs
-            .iter()
-            .find(|d| d.triple() == (3, 1, 1))
-            .ok_or(Error::Failed("No target interface descriptor found"))?;
-        let interface_num = target_interface_desc.interface_num;
-        let alt_setting = target_interface_desc.alt_setting;
-        device::xhc::request(|xhc| {
-            xhc.set_interface(
-                slot,
-                xhci_info.ctrl_ep_ring_mut(),
-                interface_num,
-                alt_setting,
-            )
-        })?;
-
-        // set protocol
-        let protocol = UsbHidProtocol::BootProtocol as u8;
-        device::xhc::request(|xhc| {
-            xhc.set_protocol(slot, xhci_info.ctrl_ep_ring_mut(), interface_num, protocol)
-        })?;
-
-        self.state = UsbDeviceState::Configured;
-        trace!("USB device configured: slot {}", slot);
-        Ok(())
-    }
-
-    fn poll_xhci_keyboard(&mut self) -> Result<()> {
-        let xhci_info = match &mut self.attach_info {
-            UsbDeviceAttachInfo::Xhci(info) => info,
-        };
-        let slot = xhci_info.slot;
-
-        let mut prev_pressed = BTreeSet::new();
-        loop {
-            let pressed = {
-                let report =
-                    device::xhc::request(|xhc| xhc.hid_report(slot, xhci_info.ctrl_ep_ring_mut()))?;
-                BTreeSet::from_iter(report.into_iter().skip(2).filter(|id| *id != 0))
-            };
-            let diff = pressed.symmetric_difference(&prev_pressed);
-            for id in diff {
-                if pressed.contains(id) {
-                    info!("USB keyboard key pressed: {}", id);
-                } else {
-                    info!("USB keyboard key released: {}", id);
-                }
-            }
-            prev_pressed = pressed;
-        }
-
-        Ok(())
     }
 }
 
@@ -237,10 +150,11 @@ impl DeviceDriverFunction for UsbBusDriver {
             match dev.state {
                 // configure attached devices
                 UsbDeviceState::Attached => {
-                    dev.configure_xhci_keyboard()?;
+                    dev.driver.configure(&mut dev.attach_info)?;
+                    dev.state = UsbDeviceState::Configured;
                 }
                 UsbDeviceState::Configured => {
-                    dev.poll_xhci_keyboard()?;
+                    dev.driver.poll(&mut dev.attach_info)?;
                 }
             }
         }
@@ -305,10 +219,6 @@ pub fn write(data: &[u8]) -> Result<()> {
 pub fn attach_usb_device(device: UsbDevice) -> Result<()> {
     let mut driver = unsafe { USB_BUS_DRIVER.try_lock() }?;
     driver.attach_usb_device(device)?;
-    info!(
-        "{}: New USB device attached!",
-        driver.get_device_driver_info()?.name,
-    );
     Ok(())
 }
 

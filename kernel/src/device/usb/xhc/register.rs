@@ -1,6 +1,6 @@
 use crate::{
     arch::{addr::VirtualAddress, mmio::IoBox, volatile::Volatile},
-    device::xhc::{
+    device::usb::xhc::{
         context::OutputContext,
         trb::{GenericTrbEntry, TrbRing, TrbType},
     },

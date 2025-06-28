@@ -104,11 +104,11 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     device::pci_bus::probe_and_attach().unwrap();
 
     // initialize usb-bus driver
-    device::usb_bus::probe_and_attach().unwrap();
+    device::usb::usb_bus::probe_and_attach().unwrap();
 
     // initialize xHC driver
-    if let Err(err) = device::xhc::probe_and_attach() {
-        let name = device::xhc::get_device_driver_info().unwrap().name;
+    if let Err(err) = device::usb::xhc::probe_and_attach() {
+        let name = device::usb::xhc::get_device_driver_info().unwrap().name;
         error!("{}: Failed to probe or attach device: {:?}", name, err);
     }
 
@@ -168,14 +168,14 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
 
     let task_poll_usb_bus = async {
         loop {
-            let _ = device::usb_bus::poll_normal();
+            let _ = device::usb::usb_bus::poll_normal();
             async_task::exec_yield().await;
         }
     };
 
     let task_poll_xhc = async {
         loop {
-            let _ = device::xhc::poll_normal();
+            let _ = device::usb::xhc::poll_normal();
             async_task::exec_yield().await;
         }
     };

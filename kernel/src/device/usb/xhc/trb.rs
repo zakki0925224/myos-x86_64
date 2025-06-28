@@ -1,6 +1,6 @@
 use crate::{
     arch::{mmio::IoBox, volatile::Volatile},
-    device::xhc::context::InputContext,
+    device::usb::xhc::context::InputContext,
     error::{Error, Result},
 };
 use core::{

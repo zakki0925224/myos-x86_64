@@ -8,7 +8,7 @@ use crate::{
 };
 use alloc::{string::String, vec::Vec};
 use conf_space::*;
-use device::{PciDevice, PciDeviceFunctions};
+use device::{PciDevice, PciDeviceFunction};
 
 pub mod conf_space;
 mod device;
@@ -216,7 +216,7 @@ pub fn is_exist_device(bus: usize, device: usize, func: usize) -> Result<bool> {
     Ok(is_exist)
 }
 
-pub fn configure_device<F: FnMut(&mut dyn PciDeviceFunctions) -> Result<()>>(
+pub fn configure_device<F: FnMut(&mut dyn PciDeviceFunction) -> Result<()>>(
     bus: usize,
     device: usize,
     func: usize,
@@ -228,7 +228,7 @@ pub fn configure_device<F: FnMut(&mut dyn PciDeviceFunctions) -> Result<()>>(
     f(device_mut)
 }
 
-pub fn find_devices<F: FnMut(&mut dyn PciDeviceFunctions) -> Result<()>>(
+pub fn find_devices<F: FnMut(&mut dyn PciDeviceFunction) -> Result<()>>(
     class: u8,
     subclass: u8,
     prog_if: u8,
@@ -244,7 +244,7 @@ pub fn find_devices<F: FnMut(&mut dyn PciDeviceFunctions) -> Result<()>>(
     Ok(())
 }
 
-pub fn find_device_by_vendor_and_device_id<F: FnMut(&mut dyn PciDeviceFunctions) -> Result<()>>(
+pub fn find_device_by_vendor_and_device_id<F: FnMut(&mut dyn PciDeviceFunction) -> Result<()>>(
     vendor_id: u16,
     device_id: u16,
     mut f: F,

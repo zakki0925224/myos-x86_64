@@ -1,6 +1,6 @@
 use crate::{
     acpi::AcpiError,
-    device::{tty::TtyError, xhc::XhcDriverError},
+    device::{tty::TtyError, usb::xhc::XhcDriverError},
     fs::vfs::VirtualFileSystemError,
     graphics::{
         draw::DrawError, multi_layer::LayerError, simple_window_manager::SimpleWindowManagerError,

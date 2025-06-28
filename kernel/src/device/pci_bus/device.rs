@@ -5,7 +5,7 @@ use crate::{
 };
 use alloc::vec::Vec;
 
-pub trait PciDeviceFunctions {
+pub trait PciDeviceFunction {
     fn bdf(&self) -> (usize, usize, usize);
     fn read_conf_space_header(&self) -> Result<ConfigurationSpaceCommonHeaderField>;
     fn write_conf_space_header(&self, value: ConfigurationSpaceCommonHeaderField) -> Result<()>;
@@ -68,7 +68,7 @@ impl PciDevice {
     }
 }
 
-impl PciDeviceFunctions for PciDevice {
+impl PciDeviceFunction for PciDevice {
     fn bdf(&self) -> (usize, usize, usize) {
         self.bdf
     }
