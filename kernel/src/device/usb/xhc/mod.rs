@@ -605,6 +605,84 @@ impl XhcDriver {
         Ok(buf.to_vec())
     }
 
+    fn init_slot(&mut self, port: usize, slot: u8) -> Result<()> {
+        let driver_name = self.device_driver_info.name;
+
+        let mut ctrl_ep_ring = self.address_device(port, slot)?;
+        let dev_desc = self.request_dev_desc(slot, &mut ctrl_ep_ring)?;
+        let mut vendor = None;
+        let mut product = None;
+        let mut serial = None;
+        if let Ok(e) = self.request_string_desc_zero(slot, &mut ctrl_ep_ring) {
+            let lang_id = e[1];
+            if dev_desc.manufacturer_index != 0 {
+                vendor = Some(self.request_string_desc(
+                    slot,
+                    &mut ctrl_ep_ring,
+                    lang_id,
+                    dev_desc.manufacturer_index,
+                )?);
+            }
+
+            if dev_desc.product_index != 0 {
+                product = Some(self.request_string_desc(
+                    slot,
+                    &mut ctrl_ep_ring,
+                    lang_id,
+                    dev_desc.product_index,
+                )?);
+            }
+
+            if dev_desc.serial_index != 0 {
+                serial = Some(self.request_string_desc(
+                    slot,
+                    &mut ctrl_ep_ring,
+                    lang_id,
+                    dev_desc.serial_index,
+                )?);
+            }
+        }
+
+        let descs = self.request_conf_desc_and_rest(slot, &mut ctrl_ep_ring)?;
+        debug!("{}: Slot {} initialized", driver_name, slot);
+
+        // detect and attach usb device
+        let xhci_attach_info = XhciAttachInfo {
+            port,
+            slot,
+            vendor,
+            product: product.clone(),
+            serial,
+            dev_desc,
+            descs,
+            ctrl_ep_ring: Box::new(ctrl_ep_ring),
+        };
+
+        if xhci_attach_info
+            .interface_descs()
+            .iter()
+            .find(|d| d.triple() == (3, 1, 1))
+            .is_some()
+        {
+            let attach_info = UsbDeviceAttachInfo::new_xhci(xhci_attach_info);
+            let driver = UsbHidKeyboardDriver::new();
+            let usb_driver_name = driver.name;
+            let usb_device = UsbDevice::new(attach_info, Box::new(driver));
+            device::usb::usb_bus::attach_usb_device(usb_device)?;
+            info!(
+                "{}: {} attached to {:?} on slot {}",
+                driver_name, usb_driver_name, product, slot
+            );
+        } else {
+            info!(
+                "{}: Unsupported USB device detected, no attached",
+                driver_name
+            );
+        }
+
+        Ok(())
+    }
+
     fn start(&mut self) -> Result<()> {
         let driver_name = self.device_driver_info.name;
         self.ope_reg()?.as_mut().usb_cmd.set_run_stop(true);
@@ -626,74 +704,7 @@ impl XhcDriver {
                 }
 
                 let slot = self.init_port(port)?;
-                let mut ctrl_ep_ring = self.address_device(port, slot)?;
-                let dev_desc = self.request_dev_desc(slot, &mut ctrl_ep_ring)?;
-
-                let mut vendor = None;
-                let mut product = None;
-                let mut serial = None;
-                if let Ok(e) = self.request_string_desc_zero(slot, &mut ctrl_ep_ring) {
-                    let lang_id = e[1];
-                    if dev_desc.manufacturer_index != 0 {
-                        vendor = Some(self.request_string_desc(
-                            slot,
-                            &mut ctrl_ep_ring,
-                            lang_id,
-                            dev_desc.manufacturer_index,
-                        )?);
-                    }
-
-                    if dev_desc.product_index != 0 {
-                        product = Some(self.request_string_desc(
-                            slot,
-                            &mut ctrl_ep_ring,
-                            lang_id,
-                            dev_desc.product_index,
-                        )?);
-                    }
-
-                    if dev_desc.serial_index != 0 {
-                        serial = Some(self.request_string_desc(
-                            slot,
-                            &mut ctrl_ep_ring,
-                            lang_id,
-                            dev_desc.serial_index,
-                        )?);
-                    }
-                }
-
-                let descs = self.request_conf_desc_and_rest(slot, &mut ctrl_ep_ring)?;
-                debug!("{}: Port {} initialized", driver_name, port);
-
-                // detect and attach usb device
-                let xhci_attach_info = XhciAttachInfo {
-                    port,
-                    slot,
-                    vendor,
-                    product,
-                    serial,
-                    dev_desc,
-                    descs,
-                    ctrl_ep_ring: Box::new(ctrl_ep_ring),
-                };
-
-                if xhci_attach_info
-                    .interface_descs()
-                    .iter()
-                    .find(|d| d.triple() == (3, 1, 1))
-                    .is_some()
-                {
-                    let attach_info = UsbDeviceAttachInfo::new_xhci(xhci_attach_info);
-                    let driver = UsbHidKeyboardDriver::new();
-                    let usb_device = UsbDevice::new(attach_info, Box::new(driver));
-                    device::usb::usb_bus::attach_usb_device(usb_device)?;
-                    info!("{}: USB HID keyboard device attached", driver_name);
-                } else {
-                    info!(
-                        "{}: Unsupported USB device detected, no attached",
-                        driver_name
-                    );
-                }
+                self.init_slot(port, slot)?;
             }
         }
 

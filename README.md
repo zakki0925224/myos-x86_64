@@ -25,12 +25,13 @@ This is a replacement project for the previous **[myos](https://github.com/Zakki
 -   [x] Paging
 -   Bus support
     -   [x] PCI
-    -   [ ] USB
+    -   [x] USB
 -   Device support
     -   [x] PS/2 Keyboard and Mouse
     -   [x] UART 16650A
     -   [x] RTL8139
-    -   [ ] xHCI
+    -   [x] xHCI
+        -   [x] HID Keyboard
     -   [ ] VirtIO
         -   [ ] virtio-net
 -   [x] File system
