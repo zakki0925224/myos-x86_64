@@ -125,7 +125,7 @@ impl FrameBuffer {
             let fb_row = &mut fb_slice[row_start..row_end];
             let shadow_row = &shadow_buf[row_start..row_end];
 
-            if fb_row != shadow_buf {
+            if fb_row != shadow_row {
                 fb_row.copy_from_slice(shadow_row);
             }
         }
