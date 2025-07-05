@@ -1,6 +1,6 @@
 use super::{
     frame_buf,
-    multi_layer::{LayerId, LayerPositionInfo},
+    multi_layer::{LayerId, LayerInfo},
 };
 use crate::{
     device::ps2_mouse::MouseEvent,
@@ -73,10 +73,11 @@ impl SimpleWindowManager {
             .as_mut()
             .ok_or(SimpleWindowManagerError::MousePointerLayerWasNotFound)?;
 
-        let LayerPositionInfo {
+        let LayerInfo {
             xy: (m_x_before, m_y_before),
             wh: (m_w, m_h),
-        } = mouse_pointer.get_layer_pos_info()?;
+            format: _,
+        } = mouse_pointer.get_layer_info()?;
 
         let rel_x =
             (mouse_event.rel_x as isize).clamp(-Self::MAX_REL_MOVEMENT, Self::MAX_REL_MOVEMENT);
@@ -93,10 +94,11 @@ impl SimpleWindowManager {
 
         if mouse_event.left {
             for w in self.windows.iter_mut().rev() {
-                let LayerPositionInfo {
+                let LayerInfo {
                     xy: (w_x, w_y),
                     wh: (w_w, w_h),
-                } = w.get_layer_pos_info()?;
+                    format: _,
+                } = w.get_layer_info()?;
 
                 // click close button event
                 if w.is_close_button_clickable(m_x_before, m_y_before)? {
@@ -225,7 +227,7 @@ impl SimpleWindowManager {
             .taskbar
             .as_mut()
             .ok_or(SimpleWindowManagerError::TaskbarLayerWasNotFound)?;
-        let (w, h) = taskbar.get_layer_pos_info()?.wh;
+        let (w, h) = taskbar.get_layer_info()?.wh;
         taskbar.draw_flush()?;
 
         let window_titles: Vec<&str> = self.windows.iter().map(|w| w.title()).collect();

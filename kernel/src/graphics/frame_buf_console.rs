@@ -45,7 +45,7 @@ impl FrameBufferConsole {
 
     fn screen_wh(&self) -> Result<(usize, usize)> {
         if let Some(layer_id) = &self.target_layer_id {
-            let wh = multi_layer::get_layer_pos_info(layer_id)?.wh;
+            let wh = multi_layer::get_layer_info(layer_id)?.wh;
             Ok(wh)
         } else {
             frame_buf::resolution()

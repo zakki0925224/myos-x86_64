@@ -19,6 +19,23 @@ const LEGACY_BRIGHT_MAGENTA: ColorCode = ColorCode::new_rgb(0xff, 0x55, 0xff);
 const LEGACY_SOFT_MAGENTA: ColorCode = ColorCode::new_rgb(0xff, 0xaa, 0xff);
 const LEGACY_WHITE: ColorCode = ColorCode::WHITE;
 
+const EGA_BLACK: ColorCode = ColorCode::BLACK;
+const EGA_BLUE: ColorCode = ColorCode::new_rgb(0x00, 0x00, 0xaa);
+const EGA_GREEN: ColorCode = ColorCode::new_rgb(0x00, 0xaa, 0x00);
+const EGA_CYAN: ColorCode = ColorCode::new_rgb(0x00, 0xaa, 0xaa);
+const EGA_RED: ColorCode = ColorCode::new_rgb(0xaa, 0x00, 0x00);
+const EGA_MAGENTA: ColorCode = ColorCode::new_rgb(0xaa, 0x00, 0xaa);
+const EGA_BROWN: ColorCode = ColorCode::new_rgb(0xaa, 0x55, 0x00);
+const EGA_LIGHT_GRAY: ColorCode = ColorCode::new_rgb(0xaa, 0xaa, 0xaa);
+const EGA_DARK_GRAY: ColorCode = ColorCode::new_rgb(0x55, 0x55, 0x55);
+const EGA_LIGHT_BLUE: ColorCode = ColorCode::new_rgb(0x55, 0x55, 0xff);
+const EGA_LIGHT_GREEN: ColorCode = ColorCode::new_rgb(0x55, 0xff, 0x55);
+const EGA_LIGHT_CYAN: ColorCode = ColorCode::new_rgb(0x55, 0xff, 0xff);
+const EGA_LIGHT_RED: ColorCode = ColorCode::new_rgb(0xff, 0x55, 0x55);
+const EGA_LIGHT_MAGENTA: ColorCode = ColorCode::new_rgb(0xff, 0x55, 0xff);
+const EGA_YELLOW: ColorCode = ColorCode::new_rgb(0xff, 0xff, 0x55);
+const EGA_WHITE: ColorCode = ColorCode::WHITE;
+
 #[allow(unused)]
 const LEGACY_THEME: Theme = Theme {
     back_color: ColorCode::new_rgb(0x03, 0x1a, 0x00),
@@ -93,6 +110,42 @@ const CLASSIC_THEME: Theme = Theme {
     wm_component_border_flat: false,
     wm_window_titlebar_back_color: ColorCode::new_rgb(0x0a, 0x24, 0x6a),
     wm_window_titlebar_fore_color: ColorCode::WHITE,
+};
+
+#[allow(unused)]
+const EGA_THEME: Theme = Theme {
+    back_color: EGA_BLACK,
+    fore_color: EGA_CYAN,
+    sample_rect_colors: [
+        EGA_BLACK,
+        EGA_BLUE,
+        EGA_GREEN,
+        EGA_CYAN,
+        EGA_RED,
+        EGA_MAGENTA,
+        EGA_BROWN,
+        EGA_LIGHT_GRAY,
+        EGA_DARK_GRAY,
+        EGA_LIGHT_BLUE,
+        EGA_LIGHT_GREEN,
+        EGA_LIGHT_CYAN,
+        EGA_LIGHT_RED,
+        EGA_LIGHT_MAGENTA,
+        EGA_YELLOW,
+        EGA_WHITE,
+    ],
+    log_color_error: EGA_LIGHT_RED,
+    log_color_warn: EGA_YELLOW,
+    log_color_info: EGA_LIGHT_GREEN,
+    log_color_debug: EGA_WHITE,
+    log_color_trace: EGA_LIGHT_MAGENTA,
+    wm_component_back_color: EGA_BLACK,
+    wm_component_fore_color: EGA_LIGHT_CYAN,
+    wm_component_border_color1: EGA_LIGHT_CYAN,
+    wm_component_border_color2: EGA_LIGHT_CYAN,
+    wm_component_border_flat: true,
+    wm_window_titlebar_back_color: EGA_BLACK,
+    wm_window_titlebar_fore_color: EGA_LIGHT_CYAN,
 };
 
 #[allow(unused)]

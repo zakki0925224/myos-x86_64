@@ -4,7 +4,7 @@ use crate::{
     fs::file::bitmap::BitmapImage,
     graphics::{
         font::FONT,
-        multi_layer::{self, LayerId, LayerPositionInfo},
+        multi_layer::{self, LayerId, LayerInfo},
     },
     theme::GLOBAL_THEME,
     ColorCode,
@@ -18,15 +18,15 @@ use common::graphic_info::PixelFormat;
 
 pub trait Component {
     fn layer_id(&self) -> LayerId;
-    fn get_layer_pos_info(&self) -> Result<LayerPositionInfo> {
-        multi_layer::get_layer_pos_info(&self.layer_id())
+    fn get_layer_info(&self) -> Result<LayerInfo> {
+        multi_layer::get_layer_info(&self.layer_id())
     }
     fn move_by_root(&self, to_x: usize, to_y: usize) -> Result<()> {
         multi_layer::move_layer(&self.layer_id(), to_x, to_y)
     }
     fn move_by_parent(&self, parent: &dyn Component, to_x: usize, to_y: usize) -> Result<()> {
-        let (x, y) = self.get_layer_pos_info()?.xy;
-        let (p_x, p_y) = parent.get_layer_pos_info()?.xy;
+        let (x, y) = self.get_layer_info()?.xy;
+        let (p_x, p_y) = parent.get_layer_info()?.xy;
         self.move_by_root(to_x + x - p_x, to_y + y - p_y)
     }
     fn draw_flush(&mut self) -> Result<()>;
@@ -59,23 +59,33 @@ impl Component for Image {
             None => return Ok(()),
         };
 
-        let (w, h) = self.get_layer_pos_info()?.wh;
+        let LayerInfo {
+            xy: _,
+            wh: (w, h),
+            format: layer_format,
+        } = self.get_layer_info()?;
         let bytes = match pixel_format {
             PixelFormat::Rgb => 3,
             PixelFormat::Bgr => 3,
             PixelFormat::Bgra => 4,
         };
 
-        unsafe {
-            for y in 0..h {
-                for x in 0..w {
-                    let pixel_data = framebuf_virt_addr.offset((y * w + x) * bytes).as_ptr();
-                    let slice = core::slice::from_raw_parts(pixel_data, bytes);
-                    let color = ColorCode::from_pixel_data(slice, pixel_format);
-                    multi_layer::draw_layer(&self.layer_id, |l| l.draw_pixel((x, y), color))?;
-                }
+        // convert image to buffer
+        let mut buf = Vec::with_capacity(w * h);
+        let framebuf_slice: &[u8] =
+            unsafe { core::slice::from_raw_parts(framebuf_virt_addr.as_ptr(), w * h * bytes) };
+
+        for y in 0..h {
+            for x in 0..w {
+                let offset = (y * w + x) * bytes;
+                let pixel_color =
+                    ColorCode::from_pixel_data(&framebuf_slice[offset..], pixel_format);
+                buf.push(pixel_color.to_color_code(layer_format));
             }
         }
+
+        // write to layer
+        multi_layer::draw_layer(&self.layer_id, |l| unsafe { l.copy_from_slice_u32(&buf) })?;
 
         Ok(())
     }
@@ -158,10 +168,11 @@ impl Component for Window {
     }
 
     fn draw_flush(&mut self) -> Result<()> {
-        let LayerPositionInfo {
+        let LayerInfo {
             xy: (w_x, w_y),
             wh: (w_w, w_h),
-        } = self.get_layer_pos_info()?;
+            format: _,
+        } = self.get_layer_info()?;
         multi_layer::draw_layer(&self.layer_id, |l| {
             // back color
             l.fill(GLOBAL_THEME.wm_component_back_color)?;
@@ -215,7 +226,7 @@ impl Component for Window {
         let mut max_width = 0;
 
         for child in &mut self.children {
-            let (w, h) = child.get_layer_pos_info()?.wh;
+            let (w, h) = child.get_layer_info()?.wh;
             child.move_by_root(w_x + contents_base_rel_x, w_y + contents_base_rel_y)?;
             child.draw_flush()?;
 
@@ -263,10 +274,11 @@ impl Window {
     }
 
     pub fn is_close_button_clickable(&self, x: usize, y: usize) -> Result<bool> {
-        let LayerPositionInfo {
+        let LayerInfo {
             xy: (cb_x, cb_y),
             wh: (cb_w, cb_h),
-        } = self.close_button.get_layer_pos_info()?;
+            format: _,
+        } = self.close_button.get_layer_info()?;
 
         Ok(x >= cb_x && x < cb_x + cb_w && y >= cb_y && y < cb_y + cb_h)
     }
@@ -307,7 +319,7 @@ impl Component for Panel {
     }
 
     fn draw_flush(&mut self) -> Result<()> {
-        let (w, h) = self.get_layer_pos_info()?.wh;
+        let (w, h) = self.get_layer_info()?.wh;
 
         multi_layer::draw_layer(&self.layer_id, |l| {
             // back color
@@ -379,7 +391,7 @@ impl Component for Button {
     }
 
     fn draw_flush(&mut self) -> Result<()> {
-        let (w, h) = self.get_layer_pos_info()?.wh;
+        let (w, h) = self.get_layer_info()?.wh;
 
         multi_layer::draw_layer(&self.layer_id, |l| {
             // back color

@@ -279,4 +279,10 @@ pub trait Draw {
         dst.set_dirty(true);
         Ok(())
     }
+
+    unsafe fn copy_from_slice_u32(&mut self, src: &[u32]) -> Result<()> {
+        core::ptr::copy_nonoverlapping(src.as_ptr(), self.buf_ptr_mut()?, src.len());
+        self.set_dirty(true);
+        Ok(())
+    }
 }

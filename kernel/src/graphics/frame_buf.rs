@@ -124,7 +124,7 @@ impl FrameBuffer {
     }
 
     fn apply_layer_buf(&mut self, layer: &Layer) -> Result<()> {
-        let layer_xy = layer.layer_pos_info().xy;
+        let layer_xy = layer.layer_info().xy;
         layer.copy_to(self, layer_xy)
     }
 }

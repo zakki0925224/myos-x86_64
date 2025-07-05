@@ -17,9 +17,10 @@ pub enum LayerError {
 }
 
 #[derive(Debug, Clone)]
-pub struct LayerPositionInfo {
+pub struct LayerInfo {
     pub xy: (usize, usize),
     pub wh: (usize, usize),
+    pub format: PixelFormat,
 }
 
 #[derive(Debug, Clone)]
@@ -102,10 +103,11 @@ impl Layer {
         self.pos_moved = true;
     }
 
-    pub fn layer_pos_info(&self) -> LayerPositionInfo {
-        LayerPositionInfo {
+    pub fn layer_info(&self) -> LayerInfo {
+        LayerInfo {
             xy: self.xy,
             wh: self.wh,
+            format: self.format,
         }
     }
 }
@@ -212,11 +214,11 @@ pub fn draw_layer<F: Fn(&mut dyn Draw) -> Result<()>>(layer_id: &LayerId, draw: 
     draw(unsafe { LAYER_MAN.try_lock() }?.get_layer(layer_id)?)
 }
 
-pub fn get_layer_pos_info(layer_id: &LayerId) -> Result<LayerPositionInfo> {
+pub fn get_layer_info(layer_id: &LayerId) -> Result<LayerInfo> {
     let mut layer_man = unsafe { LAYER_MAN.try_lock() }?;
     let layer = layer_man.get_layer(layer_id)?;
-    let layer_pos_info = layer.layer_pos_info();
-    Ok(layer_pos_info)
+    let layer_info = layer.layer_info();
+    Ok(layer_info)
 }
 
 pub fn move_layer(layer_id: &LayerId, to_x: usize, to_y: usize) -> Result<()> {
