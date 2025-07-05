@@ -187,7 +187,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
         }
     };
 
-    async_task::spawn(task_graphics, Some(Duration::from_millis(16))).unwrap();
+    async_task::spawn(task_graphics, None).unwrap();
     // async_task::spawn(task_poll_virtio_net, None).unwrap();
     async_task::spawn(task_poll_uart, Some(Duration::from_millis(4))).unwrap();
     async_task::spawn(task_poll_ps2_keyboard, Some(Duration::from_millis(4))).unwrap();

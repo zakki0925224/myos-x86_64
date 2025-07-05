@@ -83,7 +83,7 @@ impl FrameBuffer {
 
     fn enable_shadow_buf(&mut self) -> Result<()> {
         let (res_x, res_y) = self.resolution()?;
-        let buf = Vec::with_capacity(res_x * res_y);
+        let buf = vec![0; res_x * res_y];
         self.shadow_buf = Some(buf);
 
         // copy the current framebuffer to shadow buffer
@@ -100,24 +100,34 @@ impl FrameBuffer {
         Ok(())
     }
 
-    fn apply_shadow_buf(&mut self) -> Result<()> {
-        if self.shadow_buf.is_none() {
-            return Ok(());
-        }
+    fn apply_shadow_buf(&self) -> Result<()> {
+        let shadow_buf = match &self.shadow_buf {
+            Some(buf) => buf,
+            None => return Ok(()),
+        };
 
         if !self.dirty {
             return Ok(());
         }
 
         let (res_x, res_y) = self.resolution()?;
-        let buf_ptr: *mut u32 = self
+        let len = res_x * res_y;
+        let fb_ptr: *mut u32 = self
             .frame_buf_virt_addr
             .ok_or_else(|| Error::NotInitialized)?
             .as_ptr_mut();
-        let shadow_buf_ptr = self.buf_ptr_mut()?;
+        let fb_slice = unsafe { core::slice::from_raw_parts_mut(fb_ptr, len) };
 
-        unsafe {
-            shadow_buf_ptr.copy_to(buf_ptr, res_x * res_y);
+        for y in 0..res_y {
+            let row_start = y * res_x;
+            let row_end = row_start + res_x;
+
+            let fb_row = &mut fb_slice[row_start..row_end];
+            let shadow_row = &shadow_buf[row_start..row_end];
+
+            if fb_row != shadow_buf {
+                fb_row.copy_from_slice(shadow_row);
+            }
         }
 
         Ok(())
@@ -176,7 +186,7 @@ pub fn enable_shadow_buf() -> Result<()> {
 }
 
 pub fn apply_shadow_buf() -> Result<()> {
-    let mut fb = unsafe { FB.try_lock() }?;
+    let fb = unsafe { FB.try_lock() }?;
     fb.apply_shadow_buf()
 }
 
