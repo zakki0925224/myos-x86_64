@@ -2,12 +2,12 @@ use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     acpi,
     addr::VirtualAddress,
-    arch::{self, mmio::Mmio, volatile::Volatile},
-    async_task, debug,
+    arch, async_task, debug_,
     error::Result,
     idt::{self, GateType, InterruptHandler},
     info,
-    util::mutex::Mutex,
+    sync::{mutex::Mutex, volatile::Volatile},
+    util::mmio::Mmio,
 };
 use alloc::vec::Vec;
 use core::time::Duration;
@@ -159,9 +159,11 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
             InterruptHandler::Normal(poll_int_local_apic_timer),
             GateType::Interrupt,
         )?;
-        debug!(
+        debug_!(
             "{}: Interrupt vector number: 0x{:x}, Interrupt occures every {}ms",
-            device_name, vec_num, INT_INTERVAL_MS
+            device_name,
+            vec_num,
+            INT_INTERVAL_MS
         );
 
         unsafe {
@@ -179,9 +181,11 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
             self.stop();
 
             assert!(tick > 0);
-            debug!(
+            debug_!(
                 "{}: Timer frequency was detected: {}Hz ({:?})",
-                device_name, tick, DIV_VALUE
+                device_name,
+                tick,
+                DIV_VALUE
             );
 
             self.freq = Some(tick);

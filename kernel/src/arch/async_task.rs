@@ -1,9 +1,5 @@
 use super::task::TaskId;
-use crate::{
-    debug,
-    error::Result,
-    util::{self, mutex::Mutex},
-};
+use crate::{debug_, error::Result, sync::mutex::Mutex, util};
 use alloc::{boxed::Box, collections::VecDeque};
 use core::{
     future::Future,
@@ -114,7 +110,7 @@ impl Executor {
             let waker = dummy_waker();
             let mut context = Context::from_waker(&waker);
             match task.poll(&mut context) {
-                Poll::Ready(()) => debug!("task: Done (id: {})", task.id.get()),
+                Poll::Ready(()) => debug_!("task: Done (id: {})", task.id.get()),
                 Poll::Pending => self.task_queue.push_back(task),
             }
         }

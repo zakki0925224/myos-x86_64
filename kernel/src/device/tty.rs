@@ -4,7 +4,8 @@ use crate::{
     fs::vfs,
     graphics::frame_buf_console,
     info,
-    util::{lifo::Lifo, mutex::Mutex},
+    sync::mutex::Mutex,
+    util::lifo::Lifo,
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::fmt::{self, Write};

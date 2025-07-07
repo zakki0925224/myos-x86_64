@@ -1,6 +1,6 @@
 use crate::{
     addr::IoPortAddress,
-    arch, debug,
+    arch, debug_,
     device::{
         self,
         virtio::{virt_queue, DeviceStatus, InterruptType, IoRegister, NetworkDeviceFeature},
@@ -10,7 +10,7 @@ use crate::{
     fs::vfs,
     idt, info,
     mem::{bitmap, paging::PAGE_SIZE},
-    util::mutex::Mutex,
+    sync::mutex::Mutex,
 };
 use alloc::vec::Vec;
 
@@ -262,7 +262,7 @@ impl DeviceDriverFunction for VirtioNetDriver {
             }
 
             self.send_packet()?;
-            debug!("{}: {:?}", self.device_driver_info.name, self.conf_field);
+            debug_!("{}: {:?}", self.device_driver_info.name, self.conf_field);
 
             Ok(())
         })?;

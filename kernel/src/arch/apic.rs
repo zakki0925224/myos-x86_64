@@ -1,5 +1,4 @@
-use super::{mmio::Mmio, volatile::Volatile};
-use crate::arch::addr::*;
+use crate::{arch::addr::*, sync::volatile::Volatile, util::mmio::Mmio};
 
 pub fn local_apic_id() -> u8 {
     let reg: Mmio<Volatile<u32>> =

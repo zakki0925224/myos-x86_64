@@ -6,7 +6,8 @@ use crate::{
     device::ps2_mouse::MouseEvent,
     error::{Error, Result},
     fs::file::bitmap::BitmapImage,
-    util::{self, mutex::Mutex},
+    sync::mutex::Mutex,
+    util,
 };
 use alloc::{
     boxed::Box,

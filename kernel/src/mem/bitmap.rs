@@ -2,7 +2,7 @@ use super::paging::{self, EntryMode, MappingInfo, PageWriteThroughLevel, ReadWri
 use crate::{
     arch::addr::*,
     error::{Error, Result},
-    util::mutex::Mutex,
+    sync::mutex::Mutex,
 };
 use common::mem_desc::{MemoryDescriptor, UEFI_PAGE_SIZE};
 

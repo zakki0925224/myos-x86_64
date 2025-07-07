@@ -1,8 +1,8 @@
 use crate::{
-    debug,
+    debug_,
     error::{Error, Result},
     info,
-    util::mutex::Mutex,
+    sync::mutex::Mutex,
     warn,
 };
 use alloc::{collections::btree_map::BTreeMap, vec::Vec};
@@ -133,7 +133,7 @@ impl NetworkManager {
                     options,
                 );
                 reply_packet.calc_checksum();
-                debug!("net: TCP-SYN-ACK packet: {:?}", reply_packet);
+                debug_!("net: TCP-SYN-ACK packet: {:?}", reply_packet);
                 return Ok(Some(reply_packet));
             }
             TcpSocketState::SynReceived => {
@@ -168,7 +168,7 @@ impl NetworkManager {
         let socket_mut = self.udp_socket_mut(dst_port);
         socket_mut.receive(&packet.data);
         let s = socket_mut.buf_to_string_utf8_lossy();
-        debug!("net: UDP data: {:?}", s);
+        debug_!("net: UDP data: {:?}", s);
 
         Ok(None)
     }

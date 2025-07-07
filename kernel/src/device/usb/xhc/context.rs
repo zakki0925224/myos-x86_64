@@ -1,7 +1,7 @@
 use crate::{
-    arch::volatile::Volatile,
     device::usb::xhc::register::UsbMode,
     error::{Error, Result},
+    sync::volatile::Volatile,
 };
 use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin};
 

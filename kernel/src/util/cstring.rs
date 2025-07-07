@@ -1,6 +1,8 @@
 use alloc::{
+    ffi::CString,
     slice,
     string::{String, ToString},
+    vec::Vec,
 };
 
 pub unsafe fn from_cstring_ptr(s_ptr: *const u8) -> String {
@@ -25,4 +27,8 @@ pub fn from_slice(s: &[u8]) -> String {
 
     let s_slice = &s[..len];
     String::from_utf8_lossy(s_slice).to_string()
+}
+
+pub fn into_cstring_bytes_with_nul(s: String) -> Vec<u8> {
+    CString::new(s).unwrap().into_bytes_with_nul()
 }

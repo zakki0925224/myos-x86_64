@@ -4,7 +4,8 @@ use crate::{
     error::{Error, Result},
     fs::vfs,
     idt, info,
-    util::{fifo::Fifo, mutex::Mutex},
+    sync::mutex::Mutex,
+    util::fifo::Fifo,
 };
 use alloc::vec::Vec;
 

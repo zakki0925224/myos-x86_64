@@ -9,7 +9,7 @@ use crate::{
     error::Result,
     fs::vfs,
     info,
-    util::mutex::Mutex,
+    sync::mutex::Mutex,
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
 

@@ -4,11 +4,11 @@ use crate::{
         self,
         register::{control::Cr2, segment::Cs, Register},
     },
-    debug, device, error as m_error,
+    debug, device,
     error::{Error, Result},
-    info,
+    error_, info,
     mem::paging,
-    util::mutex::Mutex,
+    sync::mutex::Mutex,
 };
 use core::{mem::size_of, panic};
 
@@ -276,12 +276,12 @@ extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
         match debug::user_app_debugger(&stack_frame, &dwarf) {
             Ok(res) => debugger_result = res,
             Err(err) => {
-                m_error!("int: Error in user_app_debugger: {:?}", err);
+                error_!("int: Error in user_app_debugger: {:?}", err);
                 debugger_result = debug::DebuggerResult::Quit;
             }
         }
     } else {
-        m_error!("int: No DWARF found for user task, quit debug mode...");
+        error_!("int: No DWARF found for user task, quit debug mode...");
         debugger_result = debug::DebuggerResult::Quit;
     }
 
@@ -301,7 +301,7 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(stack_frame: InterruptStackFrame) {
-    m_error!("int: GENERAL PROTECTION FAULT, {:?}", stack_frame);
+    error_!("int: GENERAL PROTECTION FAULT, {:?}", stack_frame);
 
     if task::is_running_user_task() {
         task::debug_user_task();
@@ -320,7 +320,7 @@ extern "x86-interrupt" fn page_fault_handler(
     let page_virt_addr = (accessed_virt_addr & !0xfff).into();
     let page_table_entry = paging::read_page_table_entry(page_virt_addr);
 
-    m_error!(
+    error_!(
         "int: PAGE FAULT, Accessed virtual address: 0x{:x}, {:?}, {:?}, Page table entry (at 0x{:x}): {:?}",
         accessed_virt_addr, error_code, stack_frame, page_virt_addr.get(), page_table_entry
     );

@@ -1,7 +1,7 @@
 use super::{bitmap, paging::PAGE_SIZE};
 use crate::{
     error::{Error, Result},
-    util::mutex::Mutex,
+    sync::mutex::Mutex,
 };
 use core::{
     alloc::{GlobalAlloc, Layout},

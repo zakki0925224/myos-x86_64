@@ -5,11 +5,9 @@ use super::{
 };
 use crate::{
     error::Result,
+    sync::mutex::Mutex,
     theme::GLOBAL_THEME,
-    util::{
-        ansi::{AnsiEscapeStream, AnsiEvent, CsiSequence},
-        mutex::Mutex,
-    },
+    util::ansi::{AnsiEscapeStream, AnsiEvent, CsiSequence},
     ColorCode,
 };
 use core::fmt;

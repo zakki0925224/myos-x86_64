@@ -1,6 +1,6 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    addr::VirtualAddress, error::Result, graphics::font::FONT, info, util::mutex::Mutex, ColorCode,
+    addr::VirtualAddress, error::Result, graphics::font::FONT, info, sync::mutex::Mutex, ColorCode,
 };
 use alloc::vec::Vec;
 use common::graphic_info::{GraphicInfo, PixelFormat};

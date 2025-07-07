@@ -2,7 +2,7 @@ use super::{draw::Draw, frame_buf};
 use crate::{
     error::{Error, Result},
     fs::file::bitmap::BitmapImage,
-    util::mutex::Mutex,
+    sync::mutex::Mutex,
 };
 use alloc::vec::Vec;
 use common::graphic_info::PixelFormat;

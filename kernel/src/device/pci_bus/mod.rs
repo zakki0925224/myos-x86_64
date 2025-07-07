@@ -1,10 +1,10 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    debug,
+    debug_,
     error::{Error, Result},
     fs::vfs,
     info,
-    util::mutex::Mutex,
+    sync::mutex::Mutex,
 };
 use alloc::{string::String, vec::Vec};
 use conf_space::*;
@@ -45,7 +45,7 @@ impl PciBusDriver {
                         }
                     };
 
-                    debug!(
+                    debug_!(
                         "{}: {}.{}.{} {} found",
                         self.device_driver_info.name,
                         bus,

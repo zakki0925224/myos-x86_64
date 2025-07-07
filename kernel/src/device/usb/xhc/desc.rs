@@ -1,4 +1,4 @@
-use crate::arch::{pin::IntoPinnedMutableSlice, slice::Sliceable};
+use crate::{sync::pin::IntoPinnedMutableSlice, util::slice::Sliceable};
 use core::marker::PhantomPinned;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

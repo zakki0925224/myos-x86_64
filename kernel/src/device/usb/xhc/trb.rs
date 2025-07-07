@@ -1,7 +1,8 @@
 use crate::{
-    arch::{mmio::IoBox, volatile::Volatile},
     device::usb::xhc::context::InputContext,
     error::{Error, Result},
+    sync::volatile::Volatile,
+    util::mmio::IoBox,
 };
 use core::{
     marker::PhantomPinned,

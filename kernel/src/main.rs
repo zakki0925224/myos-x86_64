@@ -17,6 +17,7 @@ mod graphics;
 mod mem;
 mod net;
 mod panic;
+mod sync;
 mod test;
 mod theme;
 mod util;
@@ -94,7 +95,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     // initialize speaker driver
     if let Err(err) = device::speaker::probe_and_attach() {
         let name = device::speaker::get_device_driver_info().unwrap().name;
-        error!("{}: Failed to probe or attach device: {:?}", name, err);
+        error_!("{}: Failed to probe or attach device: {:?}", name, err);
     }
 
     // initialize my flavor driver
@@ -109,7 +110,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     // initialize xHC driver
     if let Err(err) = device::usb::xhc::probe_and_attach() {
         let name = device::usb::xhc::get_device_driver_info().unwrap().name;
-        error!("{}: Failed to probe or attach device: {:?}", name, err);
+        error_!("{}: Failed to probe or attach device: {:?}", name, err);
     }
 
     // initalize virtio-net driver
@@ -121,7 +122,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     // initialize RTL8139 driver
     if let Err(err) = device::rtl8139::probe_and_attach() {
         let name = device::rtl8139::get_device_driver_info().unwrap().name;
-        error!("{}: Failed to probe or attach device: {:?}", name, err);
+        error_!("{}: Failed to probe or attach device: {:?}", name, err);
     }
 
     // enable syscall
@@ -208,10 +209,10 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
 
         loop {
             if splited.len() == 0 || splited[0] == "" {
-                error!("Invalid init app exec args: {:?}", args);
+                error_!("Invalid init app exec args: {:?}", args);
                 break;
             } else if let Err(err) = fs::exec::exec_elf(&splited[0].into(), &splited[1..], false) {
-                error!("{:?}", err);
+                error_!("{:?}", err);
                 break;
             }
         }

@@ -8,6 +8,8 @@ use alloc::string::ToString;
 use dwarf::Dwarf;
 
 pub mod dwarf;
+pub mod logger;
+pub mod qemu;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DebuggerResult {

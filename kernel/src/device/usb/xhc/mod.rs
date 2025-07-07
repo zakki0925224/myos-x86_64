@@ -1,6 +1,5 @@
 use crate::{
-    arch::{mmio::Mmio, pin::IntoPinnedMutableSlice},
-    debug,
+    debug_,
     device::{
         self,
         pci_bus::conf_space::BaseAddress,
@@ -15,8 +14,9 @@ use crate::{
     fs::vfs,
     info,
     mem::{bitmap, paging::PAGE_SIZE},
+    sync::{mutex::Mutex, pin::IntoPinnedMutableSlice},
     trace,
-    util::mutex::Mutex,
+    util::mmio::Mmio,
 };
 use alloc::{
     boxed::Box,
@@ -186,12 +186,12 @@ impl XhcDriver {
             .set_host_controller_reset(true);
 
         loop {
-            debug!("{}: Waiting xHC...", driver_name);
+            debug_!("{}: Waiting xHC...", driver_name);
             if !self.ope_reg()?.as_ref().usb_cmd.host_controller_reset() {
                 break;
             }
         }
-        debug!("{}: xHC reset complete", driver_name);
+        debug_!("{}: xHC reset complete", driver_name);
 
         Ok(())
     }
@@ -204,7 +204,7 @@ impl XhcDriver {
         self.ope_reg()?
             .as_mut()
             .set_max_device_slots_enabled(num_of_slots as u8);
-        debug!("{}: Number of ports: {}", driver_name, num_of_ports);
+        debug_!("{}: Number of ports: {}", driver_name, num_of_ports);
 
         Ok(())
     }
@@ -213,9 +213,10 @@ impl XhcDriver {
         let driver_name = self.device_driver_info.name;
 
         let num_scratchpad_bufs = max(self.cap_reg()?.as_ref().num_scratchpad_bufs(), 1);
-        debug!(
+        debug_!(
             "{}: Number of scratchpad buffers: {}",
-            driver_name, num_scratchpad_bufs
+            driver_name,
+            num_scratchpad_bufs
         );
 
         // buffer table
@@ -243,7 +244,7 @@ impl XhcDriver {
             bufs.push(buf);
         }
         let scratchpad_bufs = ScratchpadBuffers { table, bufs };
-        debug!("{}: Scratchpad buffers initialized", driver_name);
+        debug_!("{}: Scratchpad buffers initialized", driver_name);
         Ok(scratchpad_bufs)
     }
 
@@ -257,7 +258,7 @@ impl XhcDriver {
             .dcbaa_ptr
             .write(dcbaa.inner_mut_ptr());
         self.dcbaa = Some(dcbaa);
-        debug!(
+        debug_!(
             "{}: Device context base address array initialized",
             driver_name
         );
@@ -272,7 +273,7 @@ impl XhcDriver {
         let event_ring = self.primary_event_ring.as_mut().unwrap();
         let rt_reg = unsafe { self.rt_reg.as_mut().unwrap().get_unchecked_mut() };
         rt_reg.init_int_reg_set(0, event_ring)?;
-        debug!("{}: Primary event ring initialized", driver_name);
+        debug_!("{}: Primary event ring initialized", driver_name);
 
         Ok(())
     }
@@ -284,7 +285,7 @@ impl XhcDriver {
         let cmd_ring = self.cmd_ring.as_mut().unwrap();
         let ope_reg = unsafe { self.ope_reg.as_mut().unwrap().get_unchecked_mut() };
         ope_reg.set_cmd_ring_ctrl(cmd_ring);
-        debug!("{}: Command ring initialized", driver_name);
+        debug_!("{}: Command ring initialized", driver_name);
 
         Ok(())
     }
@@ -305,9 +306,11 @@ impl XhcDriver {
         let trb = self.send_cmd(GenericTrbEntry::trb_enable_slot_cmd())?;
         let slot = trb.slot_id();
 
-        debug!(
+        debug_!(
             "{}: Port {} is connected to slot {}",
-            driver_name, port, slot
+            driver_name,
+            port,
+            slot
         );
         Ok(slot)
     }
@@ -355,9 +358,11 @@ impl XhcDriver {
         let cmd = GenericTrbEntry::trb_cmd_address_device(input_context.as_ref(), slot);
         self.send_cmd(cmd)?.cmd_result_ok()?;
 
-        debug!(
+        debug_!(
             "{}: Addressed device on port {} with slot {}",
-            driver_name, port, slot
+            driver_name,
+            port,
+            slot
         );
         Ok(ctrl_ep_ring)
     }
@@ -644,7 +649,7 @@ impl XhcDriver {
         }
 
         let descs = self.request_conf_desc_and_rest(slot, &mut ctrl_ep_ring)?;
-        debug!("{}: Slot {} initialized", driver_name, slot);
+        debug_!("{}: Slot {} initialized", driver_name, slot);
 
         // detect and attach usb device
         let xhci_attach_info = XhciAttachInfo {
@@ -688,12 +693,12 @@ impl XhcDriver {
         self.ope_reg()?.as_mut().usb_cmd.set_run_stop(true);
 
         loop {
-            debug!("{}: Waiting xHC...", driver_name);
+            debug_!("{}: Waiting xHC...", driver_name);
             if !self.ope_reg()?.as_ref().usb_status.hchalted() {
                 break;
             }
         }
-        debug!("{}: xHC started", driver_name);
+        debug_!("{}: xHC started", driver_name);
 
         // initialize ports
         for port in self.portsc()?.port_range() {
@@ -843,7 +848,7 @@ impl DeviceDriverFunction for XhcDriver {
         let driver_name = self.device_driver_info.name;
 
         if let Some(trb) = self.primary_event_ring()?.pop()? {
-            debug!("{}: Processed TRB: 0x{:x}", driver_name, trb.trb_type());
+            debug_!("{}: Processed TRB: 0x{:x}", driver_name, trb.trb_type());
         }
 
         Ok(())

@@ -3,7 +3,7 @@ use crate::{
     device::DeviceDriverInfo,
     error::{Error, Result},
     fs::fat::dir_entry::Attribute,
-    util::mutex::Mutex,
+    sync::mutex::Mutex,
     warn,
 };
 use alloc::{collections::btree_map::BTreeMap, string::String, vec::Vec};

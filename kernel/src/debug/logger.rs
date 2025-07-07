@@ -83,8 +83,8 @@ pub unsafe fn log(level: LogLevel, args: core::fmt::Arguments, file: &str, line:
 macro_rules! info {
     ($($arg:tt)*) => {
         unsafe {
-            $crate::util::logger::log(
-                $crate::util::logger::LogLevel::Info,
+            $crate::debug::logger::log(
+                $crate::debug::logger::LogLevel::Info,
                 format_args!($($arg)*),
                 file!(),
                 line!(),
@@ -95,11 +95,11 @@ macro_rules! info {
 }
 
 #[macro_export]
-macro_rules! debug {
+macro_rules! debug_ {
     ($($arg:tt)*) => {
         unsafe {
-            $crate::util::logger::log(
-                $crate::util::logger::LogLevel::Debug,
+            $crate::debug::logger::log(
+                $crate::debug::logger::LogLevel::Debug,
                 format_args!($($arg)*),
                 file!(),
                 line!(),
@@ -113,8 +113,8 @@ macro_rules! debug {
 macro_rules! warn {
     ($($arg:tt)*) => {
         unsafe {
-            $crate::util::logger::log(
-                $crate::util::logger::LogLevel::Warn,
+            $crate::debug::logger::log(
+                $crate::debug::logger::LogLevel::Warn,
                 format_args!($($arg)*),
                 file!(),
                 line!(),
@@ -125,11 +125,11 @@ macro_rules! warn {
 }
 
 #[macro_export]
-macro_rules! error {
+macro_rules! error_ {
     ($($arg:tt)*) => {
         unsafe {
-            $crate::util::logger::log(
-                $crate::util::logger::LogLevel::Error,
+            $crate::debug::logger::log(
+                $crate::debug::logger::LogLevel::Error,
                 format_args!($($arg)*),
                 file!(),
                 line!(),
@@ -143,8 +143,8 @@ macro_rules! error {
 macro_rules! trace {
     ($($arg:tt)*) => {
         unsafe {
-            $crate::util::logger::log(
-                $crate::util::logger::LogLevel::Trace,
+            $crate::debug::logger::log(
+                $crate::debug::logger::LogLevel::Trace,
                 format_args!($($arg)*),
                 file!(),
                 line!(),

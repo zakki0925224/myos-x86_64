@@ -6,10 +6,11 @@ use crate::{
         register::{model_specific::*, Register},
         task,
     },
-    debug,
+    debug_,
     device::tty,
-    env, error as m_error,
+    env,
     error::*,
+    error_,
     fs::{
         self,
         vfs::{self, FileDescriptorNumber},
@@ -19,7 +20,7 @@ use crate::{
     mem::{bitmap, paging::PAGE_SIZE},
     print, util,
 };
-use alloc::{boxed::Box, ffi::CString, string::*, vec::Vec};
+use alloc::{boxed::Box, string::*, vec::Vec};
 use common::libc::{Stat, Utsname};
 use core::{arch::naked_asm, slice};
 
@@ -65,7 +66,7 @@ extern "sysv64" fn syscall_handler(
             let buf = arg2 as *mut u8;
             let buf_len = arg3 as usize;
             if let Err(err) = sys_read(fd, buf, buf_len) {
-                m_error!("syscall: read: {:?}", err);
+                error_!("syscall: read: {:?}", err);
                 return -1;
             }
         }
@@ -75,7 +76,7 @@ extern "sysv64" fn syscall_handler(
             let buf = arg2 as *const u8;
             let buf_len = arg3 as usize;
             if let Err(err) = sys_write(fd, buf, buf_len) {
-                m_error!("syscall: write: {:?}", err);
+                error_!("syscall: write: {:?}", err);
                 return -1;
             }
         }
@@ -86,7 +87,7 @@ extern "sysv64" fn syscall_handler(
             match sys_open(filepath, flags) {
                 Ok(fd) => return fd as i64,
                 Err(err) => {
-                    m_error!("syscall: open: {:?}", err);
+                    error_!("syscall: open: {:?}", err);
                     return -1;
                 }
             }
@@ -95,7 +96,7 @@ extern "sysv64" fn syscall_handler(
         3 => {
             let fd = arg1 as i32;
             if let Err(err) = sys_close(fd) {
-                m_error!("syscall: close: {:?}", err);
+                error_!("syscall: close: {:?}", err);
                 return -1;
             }
         }
@@ -111,7 +112,7 @@ extern "sysv64" fn syscall_handler(
             match sys_sbrk(len) {
                 Ok(ptr) => return ptr as i64,
                 Err(err) => {
-                    m_error!("syscall: sbrk: {:?}", err);
+                    error_!("syscall: sbrk: {:?}", err);
                     return -1;
                 }
             }
@@ -120,7 +121,7 @@ extern "sysv64" fn syscall_handler(
         6 => {
             let buf = arg1 as *mut Utsname;
             if let Err(err) = sys_uname(buf) {
-                m_error!("syscall: uname: {:?}", err);
+                error_!("syscall: uname: {:?}", err);
                 return -1;
             }
         }
@@ -134,7 +135,7 @@ extern "sysv64" fn syscall_handler(
             let fd = arg1 as i32;
             let buf = arg2 as *mut Stat;
             if let Err(err) = sys_stat(fd, buf) {
-                m_error!("syscall: stat: {:?}", err);
+                error_!("syscall: stat: {:?}", err);
                 return -1;
             }
         }
@@ -147,7 +148,7 @@ extern "sysv64" fn syscall_handler(
             let args = arg1 as *const u8;
             let flags = arg2 as u32;
             if let Err(err) = sys_exec(args, flags) {
-                m_error!("syscall: exec: {:?}", err);
+                error_!("syscall: exec: {:?}", err);
                 return -1;
             }
         }
@@ -156,7 +157,7 @@ extern "sysv64" fn syscall_handler(
             let buf = arg1 as *mut u8;
             let buf_len = arg2 as usize;
             if let Err(err) = sys_getcwd(buf, buf_len) {
-                m_error!("syscall: getcwd: {:?}", err);
+                error_!("syscall: getcwd: {:?}", err);
                 return -1;
             }
         }
@@ -164,7 +165,7 @@ extern "sysv64" fn syscall_handler(
         12 => {
             let path = arg1 as *const u8;
             if let Err(err) = sys_chdir(path) {
-                m_error!("syscall: chdir: {:?}", err);
+                error_!("syscall: chdir: {:?}", err);
                 return -1;
             }
         }
@@ -174,7 +175,7 @@ extern "sysv64" fn syscall_handler(
             match sys_sbrksz(target) {
                 Ok(size) => return size as i64,
                 Err(err) => {
-                    m_error!("syscall: sbrksz: {:?}, target addr: 0x{:x}", err, arg1);
+                    error_!("syscall: sbrksz: {:?}, target addr: 0x{:x}", err, arg1);
                     return 0;
                 }
             };
@@ -186,7 +187,7 @@ extern "sysv64" fn syscall_handler(
             let buf_len = arg3 as usize;
 
             if let Err(err) = sys_getenames(path, buf, buf_len) {
-                m_error!("syscall: getenames: {:?}", err);
+                error_!("syscall: getenames: {:?}", err);
                 return -1;
             }
         }
@@ -196,12 +197,12 @@ extern "sysv64" fn syscall_handler(
             let replymsgbuf = arg2 as *mut u8;
             let replymsgbuf_len = arg3 as usize;
             if let Err(err) = sys_iomsg(msgbuf, replymsgbuf, replymsgbuf_len) {
-                m_error!("syscall: iomsg: {:?}", err);
+                error_!("syscall: iomsg: {:?}", err);
                 return -1;
             }
         }
         num => {
-            m_error!("syscall: Syscall number 0x{:x} is not defined", num);
+            error_!("syscall: Syscall number 0x{:x} is not defined", num);
             return -1;
         }
     }
@@ -228,9 +229,7 @@ fn sys_read(fd: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
                     }
                 }
 
-                let c_s: Vec<u8> = CString::new(input_s.unwrap())
-                    .unwrap()
-                    .into_bytes_with_nul();
+                let c_s = util::cstring::into_cstring_bytes_with_nul(input_s.unwrap());
 
                 if buf_len < c_s.len() {
                     return Err(Error::Failed("buffer is too small"));
@@ -322,7 +321,7 @@ fn sys_sbrk(len: usize) -> Result<*const u8> {
     let mem_frame_info = bitmap::alloc_mem_frame((len + PAGE_SIZE).div_ceil(PAGE_SIZE))?;
     mem_frame_info.set_permissions_to_user()?;
     let virt_addr = mem_frame_info.frame_start_virt_addr()?;
-    debug!(
+    debug_!(
         "syscall: sbrk: allocated {} bytes at 0x{:x}",
         mem_frame_info.frame_size,
         virt_addr.get()
@@ -384,9 +383,7 @@ fn sys_exec(args: *const u8, flags: u32) -> Result<()> {
 
 fn sys_getcwd(buf: *mut u8, buf_len: usize) -> Result<()> {
     let cwd = vfs::cwd_path()?;
-    let cwd_s: Vec<u8> = CString::new(cwd.to_string().as_str())
-        .unwrap()
-        .into_bytes_with_nul();
+    let cwd_s = util::cstring::into_cstring_bytes_with_nul(cwd.to_string());
 
     if buf_len < cwd_s.len() {
         return Err(Error::Failed("Buffer is too small"));
@@ -422,7 +419,7 @@ fn sys_getenames(path: *const u8, buf: *mut u8, buf_len: usize) -> Result<()> {
     let entry_names = fs::vfs::entry_names(&path)?;
     let entry_names_s: Vec<u8> = entry_names
         .iter()
-        .map(|n| CString::new(n.as_str()).unwrap().into_bytes_with_nul())
+        .map(|n| util::cstring::into_cstring_bytes_with_nul(n.clone()))
         .flatten()
         .collect();
 
@@ -441,7 +438,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
     let mut offset = 0;
     let header: &IomsgHeader = unsafe { &*(msgbuf as *const IomsgHeader) };
     offset += size_of::<IomsgHeader>();
-    debug!("{:?}", header);
+    debug_!("{:?}", header);
 
     match header.cmd()? {
         IomsgCommand::RemoveComponent => {

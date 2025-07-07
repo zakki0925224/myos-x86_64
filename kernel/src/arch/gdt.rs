@@ -9,7 +9,7 @@ use crate::{
     },
     error::Result,
     info,
-    util::mutex::Mutex,
+    sync::mutex::Mutex,
 };
 use core::mem::size_of;
 

@@ -1,7 +1,7 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     addr::IoPortAddress,
-    debug, device,
+    debug_, device,
     error::{Error, Result},
     fs::vfs,
     info,
@@ -9,7 +9,7 @@ use crate::{
         self,
         eth::{EtherType, EthernetAddress, EthernetFrame, EthernetPayload},
     },
-    util::mutex::Mutex,
+    sync::mutex::Mutex,
 };
 use alloc::{boxed::Box, vec::Vec};
 
@@ -315,12 +315,12 @@ impl DeviceDriverFunction for Rtl8139Driver {
 
         // TOK
         if status & (1 << 2) != 0 {
-            debug!("{}: TOK", name);
+            debug_!("{}: TOK", name);
         }
 
         // ROK
         if status & 1 != 0 {
-            debug!("{}: ROK", name);
+            debug_!("{}: ROK", name);
             let (eth_frame, new_read_ptr) = self.receive_packet()?;
 
             // debug!("{}: Received packet: {:?}", name, eth_frame);

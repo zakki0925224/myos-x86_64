@@ -1,11 +1,12 @@
 use crate::{
-    arch::{addr::VirtualAddress, mmio::IoBox, volatile::Volatile},
+    arch::addr::VirtualAddress,
     device::usb::xhc::{
         context::OutputContext,
         trb::{GenericTrbEntry, TrbRing, TrbType},
     },
     error::{Error, Result},
-    util::mutex::Mutex,
+    sync::{mutex::Mutex, volatile::Volatile},
+    util::mmio::IoBox,
 };
 use alloc::{boxed::Box, rc::Rc, vec::Vec};
 use core::{

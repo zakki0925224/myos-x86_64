@@ -3,7 +3,7 @@ use crate::{
     arch::{self, addr::IoPortAddress},
     error::{Error, Result},
     info,
-    util::mutex::Mutex,
+    sync::mutex::Mutex,
 };
 use alloc::vec::Vec;
 

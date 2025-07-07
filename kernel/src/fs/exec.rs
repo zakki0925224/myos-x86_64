@@ -1,5 +1,5 @@
 use super::{path::Path, vfs};
-use crate::{arch::task, debug::dwarf, error as m_error, error::Result, info};
+use crate::{arch::task, debug::dwarf, error::Result, error_, info};
 use common::elf::Elf64;
 
 pub fn exec_elf(elf_path: &Path, args: &[&str], enable_debug: bool) -> Result<()> {
@@ -16,7 +16,7 @@ pub fn exec_elf(elf_path: &Path, args: &[&str], enable_debug: bool) -> Result<()
         match dwarf::parse(&elf64) {
             Ok(d) => Some(d),
             Err(err) => {
-                m_error!("exec: Failed to parse DWARF: {:?}", err);
+                error_!("exec: Failed to parse DWARF: {:?}", err);
                 None
             }
         }

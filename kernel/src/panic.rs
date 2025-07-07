@@ -1,15 +1,15 @@
 use crate::{
     arch,
+    debug::qemu::{self, EXIT_FAILURE},
     device::panic_screen,
-    error,
-    qemu::{self, EXIT_FAILURE},
+    error_,
 };
 use core::panic::PanicInfo;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("{:?}", info.message());
-    error!("{:?}", info.location());
+    error_!("{:?}", info.message());
+    error_!("{:?}", info.location());
 
     // prevent overwriting by graphics::frame_buf
     arch::disabled_int(|| {

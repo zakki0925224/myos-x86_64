@@ -2,7 +2,7 @@ use super::{color::ColorCode, draw::Draw, multi_layer::Layer};
 use crate::{
     arch::addr::VirtualAddress,
     error::{Error, Result},
-    util::mutex::Mutex,
+    sync::mutex::Mutex,
 };
 use alloc::vec::Vec;
 use common::graphic_info::{GraphicInfo, PixelFormat};
