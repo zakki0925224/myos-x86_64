@@ -32,8 +32,6 @@ This is a replacement project for the previous **[myos](https://github.com/Zakki
     -   [x] RTL8139
     -   [x] xHCI
         -   [x] HID Keyboard
-    -   [ ] VirtIO
-        -   [ ] virtio-net
 -   [x] File system
     -   [x] Own VFS (read/write, in-memory)
     -   [x] FAT32 (read only)

@@ -38,7 +38,6 @@ QEMU_GDB_PORT = 3333
 QEMU_DEVICES = [
     "-device nec-usb-xhci,id=xhci",
     "-device usb-kbd",
-    # "-device virtio-net,netdev=net0,mac=52:54:00:12:34:56 -netdev user,id=net0",
     "-device ahci,id=ahci",
     "-device ide-cd,drive=disk,bus=ahci.0,bootindex=1",
     "-device isa-debug-exit,iobase=0xf4,iosize=0x04",

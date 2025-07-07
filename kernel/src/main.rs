@@ -113,12 +113,6 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
         error_!("{}: Failed to probe or attach device: {:?}", name, err);
     }
 
-    // initalize virtio-net driver
-    // if let Err(err) = device::virtio::net::probe_and_attach() {
-    //     let name = device::virtio::net::get_device_driver_info().unwrap().name;
-    //     error!("{}: Failed to probe or attach device: {:?}", name, err);
-    // }
-
     // initialize RTL8139 driver
     if let Err(err) = device::rtl8139::probe_and_attach() {
         let name = device::rtl8139::get_device_driver_info().unwrap().name;
@@ -145,13 +139,6 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
             async_task::exec_yield().await;
         }
     };
-
-    // let task_poll_virtio_net = async {
-    //     loop {
-    //         let _ = device::virtio::net::poll_normal();
-    //         async_task::exec_yield().await;
-    //     }
-    // };
 
     let task_poll_uart = async {
         loop {
@@ -189,7 +176,6 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     };
 
     async_task::spawn(task_graphics, None).unwrap();
-    // async_task::spawn(task_poll_virtio_net, None).unwrap();
     async_task::spawn(task_poll_uart, Some(Duration::from_millis(4))).unwrap();
     async_task::spawn(task_poll_ps2_keyboard, Some(Duration::from_millis(4))).unwrap();
     async_task::spawn(task_poll_usb_bus, None).unwrap();

@@ -1,5 +1,4 @@
 use crate::{arch, error::Result, mem::paging};
-use core::ptr::{read_volatile, write_volatile};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(transparent)]
@@ -76,20 +75,6 @@ impl VirtualAddress {
 
     pub fn get_page_offset(&self) -> usize {
         (self.0 & 0xfff) as usize
-    }
-
-    #[deprecated]
-    pub fn read_volatile<T>(&self) -> T {
-        let ptr = self.get() as *const T;
-        unsafe { read_volatile(ptr) }
-    }
-
-    #[deprecated]
-    pub fn write_volatile<T>(&self, data: T) {
-        let ptr = self.get() as *mut T;
-        unsafe {
-            write_volatile(ptr, data);
-        }
     }
 
     pub fn as_ptr<T>(&self) -> *const T {
