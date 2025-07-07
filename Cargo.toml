@@ -1,4 +1,4 @@
 [workspace]
 resolver = "2"
 members = ["bootloader", "common", "kernel"]
-exclude = ["apps/hello-rs", "apps/libc-rs", "apps/graphics-rs"]
+exclude = ["apps/hello-rs", "apps/libc-rs", "apps/mandelbrot"]

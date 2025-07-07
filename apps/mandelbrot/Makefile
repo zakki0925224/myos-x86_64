@@ -1,4 +1,4 @@
-FILE_NAME := graphics-rs
+FILE_NAME := mandelbrot
 OUT_FILE := ../bin/$(FILE_NAME)
 TARGET := x86_64-app
 LIBC_DIR := ../libc
