@@ -11,10 +11,10 @@ const HEIGHT: usize = 400;
 const SCALE: i32 = 1 << 16; // 16.16 fixed-point
 const MAX_ITER: u32 = 100;
 
-const MIN_RE: i32 = (-900 * SCALE) / 1000; // -0.9
-const MAX_RE: i32 = (-600 * SCALE) / 1000; // -0.6
-const MIN_IM: i32 = (-150 * SCALE) / 1000; // -0.15
-const MAX_IM: i32 = (150 * SCALE) / 1000; // +0.15
+const MIN_RE: i32 = (-2200 * SCALE) / 1000; // -2.2
+const MAX_RE: i32 = (800 * SCALE) / 1000; // 0.8
+const MIN_IM: i32 = (-1200 * SCALE) / 1000; // -1.2
+const MAX_IM: i32 = (1200 * SCALE) / 1000; // +1.2
 
 fn map_to_real(x: usize, width: usize) -> i32 {
     let min = MIN_RE as i64;
@@ -158,7 +158,7 @@ pub unsafe fn _start() {
     init_heap();
 
     // create window
-    let title = "graphics-rs\0";
+    let title = "mandelbrot\0";
     let cdesc_window = create_component_window(
         title.as_ptr() as *const _,
         100,
