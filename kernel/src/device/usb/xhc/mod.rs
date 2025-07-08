@@ -5,7 +5,7 @@ use crate::{
         pci_bus::conf_space::BaseAddress,
         usb::{
             hid_keyboard::UsbHidKeyboardDriver,
-            usb_bus::{UsbDevice, UsbDeviceAttachInfo, XhciAttachInfo},
+            usb_bus::*,
             xhc::{context::*, desc::*, register::*, trb::*},
         },
         DeviceDriverFunction, DeviceDriverInfo,
@@ -16,7 +16,7 @@ use crate::{
     mem::{bitmap, paging::PAGE_SIZE},
     sync::{mutex::Mutex, pin::IntoPinnedMutableSlice},
     trace,
-    util::mmio::Mmio,
+    util::{keyboard::key_map::ANSI_US_104_KEY_MAP, mmio::Mmio},
 };
 use alloc::{
     boxed::Box,
@@ -670,7 +670,7 @@ impl XhcDriver {
             .is_some()
         {
             let attach_info = UsbDeviceAttachInfo::new_xhci(xhci_attach_info);
-            let driver = UsbHidKeyboardDriver::new();
+            let driver = UsbHidKeyboardDriver::new(ANSI_US_104_KEY_MAP);
             let usb_driver_name = driver.name;
             let usb_device = UsbDevice::new(attach_info, Box::new(driver));
             device::usb::usb_bus::attach_usb_device(usb_device)?;

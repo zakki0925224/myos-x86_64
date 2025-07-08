@@ -2,6 +2,7 @@ pub mod ansi;
 pub mod audio;
 pub mod cstring;
 pub mod fifo;
+pub mod keyboard;
 pub mod lifo;
 pub mod mmio;
 pub mod random;

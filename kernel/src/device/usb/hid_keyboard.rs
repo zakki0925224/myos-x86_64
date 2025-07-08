@@ -1,59 +1,20 @@
 use crate::{
     device::{
-        self,
-        usb::{usb_bus::*, xhc::register::UsbHidProtocol, UsbDeviceDriverFunction},
+        self, tty,
+        usb::{usb_bus::*, xhc::register::*, UsbDeviceDriverFunction},
     },
     error::{Error, Result},
+    util::{
+        self,
+        keyboard::{key_event::*, key_map::*, scan_code::*},
+    },
 };
-use alloc::collections::btree_set::BTreeSet;
-
-#[derive(Debug, PartialEq, Eq)]
-enum KeyEvent {
-    None,
-    Char(char),
-    Unknown(u8),
-    Enter,
-}
-
-impl KeyEvent {
-    fn from_usb_key_id(usage_id: u8) -> Self {
-        match usage_id {
-            0x00 => Self::None,
-            0x04..=0x1d => Self::Char((b'a' + usage_id - 4) as char), // a-z
-            0x1e..=0x27 => Self::Char((b'1' + (usage_id - 0x1e)) as char), // 1-9,0
-            0x28 => Self::Enter,
-            0x29 => Self::Char(0x1b as char), // ESC
-            0x2a => Self::Char(0x08 as char), // Backspace
-            0x2b => Self::Char('\t'),         // Tab
-            0x2c => Self::Char(' '),          // Space
-            0x2d => Self::Char('-'),
-            0x2e => Self::Char('='),
-            0x2f => Self::Char('['),
-            0x30 => Self::Char(']'),
-            0x31 => Self::Char('\\'),
-            0x32 => Self::Char('#'),
-            0x33 => Self::Char(';'),
-            0x34 => Self::Char('\''),
-            0x35 => Self::Char('`'),
-            0x36 => Self::Char(','),
-            0x37 => Self::Char('.'),
-            0x38 => Self::Char('/'),
-            // 0x39: CapsLock, 0x3a-0x45: F1-F12
-            _ => Self::Unknown(usage_id),
-        }
-    }
-
-    fn to_char(&self) -> Option<char> {
-        match self {
-            Self::Char(c) => Some(*c),
-            Self::Enter => Some('\n'),
-            _ => None,
-        }
-    }
-}
+use alloc::collections::{btree_map::BTreeMap, btree_set::BTreeSet};
 
 pub struct UsbHidKeyboardDriver {
     pub name: &'static str,
+    key_map: BTreeMap<u8, ScanCode>,
+    mod_keys_state: ModifierKeysState,
     prev_pressed: BTreeSet<u8>,
 }
 
@@ -105,18 +66,66 @@ impl UsbDeviceDriverFunction for UsbHidKeyboardDriver {
         };
         let slot = xhci_info.slot;
 
-        let pressed = {
-            let report = device::usb::xhc::request(|xhc| {
-                xhc.hid_report(slot, xhci_info.ctrl_ep_ring_mut())
-            })?;
-            BTreeSet::from_iter(report.into_iter().skip(2).filter(|id| *id != 0))
-        };
+        let report =
+            device::usb::xhc::request(|xhc| xhc.hid_report(slot, xhci_info.ctrl_ep_ring_mut()))?;
+
+        let modifier = report.get(0).copied().unwrap_or(0);
+        let ctrl = (modifier & 0x01 != 0) || (modifier & 0x10 != 0);
+        let shift = (modifier & 0x02 != 0) || (modifier & 0x20 != 0);
+        let alt = (modifier & 0x04 != 0) | (modifier & 0x40 != 0);
+        let gui = (modifier & 0x08 != 0) || (modifier & 0x80 != 0);
+
+        self.mod_keys_state.ctrl = ctrl;
+        self.mod_keys_state.shift = shift;
+        self.mod_keys_state.alt = alt;
+        self.mod_keys_state.gui = gui;
+
+        let pressed = BTreeSet::from_iter(report.into_iter().skip(2).filter(|id| *id != 0));
         let diff = pressed.symmetric_difference(&self.prev_pressed);
+
         for id in diff {
-            let e = KeyEvent::from_usb_key_id(*id);
-            if pressed.contains(id) {
-                if let Some(c) = e.to_char() {
-                    device::tty::input(c)?;
+            let key_state = if pressed.contains(id) {
+                KeyState::Pressed
+            } else {
+                KeyState::Released
+            };
+
+            let e = util::keyboard::get_key_event_from_usb_hid(
+                &self.key_map,
+                &self.mod_keys_state,
+                key_state,
+                *id,
+            );
+
+            if let Some(e) = e {
+                if e.state == KeyState::Pressed {
+                    match e.code {
+                        KeyCode::CursorUp => {
+                            tty::input('\x1b')?;
+                            tty::input('[')?;
+                            tty::input('A')?;
+                        }
+                        KeyCode::CursorDown => {
+                            tty::input('\x1b')?;
+                            tty::input('[')?;
+                            tty::input('B')?;
+                        }
+                        KeyCode::CursorRight => {
+                            tty::input('\x1b')?;
+                            tty::input('[')?;
+                            tty::input('C')?;
+                        }
+                        KeyCode::CursorLeft => {
+                            tty::input('\x1b')?;
+                            tty::input('[')?;
+                            tty::input('D')?;
+                        }
+                        _ => {
+                            if let Some(c) = e.c {
+                                tty::input(c)?;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -127,10 +136,12 @@ impl UsbDeviceDriverFunction for UsbHidKeyboardDriver {
 }
 
 impl UsbHidKeyboardDriver {
-    pub fn new() -> Self {
+    pub fn new(key_map: KeyMap) -> Self {
         Self {
-            prev_pressed: BTreeSet::new(),
             name: "usb-hid-keyboard",
+            prev_pressed: BTreeSet::new(),
+            key_map: key_map.to_usb_hid_map(),
+            mod_keys_state: ModifierKeysState::default(),
         }
     }
 }

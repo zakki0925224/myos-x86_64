@@ -6,12 +6,23 @@ pub enum KeyState {
     Released,
 }
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct ModifierKeysState {
     pub shift: bool,
     pub ctrl: bool,
     pub gui: bool,
     pub alt: bool,
+}
+
+impl ModifierKeysState {
+    pub const fn default() -> Self {
+        Self {
+            shift: false,
+            ctrl: false,
+            gui: false,
+            alt: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

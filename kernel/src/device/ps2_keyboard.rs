@@ -1,23 +1,17 @@
-use self::{key_event::KeyEvent, key_map::KeyMap};
 use super::{tty, DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     arch::{self, addr::IoPortAddress},
-    device::ps2_keyboard::{
-        key_event::{KeyState, ModifierKeysState},
-        key_map::ANSI_US_104_KEY_MAP,
-        scan_code::KeyCode,
-    },
     error::{Error, Result},
     fs::vfs,
     idt, info,
     sync::mutex::Mutex,
-    util::fifo::Fifo,
+    util::{
+        self,
+        fifo::Fifo,
+        keyboard::{key_event::*, key_map::*, scan_code::*},
+    },
 };
-use alloc::vec::Vec;
-
-pub mod key_event;
-mod key_map;
-mod scan_code;
+use alloc::{collections::btree_map::BTreeMap, vec::Vec};
 
 const PS2_DATA_REG_ADDR: IoPortAddress = IoPortAddress::new(0x60);
 const PS2_CMD_AND_STATE_REG_ADDR: IoPortAddress = IoPortAddress::new(0x64);
@@ -28,6 +22,7 @@ static mut PS2_KBD_DRIVER: Mutex<Ps2KeyboardDriver> =
 struct Ps2KeyboardDriver {
     device_driver_info: DeviceDriverInfo,
     key_map: KeyMap,
+    key_map_cache: Option<BTreeMap<[u8; 6], ScanCode>>,
     mod_keys_state: ModifierKeysState,
     data_buf: Fifo<u8, 128>,
     data_0: Option<u8>,
@@ -43,12 +38,8 @@ impl Ps2KeyboardDriver {
         Self {
             device_driver_info: DeviceDriverInfo::new("ps2-kbd"),
             key_map,
-            mod_keys_state: ModifierKeysState {
-                shift: false,
-                ctrl: false,
-                gui: false,
-                alt: false,
-            },
+            key_map_cache: None,
+            mod_keys_state: ModifierKeysState::default(),
             data_buf: Fifo::new(0),
             data_0: None,
             data_1: None,
@@ -98,72 +89,17 @@ impl Ps2KeyboardDriver {
             self.data_4.unwrap_or(0),
             self.data_5.unwrap_or(0),
         ];
-        let key_map = match self.key_map {
-            KeyMap::AnsiUs104(map) => map,
-        };
 
-        for scan_code in key_map {
-            let key_code = scan_code.key_code;
-
-            let key_state = match scan_code {
-                sc if sc.pressed == code => KeyState::Pressed,
-                sc if sc.released == code => KeyState::Released,
-                _ => continue,
-            };
-
-            // prev keys
-            let ModifierKeysState {
-                shift: mut shift,
-                ctrl: mut ctrl,
-                gui: mut gui,
-                alt: mut alt,
-            } = self.mod_keys_state;
-
-            if key_code.is_shift() {
-                shift = key_state == KeyState::Pressed;
-            } else if key_code.is_ctrl() {
-                ctrl = key_state == KeyState::Pressed;
-            } else if key_code.is_gui() {
-                gui = key_state == KeyState::Pressed;
-            } else if key_code.is_alt() {
-                alt = key_state == KeyState::Pressed;
-            }
-
-            self.mod_keys_state = ModifierKeysState {
-                shift,
-                ctrl,
-                gui,
-                alt,
-            };
-
-            let mut c = match self.mod_keys_state.shift {
-                true => scan_code.on_shift_c,
-                false => scan_code.c,
-            };
-
-            if c.is_some() && self.mod_keys_state.ctrl {
-                match c.unwrap() as u8 {
-                    0x40..=0x5f => {
-                        c = Some((c.unwrap() as u8 - 0x40) as char);
-                    }
-                    0x60..=0x7f => {
-                        c = Some((c.unwrap() as u8 - 0x60) as char);
-                    }
-                    _ => (),
-                }
-            }
-
-            let key_event = KeyEvent {
-                code: key_code,
-                state: key_state,
-                c,
-            };
-
+        let e = util::keyboard::get_key_event_from_ps2(
+            self.key_map_cache.as_ref().unwrap(),
+            &mut self.mod_keys_state,
+            code,
+        );
+        if e.is_some() {
             self.clear_data();
-            return Ok(Some(key_event));
         }
 
-        Ok(None)
+        Ok(e)
     }
 
     fn clear_data(&mut self) {
@@ -203,6 +139,8 @@ impl DeviceDriverFunction for Ps2KeyboardDriver {
 
         PS2_CMD_AND_STATE_REG_ADDR.out8(0x20); // read configuration byte
         self.wait_ready();
+
+        self.key_map_cache = Some(self.key_map.to_ps2_map());
 
         let dev_desc = vfs::DeviceFileDescriptor {
             get_device_driver_info,
@@ -296,10 +234,6 @@ pub fn poll_normal() -> Result<()> {
         Some(e) => e,
         None => return Ok(()),
     };
-
-    if key_event.state == KeyState::Released {
-        return Ok(());
-    }
 
     match key_event.code {
         KeyCode::CursorUp => {

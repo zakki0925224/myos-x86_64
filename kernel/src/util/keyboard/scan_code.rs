@@ -1,0 +1,136 @@
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[allow(dead_code)]
+pub enum KeyCode {
+    Esc,
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+    PrintScreen,
+    ScrollLock,
+    Pause,
+    Insert,
+    Home,
+    PageUp,
+    Delete,
+    End,
+    PageDown,
+    CursorRight,
+    CursorLeft,
+    CursorDown,
+    CursorUp,
+    NumLock,
+    KpDivide,
+    KpMultiply,
+    KpSubtract,
+    KpAdd,
+    KpEnter,
+    Kp1,
+    Kp2,
+    Kp3,
+    Kp4,
+    Kp5,
+    Kp6,
+    Kp7,
+    Kp8,
+    Kp9,
+    Kp0,
+    KpPeriod,
+    LCtrl,
+    LGui,
+    LAlt,
+    Space,
+    RGui,
+    RAlt,
+    Apps,
+    RCtrl,
+    LShift,
+    CapsLock,
+    Tab,
+    Backspace,
+    Enter,
+    RShift,
+    Num1,
+    Num2,
+    Num3,
+    Num4,
+    Num5,
+    Num6,
+    Num7,
+    Num8,
+    Num9,
+    Num0,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    Backtick,
+    Subtract,
+    Equal,
+    BracketLeft,
+    BracketRight,
+    Backslash,
+    Semicolon,
+    Quote,
+    Comma,
+    Period,
+    Slash,
+}
+
+impl KeyCode {
+    pub fn is_shift(&self) -> bool {
+        *self == Self::LShift || *self == Self::RShift
+    }
+
+    pub fn is_ctrl(&self) -> bool {
+        *self == Self::LCtrl || *self == Self::RCtrl
+    }
+
+    pub fn is_gui(&self) -> bool {
+        *self == Self::LGui || *self == Self::RGui
+    }
+
+    pub fn is_alt(&self) -> bool {
+        *self == Self::LAlt || *self == Self::RAlt
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct ScanCode {
+    pub key_code: KeyCode,
+    pub c: Option<char>,
+    pub on_shift_c: Option<char>,
+    pub ps2_scan_code_pressed: [u8; 6],
+    pub ps2_scan_code_released: [u8; 6],
+    pub usb_hid_usage_id: u8,
+}
