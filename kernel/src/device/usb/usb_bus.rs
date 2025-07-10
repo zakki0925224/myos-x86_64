@@ -76,6 +76,42 @@ impl UsbDeviceAttachInfo {
     pub fn new_xhci(info: XhciAttachInfo) -> Self {
         Self::Xhci(info)
     }
+
+    pub fn interface_name(&self) -> &'static str {
+        match self {
+            Self::Xhci(_) => "xhci",
+        }
+    }
+
+    pub fn port(&self) -> usize {
+        match self {
+            Self::Xhci(info) => info.port,
+        }
+    }
+
+    pub fn slot(&self) -> usize {
+        match self {
+            Self::Xhci(info) => info.slot as usize,
+        }
+    }
+
+    pub fn vendor(&self) -> Option<&str> {
+        match self {
+            Self::Xhci(info) => info.vendor.as_ref().map(|s| s.as_str()),
+        }
+    }
+
+    pub fn product(&self) -> Option<&str> {
+        match self {
+            Self::Xhci(info) => info.product.as_ref().map(|s| s.as_str()),
+        }
+    }
+
+    pub fn serial(&self) -> Option<&str> {
+        match self {
+            Self::Xhci(info) => info.serial.as_ref().map(|s| s.as_str()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,15 +203,32 @@ impl DeviceDriverFunction for UsbBusDriver {
     }
 
     fn open(&mut self) -> Result<()> {
-        unimplemented!()
+        Ok(())
     }
 
     fn close(&mut self) -> Result<()> {
-        unimplemented!()
+        Ok(())
     }
 
     fn read(&mut self) -> Result<Vec<u8>> {
-        unimplemented!()
+        let mut s = String::new();
+
+        for d in &self.usb_devices {
+            let info = &d.attach_info;
+            let interface = info.interface_name();
+            let port = info.port();
+            let slot = info.slot();
+            let vendor = info.vendor().unwrap_or("<UNKNOWN VENDOR>");
+            let serial = info.serial().unwrap_or("<UNKNOWN SERIAL>");
+            let product = info.product().unwrap_or("<UNKNOWN PRODUCT>");
+
+            s.push_str(&format!(
+                "({}) Port{}:Slot{} {} - {} - {}",
+                interface, port, slot, vendor, serial, product
+            ));
+        }
+
+        Ok(s.into_bytes())
     }
 
     fn write(&mut self, _data: &[u8]) -> Result<()> {
