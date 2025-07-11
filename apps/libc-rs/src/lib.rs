@@ -6,6 +6,7 @@
 #[macro_use]
 extern crate alloc;
 
+use alloc::vec::Vec;
 use core::{
     fmt::{self, Write},
     panic::PanicInfo,
@@ -18,7 +19,8 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-pub fn init_heap() {
+#[doc(hidden)]
+pub fn _init_heap() {
     let heap_size = 1024 * 1024;
     let heap = unsafe { malloc(heap_size as u64) as *mut u8 };
     unsafe {
@@ -35,6 +37,46 @@ fn panic(info: &PanicInfo) -> ! {
     unsafe {
         exit(-1);
     }
+}
+
+// parse args macro
+#[doc(hidden)]
+pub unsafe fn _parse_args(argc: usize, argv: *const *const u8) -> Vec<&'static str> {
+    let mut args = Vec::new();
+    for i in 0..argc {
+        let ptr = *argv.add(i);
+        let mut len = 0;
+        while *ptr.add(len) != 0 {
+            len += 1;
+        }
+
+        let slice = core::slice::from_raw_parts(ptr, len);
+        let s = match str::from_utf8(slice) {
+            Ok(s) => s,
+            Err(_) => "",
+        };
+        args.push(s);
+    }
+
+    args
+}
+
+#[macro_export]
+macro_rules! parse_args {
+    () => {{
+        use core::arch::asm;
+
+        let argc: usize;
+        let argv: *const *const u8;
+        unsafe {
+            asm!("mov {}, rdi", out(reg) argc);
+            asm!("mov {}, rsi", out(reg) argv);
+        }
+
+        $crate::_init_heap();
+        let args = unsafe { $crate::_parse_args(argc, argv) };
+        args
+    }};
 }
 
 // print macros

@@ -5,7 +5,9 @@ use libc_rs::*;
 
 #[no_mangle]
 pub unsafe fn _start() {
-    init_heap();
+    let args = parse_args!();
+
     println!("Hello world!");
+    println!("{:?}", args);
     exit(0);
 }

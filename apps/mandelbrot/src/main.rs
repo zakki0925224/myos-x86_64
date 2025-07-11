@@ -154,8 +154,7 @@ impl DrawTarget for Framebuffer {
 
 #[no_mangle]
 pub unsafe fn _start() {
-    // init heap
-    init_heap();
+    let _args = parse_args!();
 
     // create window
     let title = "mandelbrot\0";
