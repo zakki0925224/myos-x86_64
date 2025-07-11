@@ -36,6 +36,7 @@ pub struct Image {
     layer_id: LayerId,
     framebuf_virt_addr: Option<VirtualAddress>,
     pixel_format: Option<PixelFormat>,
+    buf: Option<Vec<u32>>,
 }
 
 impl Drop for Image {
@@ -71,7 +72,8 @@ impl Component for Image {
         };
 
         // convert image to buffer
-        let mut buf = Vec::with_capacity(w * h);
+        let buf = self.buf.get_or_insert_with(|| Vec::with_capacity(w * h));
+        buf.clear();
         let framebuf_slice: &[u8] =
             unsafe { core::slice::from_raw_parts(framebuf_virt_addr.as_ptr(), w * h * bytes) };
 
@@ -109,6 +111,7 @@ impl Image {
             layer_id,
             framebuf_virt_addr: None,
             pixel_format: None,
+            buf: None,
         })
     }
 
@@ -127,6 +130,7 @@ impl Image {
             layer_id,
             framebuf_virt_addr,
             pixel_format,
+            buf: None,
         })
     }
 }

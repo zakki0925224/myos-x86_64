@@ -6,7 +6,10 @@
 #[macro_use]
 extern crate alloc;
 
-use core::{fmt::{self, Write}, panic::PanicInfo};
+use core::{
+    fmt::{self, Write},
+    panic::PanicInfo,
+};
 use linked_list_allocator::LockedHeap;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
