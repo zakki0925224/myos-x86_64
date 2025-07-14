@@ -6,14 +6,24 @@
 #[macro_use]
 extern crate alloc;
 
-use alloc::vec::Vec;
+use alloc::{ffi::CString, vec::Vec};
 use core::{
     fmt::{self, Write},
     panic::PanicInfo,
+    str::FromStr,
 };
 use linked_list_allocator::LockedHeap;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+
+// result/error
+#[derive(Debug, Clone, PartialEq)]
+pub enum LibcError {
+    FopenFailed,
+    FreadFailed,
+}
+
+pub type Result<T> = core::result::Result<T, LibcError>;
 
 // heap
 #[global_allocator]
@@ -106,4 +116,63 @@ macro_rules! print {
 macro_rules! println {
     () => ($crate::print!("\n"));
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
+// file
+#[repr(C)]
+pub struct File {
+    ptr: *mut FILE,
+}
+
+impl Drop for File {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe {
+                fclose(self.ptr);
+            }
+        }
+    }
+}
+
+impl File {
+    fn call_fopen(path: &str, mode: char) -> Result<Self> {
+        let path_cstr = CString::from_str(path).unwrap();
+        let path = path_cstr.as_bytes_with_nul();
+
+        let mut buf = [0; 4];
+        let encoded = mode.encode_utf8(&mut buf);
+        let mode_cstr = CString::new(encoded.as_bytes()).unwrap();
+        let mode = mode_cstr.as_bytes_with_nul();
+
+        let file_ptr = unsafe { fopen(path.as_ptr() as *const i8, mode.as_ptr() as *const i8) };
+
+        if file_ptr.is_null() {
+            return Err(LibcError::FopenFailed);
+        }
+
+        Ok(Self { ptr: file_ptr })
+    }
+
+    fn call_fread(&self, buf: &mut [u8]) -> Result<()> {
+        match unsafe { fread(buf.as_mut_ptr() as *mut _, 1, buf.len() as u64, self.ptr) } {
+            0 => Err(LibcError::FreadFailed),
+            _ => Ok(()),
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        unsafe { (*(*self.ptr).stat).size }
+    }
+
+    pub fn open(path: &str) -> Result<Self> {
+        Self::call_fopen(path, 'r')
+    }
+
+    pub fn create(path: &str) -> Result<Self> {
+        Self::call_fopen(path, 'w')
+    }
+
+    pub fn read(&self, buf: &mut [u8]) -> Result<()> {
+        self.call_fread(buf)
+    }
 }

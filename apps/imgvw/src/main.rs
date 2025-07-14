@@ -4,9 +4,11 @@
 #[macro_use]
 extern crate alloc;
 
+use alloc::vec::Vec;
 use core::convert::Infallible;
 use embedded_graphics::{pixelcolor::Rgb888, prelude::*, primitives::*};
 use libc_rs::*;
+use tinygif::Gif;
 
 const WIDTH: usize = 450;
 const HEIGHT: usize = 400;
@@ -30,7 +32,7 @@ impl DrawTarget for Framebuffer {
     type Color = Rgb888;
     type Error = Infallible;
 
-    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+    fn draw_iter<I>(&mut self, pixels: I) -> core::result::Result<(), Self::Error>
     where
         I: IntoIterator<Item = Pixel<Self::Color>>,
     {
@@ -61,6 +63,30 @@ pub unsafe fn _start() {
         println!("Usage: imgvw <IMAGE FILE PATH>");
         exit(-1);
     }
+
+    // open file
+    let file = match File::open(args[1]) {
+        Ok(f) => f,
+        Err(err) => {
+            println!("Failed to open the file: {:?}", err);
+            exit(-1);
+        }
+    };
+
+    // read file
+    let mut buf: Vec<u8> = vec![0; file.size()];
+    if let Err(err) = file.read(buf.as_mut_slice()) {
+        println!("Failed to read the file: {:?}", err);
+        exit(-1);
+    }
+
+    let gif = match Gif::<Rgb888>::from_slice(buf.as_slice()) {
+        Ok(gif) => gif,
+        Err(err) => {
+            println!("Failed to parse GIF(RGB888): {:?}", err);
+            exit(-1);
+        }
+    };
 
     // create window
     let title = format!("{} - imgvw\0", args[1]);
@@ -97,5 +123,9 @@ pub unsafe fn _start() {
         height: HEIGHT,
     };
 
-    loop {}
+    loop {
+        for frame in gif.frames() {
+            frame.draw(&mut eg_fb).unwrap();
+        }
+    }
 }
