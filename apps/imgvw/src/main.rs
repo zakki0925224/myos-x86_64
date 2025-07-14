@@ -5,7 +5,7 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use core::convert::Infallible;
+use core::{convert::Infallible, time::Duration};
 use embedded_graphics::{pixelcolor::Rgb888, prelude::*, primitives::*};
 use libc_rs::*;
 use tinygif::Gif;
@@ -126,6 +126,19 @@ pub unsafe fn _start() {
     loop {
         for frame in gif.frames() {
             frame.draw(&mut eg_fb).unwrap();
+
+            let uptime = unsafe { sys_uptime() };
+            let start = Duration::from_millis(uptime);
+
+            // delay
+            loop {
+                let uptime = unsafe { sys_uptime() };
+                let now = Duration::from_millis(uptime);
+
+                if (now - start).as_millis() > 50 {
+                    break;
+                }
+            }
         }
     }
 }
