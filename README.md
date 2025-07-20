@@ -6,8 +6,9 @@ This is a replacement project for the previous **[myos](https://github.com/Zakki
 
 ## Images
 
-![](https://github.com/user-attachments/assets/9e38c965-0643-4928-854f-390a4e665b19)
-![](https://github.com/user-attachments/assets/363e62c7-266e-4b27-8ab6-92607104486b)
+![](https://github.com/user-attachments/assets/7cc7d545-b3ca-4042-b145-73a909834c13)
+![](https://github.com/Zakki0925224/myos-x86_64/assets/49384910/b134ef0a-c94e-46f8-a578-a6e160747fae)
+![](https://github.com/Zakki0925224/myos-x86_64/assets/49384910/fce1c2e4-f56b-46fa-8530-9eeec6069591)
 
 ## Features
 
