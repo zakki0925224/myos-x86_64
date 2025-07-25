@@ -62,20 +62,20 @@ extern "sysv64" fn syscall_handler(
     match arg0 {
         // read syscall
         0 => {
-            let fd = arg1 as i32;
+            let fd_num = arg1 as i32;
             let buf = arg2 as *mut u8;
             let buf_len = arg3 as usize;
-            if let Err(err) = sys_read(fd, buf, buf_len) {
+            if let Err(err) = sys_read(fd_num, buf, buf_len) {
                 error_!("syscall: read: {:?}", err);
                 return -1;
             }
         }
         // write syscall
         1 => {
-            let fd = arg1 as i32;
+            let fd_num = arg1 as i32;
             let buf = arg2 as *const u8;
             let buf_len = arg3 as usize;
-            if let Err(err) = sys_write(fd, buf, buf_len) {
+            if let Err(err) = sys_write(fd_num, buf, buf_len) {
                 error_!("syscall: write: {:?}", err);
                 return -1;
             }
@@ -94,8 +94,8 @@ extern "sysv64" fn syscall_handler(
         }
         // close syscall
         3 => {
-            let fd = arg1 as i32;
-            if let Err(err) = sys_close(fd) {
+            let fd_num = arg1 as i32;
+            if let Err(err) = sys_close(fd_num) {
                 error_!("syscall: close: {:?}", err);
                 return -1;
             }
@@ -132,9 +132,9 @@ extern "sysv64" fn syscall_handler(
         }
         // stat syscall
         8 => {
-            let fd = arg1 as i32;
+            let fd_num = arg1 as i32;
             let buf = arg2 as *mut Stat;
-            if let Err(err) = sys_stat(fd, buf) {
+            if let Err(err) = sys_stat(fd_num, buf) {
                 error_!("syscall: stat: {:?}", err);
                 return -1;
             }
@@ -210,10 +210,10 @@ extern "sysv64" fn syscall_handler(
     0
 }
 
-fn sys_read(fd: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
-    let fd = FileDescriptorNumber::new_val(fd)?;
+fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
+    let fd_num = FileDescriptorNumber::new_val(fd_num)?;
 
-    match fd {
+    match fd_num {
         FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => {
             return Err(Error::Failed("fd is not defined"));
         }
@@ -273,11 +273,11 @@ fn sys_read(fd: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
     Ok(())
 }
 
-fn sys_write(fd: i32, buf: *const u8, buf_len: usize) -> Result<()> {
-    let fd = FileDescriptorNumber::new_val(fd)?;
+fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<()> {
+    let fd_num = FileDescriptorNumber::new_val(fd_num)?;
     let buf_slice = unsafe { slice::from_raw_parts(buf, buf_len) };
 
-    match fd {
+    match fd_num {
         FileDescriptorNumber::STDOUT => {
             let s = String::from_utf8_lossy(buf_slice).to_string();
             print!("{}", s);
@@ -298,16 +298,16 @@ fn sys_open(filepath: *const u8, flags: u32) -> Result<i32> {
         .as_str()
         .into();
     let create = flags & 0x1 != 0;
-    let fd = vfs::open_file(&filepath, create)?;
-    task::push_fd(fd);
+    let fd_num = vfs::open_file(&filepath, create)?;
+    task::push_fd_num(fd_num);
 
-    Ok(fd.get() as i32)
+    Ok(fd_num.get() as i32)
 }
 
-fn sys_close(fd: i32) -> Result<()> {
-    let fd = FileDescriptorNumber::new_val(fd)?;
-    vfs::close_file(&fd)?;
-    task::remove_fd(&fd);
+fn sys_close(fd_num: i32) -> Result<()> {
+    let fd_num = FileDescriptorNumber::new_val(fd_num)?;
+    vfs::close_file(&fd_num)?;
+    task::remove_fd_num(&fd_num);
 
     Ok(())
 }
@@ -353,15 +353,15 @@ fn sys_break() {
     super::int3();
 }
 
-fn sys_stat(fd: i32, buf: *mut Stat) -> Result<()> {
-    let fd = FileDescriptorNumber::new_val(fd)?;
+fn sys_stat(fd_num: i32, buf: *mut Stat) -> Result<()> {
+    let fd_num = FileDescriptorNumber::new_val(fd_num)?;
     let stat_mut = unsafe { &mut *buf };
 
-    let size = match fd {
+    let size = match fd_num {
         FileDescriptorNumber::STDIN
         | FileDescriptorNumber::STDOUT
         | FileDescriptorNumber::STDERR => 0,
-        fd => vfs::read_file(&fd)?.len(),
+        fd => vfs::file_size(&fd)?,
     };
     stat_mut.size = size;
     Ok(())

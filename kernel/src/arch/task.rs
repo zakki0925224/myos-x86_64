@@ -45,7 +45,7 @@ struct Task {
     program_mem_info: Vec<(MemoryFrameInfo, MappingInfo)>,
     allocated_mem_frame_info: Vec<MemoryFrameInfo>,
     created_layer_ids: Vec<LayerId>,
-    opend_fd: Vec<FileDescriptorNumber>,
+    opend_fd_num: Vec<FileDescriptorNumber>,
     dwarf: Option<Dwarf>,
 }
 
@@ -92,7 +92,7 @@ impl Drop for Task {
         }
 
         // close all opend files
-        for fd in self.opend_fd.iter() {
+        for fd in self.opend_fd_num.iter() {
             fs::vfs::close_file(fd).unwrap();
         }
 
@@ -231,7 +231,7 @@ impl Task {
             program_mem_info,
             allocated_mem_frame_info: Vec::new(),
             created_layer_ids: Vec::new(),
-            opend_fd: Vec::new(),
+            opend_fd_num: Vec::new(),
             dwarf,
         })
     }
@@ -390,22 +390,24 @@ pub fn remove_layer_id(layer_id: &LayerId) {
         .retain(|cwd| cwd.get() != layer_id.get());
 }
 
-pub fn push_fd(fd: FileDescriptorNumber) {
+pub fn push_fd_num(fd_num: FileDescriptorNumber) {
     let user_task = unsafe { USER_TASKS.get_force_mut() }
         .iter_mut()
         .last()
         .unwrap();
 
-    user_task.opend_fd.push(fd);
+    user_task.opend_fd_num.push(fd_num);
 }
 
-pub fn remove_fd(fd: &FileDescriptorNumber) {
+pub fn remove_fd_num(fd_num: &FileDescriptorNumber) {
     let user_task = unsafe { USER_TASKS.get_force_mut() }
         .iter_mut()
         .last()
         .unwrap();
 
-    user_task.opend_fd.retain(|cfdn| cfdn.get() != fd.get());
+    user_task
+        .opend_fd_num
+        .retain(|cfdn| cfdn.get() != fd_num.get());
 }
 
 pub fn return_task(exit_status: i32) {
