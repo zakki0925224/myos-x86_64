@@ -171,21 +171,29 @@ fn load_initramfs(path: &str) -> (u64, usize) {
 
     let file_info = file.get_boxed_info::<FileInfo>().unwrap();
     let file_size = file_info.file_size() as usize;
-    let mut buf = vec![0; file_size];
 
-    file.read(&mut buf).unwrap();
-
+    // allocate pages
     let pages = file_size.div_ceil(UEFI_PAGE_SIZE);
-    // TODO: want to use virtual address
     let ptr = boot::allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, pages).unwrap();
 
+    // copy initramfs to allocated pages
     let dest = unsafe { from_raw_parts_mut(ptr.as_ptr(), pages * UEFI_PAGE_SIZE) };
-    dest[..file_size].copy_from_slice(&buf);
-    dest[file_size..].fill(0);
 
-    info!("Loaded initramfs at: 0x{:x}", dest.as_ptr() as u64);
+    let mut offset = 0;
+    while offset < file_size {
+        let n = file.read(&mut dest[offset..file_size]).unwrap();
+        offset += n;
 
-    (dest.as_ptr() as u64, pages)
+        if n == 0 {
+            panic!("Failed to read initramfs");
+        }
+    }
+
+    dest[offset..].fill(0);
+
+    let addr = dest.as_ptr() as u64;
+    info!("Loaded initramfs at: 0x{:x}", addr);
+    (addr, pages)
 }
 
 fn init_graphic(resolution: (usize, usize)) -> GraphicInfo {

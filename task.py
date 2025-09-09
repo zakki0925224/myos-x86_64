@@ -223,10 +223,10 @@ def _build_apps():
 
 def _make_initramfs():
     _run_cmd(
-        f"dd if=/dev/zero of=./{OUTPUT_DIR}/{INITRAMFS_IMG_FILE} bs=1M count=128"
-    )  # 128MiB
+        f"dd if=/dev/zero of=./{OUTPUT_DIR}/{INITRAMFS_IMG_FILE} bs=1M count=64"
+    )  # 64MiB
     _run_cmd(
-        f'mkfs.fat -n "INITRAMFS" -F 32 -s 2 ./{OUTPUT_DIR}/{INITRAMFS_IMG_FILE}'
+        f'mkfs.fat -n "INITRAMFS" -F 32 ./{OUTPUT_DIR}/{INITRAMFS_IMG_FILE}'
     )  # format for FAT32
     _run_cmd(f"sudo mount -o loop ./{OUTPUT_DIR}/{INITRAMFS_IMG_FILE} {MNT_DIR_PATH}")
     _run_cmd(f"sudo rm -rf {MNT_DIR_PATH}/*")  # clear initramfs
