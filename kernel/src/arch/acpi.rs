@@ -1,7 +1,7 @@
 use super::addr::{IoPortAddress, VirtualAddress};
 use crate::{
     error::{Error, Result},
-    info,
+    kinfo,
 };
 use alloc::vec::Vec;
 use core::{mem::size_of, ptr::read_unaligned, slice};
@@ -209,7 +209,7 @@ impl Acpi {
 
 pub fn init(rsdp_virt_addr: VirtualAddress) -> Result<()> {
     unsafe { ACPI.init(rsdp_virt_addr) }?;
-    info!("acpi: Initialized");
+    kinfo!("acpi: Initialized");
 
     Ok(())
 }

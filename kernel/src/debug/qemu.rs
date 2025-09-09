@@ -1,4 +1,4 @@
-use crate::{arch::addr::IoPortAddress, warn};
+use crate::{arch::addr::IoPortAddress, kwarn};
 
 pub const EXIT_SUCCESS: u32 = 0x10;
 pub const EXIT_FAILURE: u32 = 0x11;
@@ -8,5 +8,5 @@ pub fn exit(exit_code: u32) {
     IoPortAddress::new(0xf4).out32(exit_code);
 
     // if QEMU, unreachable
-    warn!("Failed to exit QEMU");
+    kwarn!("Failed to exit QEMU");
 }

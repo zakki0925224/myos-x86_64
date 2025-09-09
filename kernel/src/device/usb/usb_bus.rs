@@ -8,7 +8,7 @@ use crate::{
     },
     error::Result,
     fs::vfs,
-    info,
+    kinfo,
     sync::mutex::Mutex,
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
@@ -245,7 +245,7 @@ pub fn probe_and_attach() -> Result<()> {
     let mut driver = unsafe { USB_BUS_DRIVER.try_lock() }?;
     driver.probe()?;
     driver.attach(())?;
-    info!("{}: Attached!", driver.get_device_driver_info()?.name);
+    kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
     Ok(())
 }
 

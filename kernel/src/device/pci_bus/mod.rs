@@ -1,9 +1,8 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    debug_,
     error::{Error, Result},
     fs::vfs,
-    info,
+    kdebug, kinfo,
     sync::mutex::Mutex,
 };
 use alloc::{string::String, vec::Vec};
@@ -45,7 +44,7 @@ impl PciBusDriver {
                         }
                     };
 
-                    debug_!(
+                    kdebug!(
                         "{}: {}.{}.{} {} found",
                         self.device_driver_info.name,
                         bus,
@@ -186,9 +185,9 @@ pub fn probe_and_attach() -> Result<()> {
 
     driver.probe()?;
     driver.attach(())?;
-    info!("{}: Attached!", driver_name);
+    kinfo!("{}: Attached!", driver_name);
 
-    info!("{}: Scanning devices...", driver_name);
+    kinfo!("{}: Scanning devices...", driver_name);
     driver.scan_pci_devices();
     Ok(())
 }

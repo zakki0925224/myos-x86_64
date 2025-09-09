@@ -1,5 +1,5 @@
 use self::color::ColorCode;
-use crate::{error::Result, info};
+use crate::{error::Result, kinfo};
 use common::graphic_info::GraphicInfo;
 
 pub mod color;
@@ -18,14 +18,14 @@ pub fn init(
     frame_buf::init(graphic_info)?;
     frame_buf_console::init(console_back_color, console_fore_color)?;
 
-    info!("graphics: Frame buffer initialized");
+    kinfo!("graphics: Frame buffer initialized");
     Ok(())
 }
 
 pub fn enable_shadow_buf() -> Result<()> {
     frame_buf::enable_shadow_buf()?;
 
-    info!("graphics: Shadow buffer enabled");
+    kinfo!("graphics: Shadow buffer enabled");
     Ok(())
 }
 
@@ -37,7 +37,7 @@ pub fn init_layer_man(graphic_info: &GraphicInfo) -> Result<()> {
     multi_layer::push_layer(console_layer)?;
     frame_buf_console::set_target_layer_id(&console_layer_id)?;
 
-    info!("graphics: Layer manager initialized");
+    kinfo!("graphics: Layer manager initialized");
     Ok(())
 }
 
@@ -45,6 +45,6 @@ pub fn init_simple_wm() -> Result<()> {
     simple_window_manager::init()?;
     simple_window_manager::create_taskbar()?;
 
-    info!("graphics: Simple window manager initialized");
+    kinfo!("graphics: Simple window manager initialized");
     Ok(())
 }

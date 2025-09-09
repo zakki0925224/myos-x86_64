@@ -3,8 +3,8 @@ use crate::{
     device::DeviceDriverInfo,
     error::{Error, Result},
     fs::fat::dir_entry::Attribute,
+    kwarn,
     sync::mutex::Mutex,
-    warn,
 };
 use alloc::{collections::btree_map::BTreeMap, string::String, vec::Vec};
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -581,7 +581,7 @@ impl VirtualFileSystem {
                 file_ref_mut.data = Some(data.to_vec());
 
                 // TODO
-                warn!(
+                kwarn!(
                     "VFS: Write to File system is unimplemented. Using temporary buffer: {}",
                     file_path
                 );

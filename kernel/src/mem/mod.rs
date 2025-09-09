@@ -1,6 +1,6 @@
 use crate::{
     error::Result,
-    info,
+    kinfo,
     mem::paging::{EntryMode, PageWriteThroughLevel, ReadWrite, PAGE_SIZE},
     println,
 };
@@ -13,7 +13,7 @@ pub mod paging;
 
 pub fn init(mem_map: &[MemoryDescriptor]) -> Result<()> {
     bitmap::init(mem_map)?;
-    info!("mem: Bitmap memory manager initialized");
+    kinfo!("mem: Bitmap memory manager initialized");
 
     let start = PAGE_SIZE as u64;
     let end = bitmap::get_total_mem_size()? as u64;
@@ -28,7 +28,7 @@ pub fn init(mem_map: &[MemoryDescriptor]) -> Result<()> {
     )?;
 
     allocator::init_heap()?;
-    info!("mem: Heap allocator initialized");
+    kinfo!("mem: Heap allocator initialized");
 
     Ok(())
 }

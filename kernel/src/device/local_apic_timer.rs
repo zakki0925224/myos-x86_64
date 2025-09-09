@@ -2,9 +2,9 @@ use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     acpi,
     addr::VirtualAddress,
-    arch, async_task, debug_,
+    arch, async_task,
     error::Result,
-    idt, info,
+    idt, kdebug, kinfo,
     sync::{mutex::Mutex, volatile::Volatile},
     util::mmio::Mmio,
 };
@@ -158,7 +158,7 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
             idt::InterruptHandler::General(poll_int_local_apic_timer),
             idt::GateType::Interrupt,
         )?;
-        debug_!(
+        kdebug!(
             "{}: Interrupt vector number: 0x{:x}, Interrupt occures every {}ms",
             device_name,
             vec_num,
@@ -180,7 +180,7 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
             self.stop();
 
             assert!(tick > 0);
-            debug_!(
+            kdebug!(
                 "{}: Timer frequency was detected: {}Hz ({:?})",
                 device_name,
                 tick,
@@ -244,7 +244,7 @@ pub fn probe_and_attach() -> Result<()> {
     let mut driver = unsafe { LOCAL_APIC_TIMER_DRIVER.try_lock() }?;
     driver.probe()?;
     driver.attach(())?;
-    info!("{}: Attached!", driver.device_driver_info.name);
+    kinfo!("{}: Attached!", driver.device_driver_info.name);
 
     Ok(())
 }

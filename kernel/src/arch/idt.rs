@@ -6,7 +6,7 @@ use crate::{
     },
     debug, device,
     error::{Error, Result},
-    error_, info,
+    kerror, kinfo,
     mem::paging,
     sync::mutex::Mutex,
 };
@@ -268,7 +268,7 @@ pub fn notify_end_of_int() {
 }
 
 extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
-    info!("int: DEBUG");
+    kinfo!("int: DEBUG");
 
     let debugger_result;
 
@@ -276,12 +276,12 @@ extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
         match debug::user_app_debugger(&stack_frame, &dwarf) {
             Ok(res) => debugger_result = res,
             Err(err) => {
-                error_!("int: Error in user_app_debugger: {:?}", err);
+                kerror!("int: Error in user_app_debugger: {:?}", err);
                 debugger_result = debug::DebuggerResult::Quit;
             }
         }
     } else {
-        error_!("int: No DWARF found for user task, quit debug mode...");
+        kerror!("int: No DWARF found for user task, quit debug mode...");
         debugger_result = debug::DebuggerResult::Quit;
     }
 
@@ -301,7 +301,7 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(stack_frame: InterruptStackFrame) {
-    error_!("int: GENERAL PROTECTION FAULT, {:?}", stack_frame);
+    kerror!("int: GENERAL PROTECTION FAULT, {:?}", stack_frame);
 
     if task::is_running_user_task() {
         task::debug_user_task();
@@ -320,7 +320,7 @@ extern "x86-interrupt" fn page_fault_handler(
     let page_virt_addr = (accessed_virt_addr & !0xfff).into();
     let page_table_entry = paging::read_page_table_entry(page_virt_addr);
 
-    error_!(
+    kerror!(
         "int: PAGE FAULT, Accessed virtual address: 0x{:x}, {:?}, {:?}, Page table entry (at 0x{:x}): {:?}",
         accessed_virt_addr, error_code, stack_frame, page_virt_addr.get(), page_table_entry
     );
@@ -361,7 +361,7 @@ pub fn init_pic() {
         SLAVE_PIC_ADDR.offset(1).out8(0xef);
     });
 
-    info!("idt: PIC initialized");
+    kinfo!("idt: PIC initialized");
 }
 
 pub fn init_idt() -> Result<()> {
@@ -410,7 +410,7 @@ pub fn init_idt() -> Result<()> {
     )?;
     idt.load();
 
-    info!("idt: Initialized");
+    kinfo!("idt: Initialized");
     Ok(())
 }
 

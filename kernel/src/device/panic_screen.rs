@@ -1,6 +1,6 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    addr::VirtualAddress, error::Result, graphics::font::FONT, info, sync::mutex::Mutex, ColorCode,
+    addr::VirtualAddress, error::Result, graphics::font::FONT, kinfo, sync::mutex::Mutex, ColorCode,
 };
 use alloc::vec::Vec;
 use common::graphic_info::{GraphicInfo, PixelFormat};
@@ -13,7 +13,7 @@ static mut PANIC_SCREEN_DRIVER: Mutex<PanicScreenDriver> = Mutex::new(PanicScree
 
 struct PanicScreenDriver {
     device_driver_info: DeviceDriverInfo,
-    curosr_x: Option<usize>,
+    cursor_x: Option<usize>,
     cursor_y: Option<usize>,
     res_x: Option<usize>,
     res_y: Option<usize>,
@@ -25,7 +25,7 @@ impl PanicScreenDriver {
     const fn new() -> Self {
         Self {
             device_driver_info: DeviceDriverInfo::new("panic-screen"),
-            curosr_x: None,
+            cursor_x: None,
             cursor_y: None,
             res_x: None,
             res_y: None,
@@ -44,7 +44,7 @@ impl PanicScreenDriver {
     }
 
     fn inc_cursor(&mut self) {
-        let mut cursor_x = self.curosr_x.unwrap_or(0) + 1;
+        let mut cursor_x = self.cursor_x.unwrap_or(0) + 1;
         let mut cursor_y = self.cursor_y.unwrap_or(0);
         let (char_max_x_len, char_max_y_len) = self.char_max_xy_len();
 
@@ -58,7 +58,7 @@ impl PanicScreenDriver {
             cursor_y = 0;
         }
 
-        self.curosr_x = Some(cursor_x);
+        self.cursor_x = Some(cursor_x);
         self.cursor_y = Some(cursor_y);
     }
 
@@ -100,7 +100,7 @@ impl PanicScreenDriver {
 
         match c {
             '\n' => {
-                self.curosr_x = Some(0);
+                self.cursor_x = Some(0);
                 let mut cursor_y = self.cursor_y.unwrap_or(0) + 1;
 
                 if cursor_y > char_max_y_len {
@@ -122,7 +122,7 @@ impl PanicScreenDriver {
         // draw font
         let font_glyph = FONT.get_glyph(c)?;
         let (font_width, font_height) = FONT.get_wh();
-        let x = self.curosr_x.unwrap_or(0) * font_width;
+        let x = self.cursor_x.unwrap_or(0) * font_width;
         let y = self.cursor_y.unwrap_or(0) * font_height;
 
         for h in 0..font_height {
@@ -162,7 +162,7 @@ impl DeviceDriverFunction for PanicScreenDriver {
     }
 
     fn attach(&mut self, arg: Self::AttachInput) -> Result<()> {
-        self.curosr_x = Some(0);
+        self.cursor_x = Some(0);
         self.cursor_y = Some(0);
         self.res_x = Some(arg.resolution.0);
         self.res_y = Some(arg.resolution.1);
@@ -207,7 +207,7 @@ pub fn probe_and_attach(graphic_info: GraphicInfo) -> Result<()> {
     driver.probe()?;
     driver.attach(graphic_info)?;
     let info = driver.get_device_driver_info()?;
-    info!("{}: Attached!", info.name);
+    kinfo!("{}: Attached!", info.name);
 
     Ok(())
 }

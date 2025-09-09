@@ -3,7 +3,7 @@ use crate::{
     arch::{self, addr::IoPortAddress},
     error::{Error, Result},
     fs::vfs,
-    idt, info,
+    idt, kinfo,
     sync::mutex::Mutex,
     util::fifo::Fifo,
 };
@@ -229,7 +229,7 @@ pub fn probe_and_attach() -> Result<()> {
         let mut driver = unsafe { PS2_MOUSE_DRIVER.try_lock() }?;
         driver.probe()?;
         driver.attach(())?;
-        info!("{}: Attached!", driver.get_device_driver_info()?.name);
+        kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
         Ok(())
     })
 }

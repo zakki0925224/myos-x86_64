@@ -6,17 +6,15 @@ use crate::{
         register::{model_specific::*, Register},
         task,
     },
-    debug_,
     device::tty,
     env,
     error::*,
-    error_,
     fs::{
         self,
         vfs::{self, FileDescriptorNumber},
     },
     graphics::{multi_layer::LayerId, simple_window_manager},
-    info,
+    kdebug, kerror, kinfo,
     mem::{bitmap, paging::PAGE_SIZE},
     print, util,
 };
@@ -66,7 +64,7 @@ extern "sysv64" fn syscall_handler(
             let buf = arg2 as *mut u8;
             let buf_len = arg3 as usize;
             if let Err(err) = sys_read(fd_num, buf, buf_len) {
-                error_!("syscall: read: {:?}", err);
+                kerror!("syscall: read: {:?}", err);
                 return -1;
             }
         }
@@ -76,7 +74,7 @@ extern "sysv64" fn syscall_handler(
             let buf = arg2 as *const u8;
             let buf_len = arg3 as usize;
             if let Err(err) = sys_write(fd_num, buf, buf_len) {
-                error_!("syscall: write: {:?}", err);
+                kerror!("syscall: write: {:?}", err);
                 return -1;
             }
         }
@@ -87,7 +85,7 @@ extern "sysv64" fn syscall_handler(
             match sys_open(filepath, flags) {
                 Ok(fd) => return fd as i64,
                 Err(err) => {
-                    error_!("syscall: open: {:?}", err);
+                    kerror!("syscall: open: {:?}", err);
                     return -1;
                 }
             }
@@ -96,7 +94,7 @@ extern "sysv64" fn syscall_handler(
         3 => {
             let fd_num = arg1 as i32;
             if let Err(err) = sys_close(fd_num) {
-                error_!("syscall: close: {:?}", err);
+                kerror!("syscall: close: {:?}", err);
                 return -1;
             }
         }
@@ -112,7 +110,7 @@ extern "sysv64" fn syscall_handler(
             match sys_sbrk(len) {
                 Ok(ptr) => return ptr as i64,
                 Err(err) => {
-                    error_!("syscall: sbrk: {:?}", err);
+                    kerror!("syscall: sbrk: {:?}", err);
                     return -1;
                 }
             }
@@ -121,7 +119,7 @@ extern "sysv64" fn syscall_handler(
         6 => {
             let buf = arg1 as *mut Utsname;
             if let Err(err) = sys_uname(buf) {
-                error_!("syscall: uname: {:?}", err);
+                kerror!("syscall: uname: {:?}", err);
                 return -1;
             }
         }
@@ -135,7 +133,7 @@ extern "sysv64" fn syscall_handler(
             let fd_num = arg1 as i32;
             let buf = arg2 as *mut Stat;
             if let Err(err) = sys_stat(fd_num, buf) {
-                error_!("syscall: stat: {:?}", err);
+                kerror!("syscall: stat: {:?}", err);
                 return -1;
             }
         }
@@ -148,7 +146,7 @@ extern "sysv64" fn syscall_handler(
             let args = arg1 as *const u8;
             let flags = arg2 as u32;
             if let Err(err) = sys_exec(args, flags) {
-                error_!("syscall: exec: {:?}", err);
+                kerror!("syscall: exec: {:?}", err);
                 return -1;
             }
         }
@@ -157,7 +155,7 @@ extern "sysv64" fn syscall_handler(
             let buf = arg1 as *mut u8;
             let buf_len = arg2 as usize;
             if let Err(err) = sys_getcwd(buf, buf_len) {
-                error_!("syscall: getcwd: {:?}", err);
+                kerror!("syscall: getcwd: {:?}", err);
                 return -1;
             }
         }
@@ -165,7 +163,7 @@ extern "sysv64" fn syscall_handler(
         12 => {
             let path = arg1 as *const u8;
             if let Err(err) = sys_chdir(path) {
-                error_!("syscall: chdir: {:?}", err);
+                kerror!("syscall: chdir: {:?}", err);
                 return -1;
             }
         }
@@ -175,7 +173,7 @@ extern "sysv64" fn syscall_handler(
             match sys_sbrksz(target) {
                 Ok(size) => return size as i64,
                 Err(err) => {
-                    error_!("syscall: sbrksz: {:?}, target addr: 0x{:x}", err, arg1);
+                    kerror!("syscall: sbrksz: {:?}, target addr: 0x{:x}", err, arg1);
                     return 0;
                 }
             };
@@ -187,7 +185,7 @@ extern "sysv64" fn syscall_handler(
             let buf_len = arg3 as usize;
 
             if let Err(err) = sys_getenames(path, buf, buf_len) {
-                error_!("syscall: getenames: {:?}", err);
+                kerror!("syscall: getenames: {:?}", err);
                 return -1;
             }
         }
@@ -197,12 +195,12 @@ extern "sysv64" fn syscall_handler(
             let replymsgbuf = arg2 as *mut u8;
             let replymsgbuf_len = arg3 as usize;
             if let Err(err) = sys_iomsg(msgbuf, replymsgbuf, replymsgbuf_len) {
-                error_!("syscall: iomsg: {:?}", err);
+                kerror!("syscall: iomsg: {:?}", err);
                 return -1;
             }
         }
         num => {
-            error_!("syscall: Syscall number 0x{:x} is not defined", num);
+            kerror!("syscall: Syscall number 0x{:x} is not defined", num);
             return -1;
         }
     }
@@ -321,7 +319,7 @@ fn sys_sbrk(len: usize) -> Result<*const u8> {
     let mem_frame_info = bitmap::alloc_mem_frame((len + PAGE_SIZE).div_ceil(PAGE_SIZE))?;
     mem_frame_info.set_permissions_to_user()?;
     let virt_addr = mem_frame_info.frame_start_virt_addr()?;
-    debug_!(
+    kdebug!(
         "syscall: sbrk: allocated {} bytes at 0x{:x}",
         mem_frame_info.frame_size,
         virt_addr.get()
@@ -438,7 +436,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
     let mut offset = 0;
     let header: &IomsgHeader = unsafe { &*(msgbuf as *const IomsgHeader) };
     offset += size_of::<IomsgHeader>();
-    debug_!("{:?}", header);
+    kdebug!("{:?}", header);
 
     match header.cmd()? {
         IomsgCommand::RemoveComponent => {
@@ -586,5 +584,5 @@ pub fn enable() {
     fmask.write();
     assert_eq!(SystemCallFlagMaskRegister::read().value(), 0);
 
-    info!("syscall: Enabled syscall");
+    kinfo!("syscall: Enabled syscall");
 }

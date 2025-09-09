@@ -5,7 +5,7 @@ use crate::{
         register::{control::*, Register},
     },
     error::Result,
-    info,
+    kinfo,
     mem::bitmap,
 };
 
@@ -577,7 +577,7 @@ pub fn create_new_page_table(
     write_through_level: PageWriteThroughLevel,
 ) -> Result<()> {
     unsafe { PAGE_MAN.create_new_page_table(start, end, phys_addr, rw, mode, write_through_level)? }
-    info!(
+    kinfo!(
         "paging: Created new page table (virt 0x{:x}-0x{:x} -> phys 0x{:x}-0x{:x})",
         start.get(),
         end.get(),
@@ -589,7 +589,7 @@ pub fn create_new_page_table(
 
 pub fn update_mapping(mapping_info: &MappingInfo) -> Result<()> {
     unsafe { PAGE_MAN.update_mapping(mapping_info) }
-    // info!(
+    // kinfo!(
     //     "paging: Updated mapping (virt 0x{:x}-0x{:x} -> phys 0x{:x}-0x{:x})",
     //     start.get(),
     //     end.get(),

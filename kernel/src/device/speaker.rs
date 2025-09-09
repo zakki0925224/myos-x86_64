@@ -1,5 +1,5 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
-use crate::{arch, error::Result, fs::vfs, info, util};
+use crate::{arch, error::Result, fs::vfs, kinfo, util};
 use alloc::vec::Vec;
 use core::time::Duration;
 
@@ -103,7 +103,7 @@ pub fn probe_and_attach() -> Result<()> {
     unsafe {
         SPEAKER_DRIVER.probe()?;
         SPEAKER_DRIVER.attach(())?;
-        info!("{}: Attached!", get_device_driver_info()?.name);
+        kinfo!("{}: Attached!", get_device_driver_info()?.name);
     }
 
     Ok(())

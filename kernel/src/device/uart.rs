@@ -2,7 +2,7 @@ use super::{tty, DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     arch::{self, addr::IoPortAddress},
     error::{Error, Result},
-    info,
+    kinfo,
     sync::mutex::Mutex,
 };
 use alloc::vec::Vec;
@@ -155,7 +155,7 @@ pub fn probe_and_attach() -> Result<()> {
     driver.probe()?;
     driver.attach(())?;
     let info = driver.get_device_driver_info()?;
-    info!("{}: Attached!", info.name);
+    kinfo!("{}: Attached!", info.name);
 
     Ok(())
 }

@@ -1,10 +1,10 @@
 use crate::{
     arch::{addr::VirtualAddress, context::*},
     debug::dwarf::Dwarf,
-    debug_,
     error::*,
     fs::{self, path::Path, vfs::FileDescriptorNumber},
     graphics::{multi_layer::LayerId, simple_window_manager},
+    kdebug,
     mem::{
         bitmap::{self, MemoryFrameInfo},
         paging::{self, *},
@@ -96,7 +96,7 @@ impl Drop for Task {
             fs::vfs::close_file(fd).unwrap();
         }
 
-        debug_!("task: Dropped tid: {}", self.id.get());
+        kdebug!("task: Dropped tid: {}", self.id.get());
     }
 }
 
@@ -267,7 +267,7 @@ impl Task {
     }
 
     fn switch_to(&self, next_task: &Task) {
-        debug_!(
+        kdebug!(
             "task: Switch context tid: {} to {}",
             self.id.get(),
             next_task.id.get()
@@ -431,12 +431,12 @@ pub fn return_task(exit_status: i32) {
 }
 
 pub fn debug_user_task() {
-    debug_!("===USER TASK INFO===");
+    kdebug!("===USER TASK INFO===");
     let user_task = unsafe { USER_TASKS.get_force_mut() }.last();
     if let Some(task) = user_task {
         debug_task(task);
     } else {
-        debug_!("User task no available");
+        kdebug!("User task no available");
     }
 }
 
@@ -455,48 +455,48 @@ pub fn is_running_user_task() -> bool {
 
 fn debug_task(task: &Task) {
     let ctx = &task.context;
-    debug_!("task id: {}", task.id.get());
-    debug_!(
+    kdebug!("task id: {}", task.id.get());
+    kdebug!(
         "stack: (phys)0x{:x}, size: 0x{:x}bytes",
         task.stack_mem_frame_info.frame_start_phys_addr.get(),
         task.stack_mem_frame_info.frame_size,
     );
-    debug_!("context:");
-    debug_!(
+    kdebug!("context:");
+    kdebug!(
         "\tcr3: 0x{:016x}, rip: 0x{:016x}, rflags: {:?},",
         ctx.cr3,
         ctx.rip,
         ctx.rflags
     );
-    debug_!(
+    kdebug!(
         "\tcs : 0x{:016x}, ss : 0x{:016x}, fs : 0x{:016x}, gs : 0x{:016x},",
         ctx.cs,
         ctx.ss,
         ctx.fs,
         ctx.gs
     );
-    debug_!(
+    kdebug!(
         "\trax: 0x{:016x}, rbx: 0x{:016x}, rcx: 0x{:016x}, rdx: 0x{:016x},",
         ctx.rax,
         ctx.rbx,
         ctx.rcx,
         ctx.rdx
     );
-    debug_!(
+    kdebug!(
         "\trdi: 0x{:016x}, rsi: 0x{:016x}, rsp: 0x{:016x}, rbp: 0x{:016x},",
         ctx.rdi,
         ctx.rsi,
         ctx.rsp,
         ctx.rbp
     );
-    debug_!(
+    kdebug!(
         "\tr8 : 0x{:016x}, r9 : 0x{:016x}, r10: 0x{:016x}, r11: 0x{:016x},",
         ctx.r8,
         ctx.r9,
         ctx.r10,
         ctx.r11
     );
-    debug_!(
+    kdebug!(
         "\tr12: 0x{:016x}, r13: 0x{:016x}, r14: 0x{:016x}, r15: 0x{:016x}",
         ctx.r12,
         ctx.r13,
@@ -504,28 +504,28 @@ fn debug_task(task: &Task) {
         ctx.r15
     );
 
-    debug_!("args mem frame info:");
+    kdebug!("args mem frame info:");
     if let Some(mem_frame_info) = &task.args_mem_frame_info {
         let virt_addr = mem_frame_info.frame_start_virt_addr().unwrap();
-        debug_!(
+        kdebug!(
             "\t(virt)0x{:x}-0x{:x}",
             virt_addr.get(),
             virt_addr.offset(mem_frame_info.frame_size).get(),
         );
     }
 
-    debug_!("stack mem frame info:");
+    kdebug!("stack mem frame info:");
     let virt_addr = task.stack_mem_frame_info.frame_start_virt_addr().unwrap();
-    debug_!(
+    kdebug!(
         "\t(virt)0x{:x}-0x{:x}",
         virt_addr.get(),
         virt_addr.offset(task.stack_mem_frame_info.frame_size).get(),
     );
 
-    debug_!("program mem frame info:");
+    kdebug!("program mem frame info:");
     for (mem_frame_info, mapping_info) in &task.program_mem_info {
         let virt_addr = mem_frame_info.frame_start_virt_addr().unwrap();
-        debug_!(
+        kdebug!(
             "\t(virt)0x{:x}-0x{:x} mapped to (virt)0x{:x}-0x{:x}",
             virt_addr.get(),
             virt_addr.offset(mem_frame_info.frame_size).get(),
@@ -534,11 +534,11 @@ fn debug_task(task: &Task) {
         );
     }
 
-    debug_!("allocated mem frame info:");
+    kdebug!("allocated mem frame info:");
     for mem_frame_info in &task.allocated_mem_frame_info {
         let virt_addr = mem_frame_info.frame_start_virt_addr().unwrap();
 
-        debug_!(
+        kdebug!(
             "\t(virt)0x{:x}-0x{:x}",
             virt_addr.get(),
             virt_addr.offset(mem_frame_info.frame_size).get(),

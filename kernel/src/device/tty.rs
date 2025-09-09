@@ -3,7 +3,7 @@ use crate::{
     error::{Error, Result},
     fs::vfs,
     graphics::frame_buf_console,
-    info,
+    kinfo,
     sync::mutex::Mutex,
     util::lifo::Lifo,
 };
@@ -230,7 +230,7 @@ pub fn probe_and_attach() -> Result<()> {
     let mut driver = unsafe { TTY.try_lock() }?;
     driver.probe()?;
     driver.attach(())?;
-    info!("{}: Attached!", driver.get_device_driver_info()?.name);
+    kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
     Ok(())
 }
 

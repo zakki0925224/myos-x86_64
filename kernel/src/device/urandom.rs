@@ -1,5 +1,5 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
-use crate::{device, error::Result, fs::vfs, info, sync::mutex::Mutex, util};
+use crate::{device, error::Result, fs::vfs, kinfo, sync::mutex::Mutex, util};
 use alloc::vec::Vec;
 
 static mut URANDOM_DRIVER: Mutex<UrandomDriver> = Mutex::new(UrandomDriver::new());
@@ -81,7 +81,7 @@ pub fn probe_and_attach() -> Result<()> {
     let mut driver = unsafe { URANDOM_DRIVER.try_lock() }?;
     driver.probe()?;
     driver.attach(())?;
-    info!("{}: Attached!", driver.get_device_driver_info()?.name);
+    kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
 
     Ok(())
 }

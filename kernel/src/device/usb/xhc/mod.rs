@@ -1,5 +1,4 @@
 use crate::{
-    debug_,
     device::{
         self,
         pci_bus::conf_space::BaseAddress,
@@ -12,10 +11,9 @@ use crate::{
     },
     error::{Error, Result},
     fs::vfs,
-    info,
+    kdebug, kinfo, ktrace,
     mem::{bitmap, paging::PAGE_SIZE},
     sync::{mutex::Mutex, pin::IntoPinnedMutableSlice},
-    trace,
     util::{keyboard::key_map::ANSI_US_104_KEY_MAP, mmio::Mmio},
 };
 use alloc::{
@@ -165,7 +163,7 @@ impl XhcDriver {
                 if trb.trb_type() == TrbType::CommandCompletionEvent as u32 {
                     return Ok(trb);
                 } else {
-                    trace!("Invalid TRB type: 0x{:x}", trb.trb_type());
+                    ktrace!("Invalid TRB type: 0x{:x}", trb.trb_type());
                 }
             }
         }
@@ -186,12 +184,12 @@ impl XhcDriver {
             .set_host_controller_reset(true);
 
         loop {
-            debug_!("{}: Waiting xHC...", driver_name);
+            kdebug!("{}: Waiting xHC...", driver_name);
             if !self.ope_reg()?.as_ref().usb_cmd.host_controller_reset() {
                 break;
             }
         }
-        debug_!("{}: xHC reset complete", driver_name);
+        kdebug!("{}: xHC reset complete", driver_name);
 
         Ok(())
     }
@@ -204,7 +202,7 @@ impl XhcDriver {
         self.ope_reg()?
             .as_mut()
             .set_max_device_slots_enabled(num_of_slots as u8);
-        debug_!("{}: Number of ports: {}", driver_name, num_of_ports);
+        kdebug!("{}: Number of ports: {}", driver_name, num_of_ports);
 
         Ok(())
     }
@@ -213,7 +211,7 @@ impl XhcDriver {
         let driver_name = self.device_driver_info.name;
 
         let num_scratchpad_bufs = max(self.cap_reg()?.as_ref().num_scratchpad_bufs(), 1);
-        debug_!(
+        kdebug!(
             "{}: Number of scratchpad buffers: {}",
             driver_name,
             num_scratchpad_bufs
@@ -244,7 +242,7 @@ impl XhcDriver {
             bufs.push(buf);
         }
         let scratchpad_bufs = ScratchpadBuffers { table, bufs };
-        debug_!("{}: Scratchpad buffers initialized", driver_name);
+        kdebug!("{}: Scratchpad buffers initialized", driver_name);
         Ok(scratchpad_bufs)
     }
 
@@ -258,7 +256,7 @@ impl XhcDriver {
             .dcbaa_ptr
             .write(dcbaa.inner_mut_ptr());
         self.dcbaa = Some(dcbaa);
-        debug_!(
+        kdebug!(
             "{}: Device context base address array initialized",
             driver_name
         );
@@ -273,7 +271,7 @@ impl XhcDriver {
         let event_ring = self.primary_event_ring.as_mut().unwrap();
         let rt_reg = unsafe { self.rt_reg.as_mut().unwrap().get_unchecked_mut() };
         rt_reg.init_int_reg_set(0, event_ring)?;
-        debug_!("{}: Primary event ring initialized", driver_name);
+        kdebug!("{}: Primary event ring initialized", driver_name);
 
         Ok(())
     }
@@ -285,7 +283,7 @@ impl XhcDriver {
         let cmd_ring = self.cmd_ring.as_mut().unwrap();
         let ope_reg = unsafe { self.ope_reg.as_mut().unwrap().get_unchecked_mut() };
         ope_reg.set_cmd_ring_ctrl(cmd_ring);
-        debug_!("{}: Command ring initialized", driver_name);
+        kdebug!("{}: Command ring initialized", driver_name);
 
         Ok(())
     }
@@ -306,7 +304,7 @@ impl XhcDriver {
         let trb = self.send_cmd(GenericTrbEntry::trb_enable_slot_cmd())?;
         let slot = trb.slot_id();
 
-        debug_!(
+        kdebug!(
             "{}: Port {} is connected to slot {}",
             driver_name,
             port,
@@ -344,7 +342,7 @@ impl XhcDriver {
             .get(port)
             .ok_or(Error::IndexOutOfBoundsError(port))?;
         let port_speed = portsc_e.port_speed();
-        trace!("{:?}", port_speed);
+        ktrace!("{:?}", port_speed);
         input_context.as_mut().set_port_speed(port_speed)?;
         let ctrl_ep_ring = CommandRing::default();
         input_context.as_mut().set_ep_context(
@@ -358,7 +356,7 @@ impl XhcDriver {
         let cmd = GenericTrbEntry::trb_cmd_address_device(input_context.as_ref(), slot);
         self.send_cmd(cmd)?.cmd_result_ok()?;
 
-        debug_!(
+        kdebug!(
             "{}: Addressed device on port {} with slot {}",
             driver_name,
             port,
@@ -649,7 +647,7 @@ impl XhcDriver {
         }
 
         let descs = self.request_conf_desc_and_rest(slot, &mut ctrl_ep_ring)?;
-        debug_!("{}: Slot {} initialized", driver_name, slot);
+        kdebug!("{}: Slot {} initialized", driver_name, slot);
 
         // detect and attach usb device
         let xhci_attach_info = XhciAttachInfo {
@@ -674,12 +672,15 @@ impl XhcDriver {
             let usb_driver_name = driver.name;
             let usb_device = UsbDevice::new(attach_info, Box::new(driver));
             device::usb::usb_bus::attach_usb_device(usb_device)?;
-            info!(
+            kinfo!(
                 "{}: {} attached to {:?} on slot {}",
-                driver_name, usb_driver_name, product, slot
+                driver_name,
+                usb_driver_name,
+                product,
+                slot
             );
         } else {
-            info!(
+            kinfo!(
                 "{}: Unsupported USB device detected, no attached",
                 driver_name
             );
@@ -693,12 +694,12 @@ impl XhcDriver {
         self.ope_reg()?.as_mut().usb_cmd.set_run_stop(true);
 
         loop {
-            debug_!("{}: Waiting xHC...", driver_name);
+            kdebug!("{}: Waiting xHC...", driver_name);
             if !self.ope_reg()?.as_ref().usb_status.hchalted() {
                 break;
             }
         }
-        debug_!("{}: xHC started", driver_name);
+        kdebug!("{}: xHC started", driver_name);
 
         // initialize ports
         for port in self.portsc()?.port_range() {
@@ -848,7 +849,7 @@ impl DeviceDriverFunction for XhcDriver {
         let driver_name = self.device_driver_info.name;
 
         if let Some(trb) = self.primary_event_ring()?.pop()? {
-            debug_!("{}: Processed TRB: 0x{:x}", driver_name, trb.trb_type());
+            kdebug!("{}: Processed TRB: 0x{:x}", driver_name, trb.trb_type());
         }
 
         Ok(())
@@ -884,7 +885,7 @@ pub fn probe_and_attach() -> Result<()> {
     let mut driver = unsafe { XHC_DRIVER.try_lock() }?;
     driver.probe()?;
     driver.attach(())?;
-    info!("{}: Attached!", driver.get_device_driver_info()?.name);
+    kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
     Ok(())
 }
 

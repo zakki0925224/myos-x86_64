@@ -1,5 +1,5 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
-use crate::{error::Result, fs::vfs, info, sync::mutex::Mutex};
+use crate::{error::Result, fs::vfs, kinfo, sync::mutex::Mutex};
 use alloc::vec::Vec;
 
 const MESSAGE: &str = "Hello! I'm Zakki, a low-level programmer!\nCheck out my links below:\n\tX: https://x.com/zakki0925224\n\tGitHub: https://github.com/Zakki0925224\n\tPortfolio: https://bento.me/zakki0925224\n";
@@ -54,17 +54,17 @@ impl DeviceDriverFunction for ZakkiDriver {
     }
 
     fn open(&mut self) -> Result<()> {
-        info!("{}: Opened!", self.device_driver_info.name);
+        kinfo!("{}: Opened!", self.device_driver_info.name);
         Ok(())
     }
 
     fn close(&mut self) -> Result<()> {
-        info!("{}: Closed!", self.device_driver_info.name);
+        kinfo!("{}: Closed!", self.device_driver_info.name);
         Ok(())
     }
 
     fn read(&mut self) -> Result<Vec<u8>> {
-        info!("{}: Read!", self.device_driver_info.name);
+        kinfo!("{}: Read!", self.device_driver_info.name);
         Ok(MESSAGE.as_bytes().to_vec())
     }
 
@@ -82,7 +82,7 @@ pub fn probe_and_attach() -> Result<()> {
     let mut driver = unsafe { ZAKKI_DRIVER.try_lock() }?;
     driver.probe()?;
     driver.attach(())?;
-    info!("{}: Attached!", driver.get_device_driver_info()?.name);
+    kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
     Ok(())
 }
 

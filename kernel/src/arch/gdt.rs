@@ -8,7 +8,7 @@ use crate::{
         tss,
     },
     error::Result,
-    info,
+    kinfo,
     sync::mutex::Mutex,
 };
 use core::mem::size_of;
@@ -174,7 +174,7 @@ pub fn init() -> Result<()> {
     assert_eq!(Ss::read().raw(), KERNEL_MODE_SS_VALUE);
     assert_eq!(Cs::read().raw(), KERNEL_MODE_CS_VALUE);
 
-    info!("gdt: Initialized");
-    info!("gdt: TSS initialized");
+    kinfo!("gdt: Initialized");
+    kinfo!("gdt: TSS initialized");
     Ok(())
 }

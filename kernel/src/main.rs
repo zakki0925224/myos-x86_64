@@ -98,7 +98,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     // initialize speaker driver
     if let Err(err) = device::speaker::probe_and_attach() {
         let name = device::speaker::get_device_driver_info().unwrap().name;
-        error_!("{}: Failed to probe or attach device: {:?}", name, err);
+        kerror!("{}: Failed to probe or attach device: {:?}", name, err);
     }
 
     // initialize my flavor driver
@@ -113,13 +113,13 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     // initialize xHC driver
     if let Err(err) = device::usb::xhc::probe_and_attach() {
         let name = device::usb::xhc::get_device_driver_info().unwrap().name;
-        error_!("{}: Failed to probe or attach device: {:?}", name, err);
+        kerror!("{}: Failed to probe or attach device: {:?}", name, err);
     }
 
     // initialize RTL8139 driver
     if let Err(err) = device::rtl8139::probe_and_attach() {
         let name = device::rtl8139::get_device_driver_info().unwrap().name;
-        error_!("{}: Failed to probe or attach device: {:?}", name, err);
+        kerror!("{}: Failed to probe or attach device: {:?}", name, err);
     }
 
     // enable syscall
@@ -198,10 +198,10 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
 
         loop {
             if splited.len() == 0 || splited[0] == "" {
-                error_!("Invalid init app exec args: {:?}", args);
+                kerror!("Invalid init app exec args: {:?}", args);
                 break;
             } else if let Err(err) = fs::exec::exec_elf(&splited[0].into(), &splited[1..], false) {
-                error_!("{:?}", err);
+                kerror!("{:?}", err);
                 break;
             }
         }

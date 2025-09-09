@@ -1,10 +1,10 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
     addr::IoPortAddress,
-    debug_, device,
+    device,
     error::{Error, Result},
     fs::vfs,
-    info,
+    kdebug, kinfo,
     net::{
         self,
         eth::{EtherType, EthernetAddress, EthernetFrame, EthernetPayload},
@@ -315,12 +315,12 @@ impl DeviceDriverFunction for Rtl8139Driver {
 
         // TOK
         if status & (1 << 2) != 0 {
-            debug_!("{}: TOK", name);
+            kdebug!("{}: TOK", name);
         }
 
         // ROK
         if status & 1 != 0 {
-            debug_!("{}: ROK", name);
+            kdebug!("{}: ROK", name);
             let (eth_frame, new_read_ptr) = self.receive_packet()?;
 
             // debug!("{}: Received packet: {:?}", name, eth_frame);
@@ -381,7 +381,7 @@ pub fn probe_and_attach() -> Result<()> {
     let mut driver = unsafe { RTL8139_DRIVER.try_lock() }?;
     driver.probe()?;
     driver.attach(())?;
-    info!("{}: Attached!", driver.get_device_driver_info()?.name);
+    kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
     Ok(())
 }
 
