@@ -4,8 +4,7 @@ use crate::{
     addr::VirtualAddress,
     arch, async_task, debug_,
     error::Result,
-    idt::{self, GateType, InterruptHandler},
-    info,
+    idt, info,
     sync::{mutex::Mutex, volatile::Volatile},
     util::mmio::Mmio,
 };
@@ -156,8 +155,8 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
 
         // register interrupt handler
         let vec_num = idt::set_handler_dyn_vec(
-            InterruptHandler::Normal(poll_int_local_apic_timer),
-            GateType::Interrupt,
+            idt::InterruptHandler::General(poll_int_local_apic_timer),
+            idt::GateType::Interrupt,
         )?;
         debug_!(
             "{}: Interrupt vector number: 0x{:x}, Interrupt occures every {}ms",
@@ -276,7 +275,7 @@ pub fn global_uptime() -> Duration {
     Duration::from_millis(ms as u64)
 }
 
-extern "x86-interrupt" fn poll_int_local_apic_timer() {
+extern "x86-interrupt" fn poll_int_local_apic_timer(_stack_frame: idt::InterruptStackFrame) {
     unsafe {
         let driver = LOCAL_APIC_TIMER_DRIVER.get_force_mut();
         let _ = driver.poll_int();

@@ -129,8 +129,8 @@ const SLAVE_PIC_ADDR: IoPortAddress = IoPortAddress::new(0xa0);
 const PIC_END_OF_INT_CMD: u8 = 0x20;
 
 pub enum InterruptHandler {
-    Normal(extern "x86-interrupt" fn()),
-    WithStackFrame(extern "x86-interrupt" fn(InterruptStackFrame)),
+    General(extern "x86-interrupt" fn(InterruptStackFrame)),
+    WithErrorCode(extern "x86-interrupt" fn(InterruptStackFrame, u64)),
     PageFault(extern "x86-interrupt" fn(InterruptStackFrame, PageFaultErrorCode)),
 }
 
@@ -157,8 +157,8 @@ impl GateDescriptor {
         allow_in_user_mode: bool,
     ) {
         let handler_addr = match handler {
-            InterruptHandler::Normal(handler) => handler as *const (),
-            InterruptHandler::WithStackFrame(handler) => handler as *const (),
+            InterruptHandler::General(handler) => handler as *const (),
+            InterruptHandler::WithErrorCode(handler) => handler as *const (),
             InterruptHandler::PageFault(handler) => handler as *const (),
         } as u64;
         self.set_handler_offset(handler_addr);
@@ -334,7 +334,7 @@ extern "x86-interrupt" fn page_fault_handler(
     panic!();
 }
 
-extern "x86-interrupt" fn double_fault_handler() {
+extern "x86-interrupt" fn double_fault_handler(_stack_frame: InterruptStackFrame) {
     panic!("int: DOUBLE FAULT");
 }
 
@@ -368,19 +368,19 @@ pub fn init_idt() -> Result<()> {
     let mut idt = unsafe { IDT.try_lock() }?;
     idt.set_handler(
         VEC_DEBUG,
-        InterruptHandler::WithStackFrame(debug_handler),
+        InterruptHandler::General(debug_handler),
         GateType::Trap,
         true,
     )?;
     idt.set_handler(
         VEC_BREAKPOINT,
-        InterruptHandler::WithStackFrame(breakpoint_handler),
+        InterruptHandler::General(breakpoint_handler),
         GateType::Trap,
         true,
     )?;
     idt.set_handler(
         VEC_GENERAL_PROTECTION,
-        InterruptHandler::WithStackFrame(general_protection_fault_handler),
+        InterruptHandler::General(general_protection_fault_handler),
         GateType::Interrupt,
         true,
     )?;
@@ -392,19 +392,19 @@ pub fn init_idt() -> Result<()> {
     )?;
     idt.set_handler(
         VEC_DOUBLE_FAULT,
-        InterruptHandler::Normal(double_fault_handler),
+        InterruptHandler::General(double_fault_handler),
         GateType::Interrupt,
         false,
     )?;
     idt.set_handler(
         VEC_PS2_KBD,
-        InterruptHandler::Normal(device::ps2_keyboard::poll_int_ps2_kbd_driver),
+        InterruptHandler::General(device::ps2_keyboard::poll_int_ps2_kbd_driver),
         GateType::Interrupt,
         false,
     )?;
     idt.set_handler(
         VEC_PS2_MOUSE,
-        InterruptHandler::Normal(device::ps2_mouse::poll_int_ps2_mouse_driver),
+        InterruptHandler::General(device::ps2_mouse::poll_int_ps2_mouse_driver),
         GateType::Interrupt,
         false,
     )?;

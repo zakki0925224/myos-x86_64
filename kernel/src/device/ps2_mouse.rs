@@ -261,7 +261,7 @@ pub fn poll_normal() -> Result<Option<MouseEvent>> {
     })
 }
 
-pub extern "x86-interrupt" fn poll_int_ps2_mouse_driver() {
+pub extern "x86-interrupt" fn poll_int_ps2_mouse_driver(_stack_frame: idt::InterruptStackFrame) {
     if let Ok(mut driver) = unsafe { PS2_MOUSE_DRIVER.try_lock() } {
         let _ = driver.poll_int();
     }

@@ -271,7 +271,7 @@ pub fn poll_normal() -> Result<()> {
     tty::input(c)
 }
 
-pub extern "x86-interrupt" fn poll_int_ps2_kbd_driver() {
+pub extern "x86-interrupt" fn poll_int_ps2_kbd_driver(_stack_frame: idt::InterruptStackFrame) {
     if let Ok(mut driver) = unsafe { PS2_KBD_DRIVER.try_lock() } {
         let _ = driver.poll_int();
     }
