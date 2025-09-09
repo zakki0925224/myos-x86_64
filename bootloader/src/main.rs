@@ -36,6 +36,7 @@ fn efi_main() -> Status {
 
     // load config
     let config = BootConfig::default();
+    info!("{:?}", config);
 
     // graphic info
     let graphic_info = init_graphic(config.resolution);
@@ -50,6 +51,11 @@ fn efi_main() -> Status {
 
     // get RSDP address
     let rsdp_virt_addr = rsdp_addr();
+    if let Some(addr) = rsdp_virt_addr {
+        info!("ACPI2 RSDP found at: 0x{:x}", addr);
+    } else {
+        info!("ACPI2 RSDP was not found");
+    }
 
     // exit boot service and get memory map
     info!("Exit boot services");
@@ -95,7 +101,7 @@ fn rsdp_addr() -> Option<u64> {
 }
 
 fn read_file(path: &str) -> RegularFile {
-    info!("Opening file: \"{}\"", path);
+    info!("Reading the file \"{}\" ...", path);
     let sfs_handle = boot::get_handle_for_protocol::<SimpleFileSystem>().unwrap();
     let mut root = boot::open_protocol_exclusive::<SimpleFileSystem>(sfs_handle)
         .unwrap()
@@ -103,23 +109,25 @@ fn read_file(path: &str) -> RegularFile {
         .unwrap();
     let mut buf = [0; 256];
     let path = CStr16::from_str_with_buf(path, &mut buf).unwrap();
-    let file = root
+    let file_ty = root
         .open(path, FileMode::Read, FileAttribute::empty())
         .unwrap()
         .into_type()
         .unwrap();
 
-    match file {
+    let file = match file_ty {
         FileType::Regular(file) => file,
         FileType::Dir(_) => panic!("Not file: \"{}\"", path),
-    }
+    };
+    file
 }
 
 fn load_kernel(path: &str) -> u64 {
     let mut file = read_file(path);
-
     let file_info = file.get_boxed_info::<FileInfo>().unwrap();
     let file_size = file_info.file_size() as usize;
+    info!("File size: {} bytes", file_size);
+
     let mut buf = vec![0; file_size];
 
     file.read(&mut buf).unwrap();
@@ -168,9 +176,9 @@ fn load_kernel(path: &str) -> u64 {
 
 fn load_initramfs(path: &str) -> (u64, usize) {
     let mut file = read_file(path);
-
     let file_info = file.get_boxed_info::<FileInfo>().unwrap();
     let file_size = file_info.file_size() as usize;
+    info!("File size: {} bytes", file_size);
 
     // allocate pages
     let pages = file_size.div_ceil(UEFI_PAGE_SIZE);
