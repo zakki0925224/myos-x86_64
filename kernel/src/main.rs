@@ -31,7 +31,6 @@ use alloc::{
 };
 use arch::*;
 use common::boot_info::BootInfo;
-use core::time::Duration;
 use fs::{file::bitmap::BitmapImage, vfs};
 use graphics::{color::*, frame_buf, multi_layer, simple_window_manager};
 use theme::GLOBAL_THEME;
@@ -178,17 +177,17 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
         }
     };
 
-    async_task::spawn(task_graphics, None).unwrap();
-    async_task::spawn(task_poll_uart, Some(Duration::from_millis(4))).unwrap();
-    async_task::spawn(task_poll_ps2_keyboard, Some(Duration::from_millis(4))).unwrap();
-    async_task::spawn(task_poll_usb_bus, None).unwrap();
-    async_task::spawn(task_poll_xhc, Some(Duration::from_millis(20))).unwrap();
-    async_task::spawn(task_poll_rtl8139, Some(Duration::from_millis(2))).unwrap();
-    async_task::spawn(
+    async_task::spawn_with_priority(task_graphics, async_task::Priority::High).unwrap();
+    async_task::spawn_with_priority(
         poll_ps2_mouse(boot_info.kernel_config.mouse_pointer_bmp_path.to_string()),
-        None,
+        async_task::Priority::High,
     )
     .unwrap();
+    async_task::spawn(task_poll_ps2_keyboard).unwrap();
+    async_task::spawn(task_poll_usb_bus).unwrap();
+    async_task::spawn(task_poll_xhc).unwrap();
+    async_task::spawn_with_priority(task_poll_uart, async_task::Priority::Low).unwrap();
+    async_task::spawn_with_priority(task_poll_rtl8139, async_task::Priority::Low).unwrap();
     async_task::ready().unwrap();
 
     // execute init app

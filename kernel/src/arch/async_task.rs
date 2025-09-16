@@ -1,6 +1,9 @@
 use super::task::TaskId;
 use crate::{error::Result, kdebug, sync::mutex::Mutex, util};
-use alloc::{boxed::Box, collections::VecDeque};
+use alloc::{
+    boxed::Box,
+    collections::{btree_map::BTreeMap, VecDeque},
+};
 use core::{
     future::Future,
     pin::Pin,
@@ -56,48 +59,45 @@ impl Future for TimeoutFuture {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Priority {
+    High,
+    Normal,
+    Low,
+}
+
 struct AsyncTask {
     id: TaskId,
     future: Pin<Box<dyn Future<Output = ()>>>,
-    poll_interval: Option<Duration>,
-    last_polled_at: Option<Duration>,
+    priority: Priority,
 }
 
 impl AsyncTask {
-    fn new(future: impl Future<Output = ()> + 'static, poll_interval: Option<Duration>) -> Self {
+    fn new(future: impl Future<Output = ()> + 'static, priority: Priority) -> Self {
         Self {
             id: TaskId::new(),
             future: Box::pin(future),
-            poll_interval,
-            last_polled_at: None,
+            priority,
         }
     }
 
     fn poll(&mut self, context: &mut Context) -> Poll<()> {
-        if let Some(interval) = self.poll_interval {
-            let global_uptime = util::time::global_uptime();
-            if let Some(last_polled) = self.last_polled_at {
-                if global_uptime < last_polled + interval {
-                    return Poll::Pending;
-                }
-            }
-            self.last_polled_at = Some(global_uptime);
-        }
-
         self.future.as_mut().poll(context)
     }
 }
 
 struct Executor {
-    task_queue: VecDeque<AsyncTask>,
+    task_queues: BTreeMap<Priority, VecDeque<AsyncTask>>,
     is_ready: bool,
+    poll_count: usize,
 }
 
 impl Executor {
     const fn new() -> Self {
         Self {
-            task_queue: VecDeque::new(),
+            task_queues: BTreeMap::new(),
             is_ready: false,
+            poll_count: 0,
         }
     }
 
@@ -106,22 +106,46 @@ impl Executor {
             return;
         }
 
-        if let Some(mut task) = self.task_queue.pop_front() {
-            let waker = dummy_waker();
-            let mut context = Context::from_waker(&waker);
-            match task.poll(&mut context) {
-                Poll::Ready(()) => kdebug!("task: Done (id: {})", task.id.get()),
-                Poll::Pending => self.task_queue.push_back(task),
+        self.poll_count = self.poll_count.wrapping_add(1);
+
+        for &p in &[Priority::High, Priority::Normal, Priority::Low] {
+            let do_skip = match p {
+                Priority::High => false,
+                Priority::Normal => self.poll_count % 2 != 0,
+                Priority::Low => self.poll_count % 4 != 0,
+            };
+            if do_skip {
+                continue;
+            }
+
+            if let Some(queue) = self.task_queues.get_mut(&p) {
+                if let Some(mut task) = queue.pop_front() {
+                    let waker = dummy_waker();
+                    let mut context = Context::from_waker(&waker);
+                    match task.poll(&mut context) {
+                        Poll::Ready(()) => {
+                            kdebug!("task: Done (id: {})", task.id.get());
+                        }
+                        Poll::Pending => {
+                            queue.push_back(task);
+                        }
+                    }
+                }
             }
         }
     }
 
     fn ready(&mut self) {
         self.is_ready = true;
+        self.poll_count = 0;
     }
 
     fn spawn(&mut self, task: AsyncTask) {
-        self.task_queue.push_back(task);
+        let priority = task.priority;
+        self.task_queues
+            .entry(priority)
+            .or_insert_with(VecDeque::new)
+            .push_back(task);
     }
 }
 
@@ -152,11 +176,17 @@ pub fn ready() -> Result<()> {
     Ok(())
 }
 
-pub fn spawn(
+pub fn spawn(future: impl Future<Output = ()> + 'static) -> Result<()> {
+    let task = AsyncTask::new(future, Priority::Normal);
+    unsafe { ASYNC_TASK_EXECUTOR.try_lock() }?.spawn(task);
+    Ok(())
+}
+
+pub fn spawn_with_priority(
     future: impl Future<Output = ()> + 'static,
-    poll_interval: Option<Duration>,
+    priority: Priority,
 ) -> Result<()> {
-    let task = AsyncTask::new(future, poll_interval);
+    let task = AsyncTask::new(future, priority);
     unsafe { ASYNC_TASK_EXECUTOR.try_lock() }?.spawn(task);
     Ok(())
 }
