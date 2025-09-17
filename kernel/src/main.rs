@@ -25,14 +25,14 @@ mod util;
 #[macro_use]
 extern crate alloc;
 
-use alloc::{
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{string::ToString, vec::Vec};
 use arch::*;
 use common::boot_info::BootInfo;
-use fs::{file::bitmap::BitmapImage, vfs};
-use graphics::{color::*, frame_buf, multi_layer, simple_window_manager};
+use graphics::{
+    color::*,
+    frame_buf, multi_layer,
+    simple_window_manager::{self, MouseEvent},
+};
 use theme::GLOBAL_THEME;
 
 #[no_mangle]
@@ -69,7 +69,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     graphics::init_layer_man(&boot_info.graphic_info).unwrap();
 
     // initialize simple window manager
-    graphics::init_simple_wm().unwrap();
+    graphics::init_simple_wm(boot_info.kernel_config.mouse_pointer_bmp_path.to_string()).unwrap();
 
     // initialize ACPI
     acpi::init(boot_info.rsdp_virt_addr.unwrap().into()).unwrap();
@@ -178,11 +178,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     };
 
     async_task::spawn_with_priority(task_graphics, async_task::Priority::High).unwrap();
-    async_task::spawn_with_priority(
-        poll_ps2_mouse(boot_info.kernel_config.mouse_pointer_bmp_path.to_string()),
-        async_task::Priority::High,
-    )
-    .unwrap();
+    async_task::spawn_with_priority(poll_ps2_mouse(), async_task::Priority::High).unwrap();
     async_task::spawn(task_poll_ps2_keyboard).unwrap();
     async_task::spawn(task_poll_usb_bus).unwrap();
     async_task::spawn(task_poll_xhc).unwrap();
@@ -211,36 +207,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     }
 }
 
-async fn poll_ps2_mouse(mouse_pointer_bmp_path: String) {
-    let mut is_created_mouse_pointer_layer = false;
-    let mouse_pointer_bmp_fd = loop {
-        match vfs::open_file(&((&mouse_pointer_bmp_path).into()), false) {
-            Ok(fd) => break fd,
-            Err(_) => {
-                async_task::exec_yield().await;
-            }
-        }
-    };
-
-    let bmp_data = loop {
-        match vfs::read_file(&mouse_pointer_bmp_fd) {
-            Ok(data) => break data,
-            Err(_) => {
-                async_task::exec_yield().await;
-            }
-        }
-    };
-
-    let pointer_bmp = BitmapImage::new(&bmp_data);
-    loop {
-        match vfs::close_file(&mouse_pointer_bmp_fd) {
-            Ok(()) => break,
-            Err(_) => {
-                async_task::exec_yield().await;
-            }
-        }
-    }
-
+async fn poll_ps2_mouse() {
     loop {
         let mouse_event = match device::ps2_mouse::poll_normal() {
             Ok(Some(e)) => e,
@@ -250,14 +217,7 @@ async fn poll_ps2_mouse(mouse_pointer_bmp_path: String) {
             }
         };
 
-        if !is_created_mouse_pointer_layer
-            && simple_window_manager::create_mouse_pointer(&pointer_bmp).is_ok()
-        {
-            is_created_mouse_pointer_layer = true;
-        }
-
-        if is_created_mouse_pointer_layer {
-            let _ = simple_window_manager::mouse_pointer_event(mouse_event);
-        }
+        let _ = simple_window_manager::mouse_pointer_event(MouseEvent::Ps2Mouse(mouse_event));
+        async_task::exec_yield().await;
     }
 }

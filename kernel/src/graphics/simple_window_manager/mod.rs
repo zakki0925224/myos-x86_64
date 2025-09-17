@@ -3,9 +3,9 @@ use super::{
     multi_layer::{LayerId, LayerInfo},
 };
 use crate::{
-    device::ps2_mouse::MouseEvent,
+    device::{ps2_mouse::Ps2MouseEvent, usb::hid_tablet::UsbHidMouseEvent},
     error::{Error, Result},
-    fs::file::bitmap::BitmapImage,
+    fs::{file::bitmap::BitmapImage, vfs},
     sync::mutex::Mutex,
     util,
 };
@@ -20,6 +20,11 @@ pub mod components;
 
 static mut SIMPLE_WM: Mutex<SimpleWindowManager> = Mutex::new(SimpleWindowManager::new());
 
+pub enum MouseEvent {
+    Ps2Mouse(Ps2MouseEvent),
+    UsbHidMouse(UsbHidMouseEvent),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SimpleWindowManagerError {
     MousePointerLayerWasNotFound,
@@ -32,10 +37,11 @@ struct SimpleWindowManager {
     taskbar: Option<Panel>,
     mouse_pointer: Option<Image>,
     res_xy: Option<(usize, usize)>,
+    mouse_pointer_bmp_path: String,
 }
 
 impl SimpleWindowManager {
-    const MAX_REL_MOVEMENT: isize = 100;
+    const PS2_MOUSE_MAX_REL_MOVEMENT: isize = 100;
 
     const fn new() -> Self {
         Self {
@@ -43,6 +49,7 @@ impl SimpleWindowManager {
             taskbar: None,
             mouse_pointer: None,
             res_xy: None,
+            mouse_pointer_bmp_path: String::new(),
         }
     }
 
@@ -69,6 +76,16 @@ impl SimpleWindowManager {
     fn mouse_pointer_event(&mut self, mouse_event: MouseEvent) -> Result<()> {
         let (res_x, res_y) = self.res_xy.ok_or(Error::NotInitialized)?;
 
+        // create mouse pointer layer if not created
+        if self.mouse_pointer.is_none() {
+            let mouse_pointer_bmp_fd =
+                vfs::open_file(&((&self.mouse_pointer_bmp_path).into()), false)?;
+            let bmp_data = vfs::read_file(&mouse_pointer_bmp_fd)?;
+            let pointer_bmp = BitmapImage::new(&bmp_data);
+            vfs::close_file(&mouse_pointer_bmp_fd)?;
+            self.create_mouse_pointer(&pointer_bmp)?;
+        }
+
         let mouse_pointer = self
             .mouse_pointer
             .as_mut()
@@ -80,51 +97,95 @@ impl SimpleWindowManager {
             format: _,
         } = mouse_pointer.get_layer_info()?;
 
-        let rel_x =
-            (mouse_event.rel_x as isize).clamp(-Self::MAX_REL_MOVEMENT, Self::MAX_REL_MOVEMENT);
-        let rel_y =
-            (mouse_event.rel_y as isize).clamp(-Self::MAX_REL_MOVEMENT, Self::MAX_REL_MOVEMENT);
+        match mouse_event {
+            MouseEvent::Ps2Mouse(e) => {
+                let rel_x = (e.rel_x as isize).clamp(
+                    -Self::PS2_MOUSE_MAX_REL_MOVEMENT,
+                    Self::PS2_MOUSE_MAX_REL_MOVEMENT,
+                );
+                let rel_y = (e.rel_y as isize).clamp(
+                    -Self::PS2_MOUSE_MAX_REL_MOVEMENT,
+                    Self::PS2_MOUSE_MAX_REL_MOVEMENT,
+                );
 
-        let m_x_after =
-            (m_x_before as isize + rel_x).clamp(0, res_x as isize - m_w as isize) as usize;
-        let m_y_after =
-            (m_y_before as isize + rel_y).clamp(0, res_y as isize - m_h as isize) as usize;
+                let m_x_after =
+                    (m_x_before as isize + rel_x).clamp(0, res_x as isize - m_w as isize) as usize;
+                let m_y_after =
+                    (m_y_before as isize + rel_y).clamp(0, res_y as isize - m_h as isize) as usize;
 
-        // move mouse pointer
-        mouse_pointer.move_by_root(m_x_after, m_y_after)?;
+                // move mouse pointer
+                mouse_pointer.move_by_root(m_x_after, m_y_after)?;
 
-        if mouse_event.left {
-            for w in self.windows.iter_mut().rev() {
-                let LayerInfo {
-                    xy: (w_x, w_y),
-                    wh: (w_w, w_h),
-                    format: _,
-                } = w.get_layer_info()?;
+                if e.left {
+                    for w in self.windows.iter_mut().rev() {
+                        let LayerInfo {
+                            xy: (w_x, w_y),
+                            wh: (w_w, w_h),
+                            format: _,
+                        } = w.get_layer_info()?;
 
-                // click close button event
-                if w.is_close_button_clickable(m_x_before, m_y_before)? {
-                    w.is_closed = true;
-                    self.windows.retain(|w| !w.is_closed);
-                    break;
-                }
+                        // click close button event
+                        if w.is_close_button_clickable(m_x_before, m_y_before)? {
+                            w.is_closed = true;
+                            self.windows.retain(|w| !w.is_closed);
+                            break;
+                        }
 
-                // drag window event
-                if m_x_before >= w_x
+                        // drag window event
+                        if m_x_before >= w_x
                     && m_x_before < w_x + w_w
                     && m_y_before >= w_y
                     && m_y_before < w_y + w_h
                 // pointer is in window
                 && m_x_before != m_x_after
-                    || m_y_before != m_y_after
-                // pointer moved
-                {
-                    let new_w_x =
-                        (w_x as isize + m_x_after as isize - m_x_before as isize).max(0) as usize;
-                    let new_w_y =
-                        (w_y as isize + m_y_after as isize - m_y_before as isize).max(0) as usize;
+                            || m_y_before != m_y_after
+                        // pointer moved
+                        {
+                            let new_w_x = (w_x as isize + m_x_after as isize - m_x_before as isize)
+                                .max(0) as usize;
+                            let new_w_y = (w_y as isize + m_y_after as isize - m_y_before as isize)
+                                .max(0) as usize;
 
-                    w.move_by_root(new_w_x, new_w_y)?;
-                    break;
+                            w.move_by_root(new_w_x, new_w_y)?;
+                            break;
+                        }
+                    }
+                }
+            }
+            MouseEvent::UsbHidMouse(e) => {
+                let m_x_after = e.abs_x.clamp(0, res_x.saturating_sub(m_w));
+                let m_y_after = e.abs_y.clamp(0, res_y.saturating_sub(m_h));
+
+                mouse_pointer.move_by_root(m_x_after, m_y_after)?;
+
+                if e.left {
+                    for w in self.windows.iter_mut().rev() {
+                        let LayerInfo {
+                            xy: (w_x, w_y),
+                            wh: (w_w, w_h),
+                            format: _,
+                        } = w.get_layer_info()?;
+
+                        if w.is_close_button_clickable(m_x_after, m_y_after)? {
+                            w.is_closed = true;
+                            self.windows.retain(|w| !w.is_closed);
+                            break;
+                        }
+
+                        if m_x_after >= w_x
+                            && m_x_after < w_x + w_w
+                            && m_y_after >= w_y
+                            && m_y_after < w_y + w_h
+                        {
+                            let new_w_x = (w_x as isize + m_x_after as isize - m_x_before as isize)
+                                .max(0) as usize;
+                            let new_w_y = (w_y as isize + m_y_after as isize - m_y_before as isize)
+                                .max(0) as usize;
+
+                            w.move_by_root(new_w_x, new_w_y)?;
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -267,15 +328,12 @@ impl SimpleWindowManager {
     }
 }
 
-pub fn init() -> Result<()> {
+pub fn init(mouse_pointer_bmp_path: String) -> Result<()> {
     let mut simple_wm = unsafe { SIMPLE_WM.try_lock() }?;
     let res_xy = frame_buf::resolution()?;
     simple_wm.res_xy = Some(res_xy);
+    simple_wm.mouse_pointer_bmp_path = mouse_pointer_bmp_path;
     Ok(())
-}
-
-pub fn create_mouse_pointer(pointer_bmp: &BitmapImage) -> Result<()> {
-    unsafe { SIMPLE_WM.try_lock() }?.create_mouse_pointer(pointer_bmp)
 }
 
 pub fn create_taskbar() -> Result<()> {

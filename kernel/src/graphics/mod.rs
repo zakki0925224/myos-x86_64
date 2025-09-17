@@ -1,5 +1,6 @@
 use self::color::ColorCode;
 use crate::{error::Result, kinfo};
+use alloc::string::String;
 use common::graphic_info::GraphicInfo;
 
 pub mod color;
@@ -41,8 +42,8 @@ pub fn init_layer_man(graphic_info: &GraphicInfo) -> Result<()> {
     Ok(())
 }
 
-pub fn init_simple_wm() -> Result<()> {
-    simple_window_manager::init()?;
+pub fn init_simple_wm(mouse_pointer_bmp_path: String) -> Result<()> {
+    simple_window_manager::init(mouse_pointer_bmp_path)?;
     simple_window_manager::create_taskbar()?;
 
     kinfo!("graphics: Simple window manager initialized");

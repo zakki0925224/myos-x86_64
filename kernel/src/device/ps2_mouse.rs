@@ -15,7 +15,7 @@ const PS2_CMD_AND_STATE_REG_ADDR: IoPortAddress = IoPortAddress::new(0x64);
 static mut PS2_MOUSE_DRIVER: Mutex<Ps2MouseDriver> = Mutex::new(Ps2MouseDriver::new());
 
 #[derive(Default, Debug)]
-pub struct MouseEvent {
+pub struct Ps2MouseEvent {
     pub middle: bool,
     pub right: bool,
     pub left: bool,
@@ -71,7 +71,7 @@ impl Ps2MouseDriver {
         Ok(())
     }
 
-    fn get_event(&mut self) -> Result<Option<MouseEvent>> {
+    fn get_event(&mut self) -> Result<Option<Ps2MouseEvent>> {
         let data = self.data_buf.dequeue()?;
         let e = match self.mouse_phase {
             Ps2MousePhase::WaitingAck => {
@@ -122,7 +122,7 @@ impl Ps2MouseDriver {
 
                 rel_y = -rel_y;
 
-                Some(MouseEvent {
+                Some(Ps2MouseEvent {
                     middle: button_m,
                     right: button_r,
                     left: button_l,
@@ -144,7 +144,7 @@ impl Ps2MouseDriver {
 
 impl DeviceDriverFunction for Ps2MouseDriver {
     type AttachInput = ();
-    type PollNormalOutput = Option<MouseEvent>;
+    type PollNormalOutput = Option<Ps2MouseEvent>;
     type PollInterruptOutput = ();
 
     fn get_device_driver_info(&self) -> Result<DeviceDriverInfo> {
@@ -254,7 +254,7 @@ pub fn write(data: &[u8]) -> Result<()> {
     driver.write(data)
 }
 
-pub fn poll_normal() -> Result<Option<MouseEvent>> {
+pub fn poll_normal() -> Result<Option<Ps2MouseEvent>> {
     arch::disabled_int(|| {
         let mut driver = unsafe { PS2_MOUSE_DRIVER.try_lock() }?;
         driver.poll_normal()
