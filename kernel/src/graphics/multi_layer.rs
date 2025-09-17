@@ -135,6 +135,35 @@ impl LayerManager {
         Ok(())
     }
 
+    fn bring_layer_to_front(&mut self, layer_id: &LayerId) -> Result<()> {
+        let index = match self
+            .layers
+            .iter()
+            .position(|l| l.id.get() == layer_id.get())
+        {
+            Some(i) => i,
+            None => return Err(LayerError::InvalidLayerIdError(layer_id.get()).into()),
+        };
+        let layer = self.layers.remove(index);
+
+        if layer.always_on_top {
+            self.layers.push(layer);
+        } else {
+            let insert_at = self
+                .layers
+                .iter()
+                .position(|l| l.always_on_top)
+                .unwrap_or(self.layers.len());
+            self.layers.insert(insert_at, layer);
+        }
+
+        for l in &mut self.layers {
+            l.set_dirty(true);
+        }
+
+        Ok(())
+    }
+
     fn get_layer(&mut self, layer_id: &LayerId) -> Result<&mut Layer> {
         self.layers
             .iter_mut()
@@ -230,4 +259,8 @@ pub fn move_layer(layer_id: &LayerId, to_x: usize, to_y: usize) -> Result<()> {
 
 pub fn remove_layer(layer_id: &LayerId) -> Result<()> {
     unsafe { LAYER_MAN.try_lock() }?.remove_layer(layer_id)
+}
+
+pub fn bring_layer_to_front(layer_id: &LayerId) -> Result<()> {
+    unsafe { LAYER_MAN.try_lock() }?.bring_layer_to_front(layer_id)
 }

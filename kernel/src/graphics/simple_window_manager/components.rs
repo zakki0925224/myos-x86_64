@@ -144,6 +144,7 @@ pub struct Window {
     children: Vec<Box<dyn Component>>,
     contents_base_rel_xy: (usize, usize),
     pub is_closed: bool,
+    pub request_bring_to_front: bool,
 }
 
 impl Drop for Window {
@@ -177,6 +178,19 @@ impl Component for Window {
             wh: (w_w, w_h),
             format: _,
         } = self.get_layer_info()?;
+
+        if self.request_bring_to_front {
+            multi_layer::bring_layer_to_front(&self.layer_id)?;
+            multi_layer::bring_layer_to_front(&self.close_button.layer_id())?;
+            multi_layer::bring_layer_to_front(&self.resize_button.layer_id())?;
+            multi_layer::bring_layer_to_front(&self.minimize_button.layer_id())?;
+            for child in &self.children {
+                multi_layer::bring_layer_to_front(&child.layer_id())?;
+            }
+
+            self.request_bring_to_front = false;
+        }
+
         multi_layer::draw_layer(&self.layer_id, |l| {
             // back color
             l.fill(GLOBAL_THEME.wm_component_back_color)?;
@@ -270,6 +284,7 @@ impl Window {
             children: Vec::new(),
             minimize_button,
             contents_base_rel_xy: (4, 25),
+            request_bring_to_front: false,
         })
     }
 

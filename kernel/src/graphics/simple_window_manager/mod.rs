@@ -38,6 +38,8 @@ struct SimpleWindowManager {
     mouse_pointer: Option<Image>,
     res_xy: Option<(usize, usize)>,
     mouse_pointer_bmp_path: String,
+    dragging_window_id: Option<LayerId>,
+    dragging_offset: Option<(isize, isize)>,
 }
 
 impl SimpleWindowManager {
@@ -50,6 +52,8 @@ impl SimpleWindowManager {
             mouse_pointer: None,
             res_xy: None,
             mouse_pointer_bmp_path: String::new(),
+            dragging_window_id: None,
+            dragging_offset: None,
         }
     }
 
@@ -97,7 +101,7 @@ impl SimpleWindowManager {
             format: _,
         } = mouse_pointer.get_layer_info()?;
 
-        match mouse_event {
+        let (m_x_after, m_y_after) = match &mouse_event {
             MouseEvent::Ps2Mouse(e) => {
                 let rel_x = (e.rel_x as isize).clamp(
                     -Self::PS2_MOUSE_MAX_REL_MOVEMENT,
@@ -107,90 +111,121 @@ impl SimpleWindowManager {
                     -Self::PS2_MOUSE_MAX_REL_MOVEMENT,
                     Self::PS2_MOUSE_MAX_REL_MOVEMENT,
                 );
-
                 let m_x_after =
                     (m_x_before as isize + rel_x).clamp(0, res_x as isize - m_w as isize) as usize;
                 let m_y_after =
                     (m_y_before as isize + rel_y).clamp(0, res_y as isize - m_h as isize) as usize;
-
-                // move mouse pointer
-                mouse_pointer.move_by_root(m_x_after, m_y_after)?;
-
-                if e.left {
-                    for w in self.windows.iter_mut().rev() {
-                        let LayerInfo {
-                            xy: (w_x, w_y),
-                            wh: (w_w, w_h),
-                            format: _,
-                        } = w.get_layer_info()?;
-
-                        // click close button event
-                        if w.is_close_button_clickable(m_x_before, m_y_before)? {
-                            w.is_closed = true;
-                            self.windows.retain(|w| !w.is_closed);
-                            break;
-                        }
-
-                        // drag window event
-                        if (m_x_before >= w_x
-                            && m_x_before < w_x + w_w
-                            && m_y_before >= w_y
-                            && m_y_before < w_y + w_h)
-                            // pointer is in window
-                            && (m_x_before != m_x_after || m_y_before != m_y_after)
-                        // pointer moved
-                        {
-                            let delta_x = m_x_after as isize - m_x_before as isize;
-                            let delta_y = m_y_after as isize - m_y_before as isize;
-                            let max_w_x = (res_x as isize - w_w as isize).max(0);
-                            let max_w_y = (res_y as isize - w_h as isize).max(0);
-                            let new_w_x = (w_x as isize + delta_x).clamp(0, max_w_x) as usize;
-                            let new_w_y = (w_y as isize + delta_y).clamp(0, max_w_y) as usize;
-
-                            w.move_by_root(new_w_x, new_w_y)?;
-                            break;
-                        }
-                    }
-                }
+                (m_x_after, m_y_after)
             }
             MouseEvent::UsbHidMouse(e) => {
                 let m_x_after = e.abs_x.clamp(0, res_x.saturating_sub(m_w));
                 let m_y_after = e.abs_y.clamp(0, res_y.saturating_sub(m_h));
+                (m_x_after, m_y_after)
+            }
+        };
 
-                mouse_pointer.move_by_root(m_x_after, m_y_after)?;
+        // move mouse pointer
+        mouse_pointer.move_by_root(m_x_after, m_y_after)?;
 
-                if e.left {
-                    for w in self.windows.iter_mut().rev() {
-                        let LayerInfo {
-                            xy: (w_x, w_y),
-                            wh: (w_w, w_h),
-                            format: _,
-                        } = w.get_layer_info()?;
+        let e_left = match &mouse_event {
+            MouseEvent::Ps2Mouse(e) => e.left,
+            MouseEvent::UsbHidMouse(e) => e.left,
+        };
 
-                        if w.is_close_button_clickable(m_x_after, m_y_after)? {
-                            w.is_closed = true;
-                            self.windows.retain(|w| !w.is_closed);
-                            break;
-                        }
+        // click window event
+        if e_left {
+            if self.dragging_window_id.is_none() {
+                // when clicked the window, bring it to the front
+                for i in (0..self.windows.len()).rev() {
+                    let w = &mut self.windows[i];
+                    let LayerInfo {
+                        xy: (w_x, w_y),
+                        wh: (w_w, w_h),
+                        format: _,
+                    } = w.get_layer_info()?;
 
-                        if m_x_after >= w_x
-                            && m_x_after < w_x + w_w
-                            && m_y_after >= w_y
-                            && m_y_after < w_y + w_h
-                        {
-                            let delta_x = m_x_after as isize - m_x_before as isize;
-                            let delta_y = m_y_after as isize - m_y_before as isize;
-                            let max_w_x = (res_x as isize - w_w as isize).max(0);
-                            let max_w_y = (res_y as isize - w_h as isize).max(0);
-                            let new_w_x = (w_x as isize + delta_x).clamp(0, max_w_x) as usize;
-                            let new_w_y = (w_y as isize + delta_y).clamp(0, max_w_y) as usize;
+                    // mouse pointer is inside the window
+                    if m_x_after >= w_x
+                        && m_x_after < w_x + w_w
+                        && m_y_after >= w_y
+                        && m_y_after < w_y + w_h
+                    {
+                        let mut w = self.windows.remove(i);
+                        w.request_bring_to_front = true;
+                        let offset_x = m_x_after as isize - w_x as isize;
+                        let offset_y = m_y_after as isize - w_y as isize;
+                        let id = w.layer_id();
+                        self.windows.push(w);
+                        self.dragging_window_id = Some(id);
+                        self.dragging_offset = Some((offset_x, offset_y));
+                        break;
+                    }
+                }
 
-                            w.move_by_root(new_w_x, new_w_y)?;
-                            break;
-                        }
+                // when clicked the close button of a window, remove the window
+                for w in self.windows.iter_mut().rev() {
+                    if w.is_close_button_clickable(m_x_after, m_y_after)? {
+                        w.is_closed = true;
+                        self.windows.retain(|w| !w.is_closed);
+                        self.dragging_window_id = None;
+                        self.dragging_offset = None;
+                        break;
                     }
                 }
             }
+
+            // drag the window
+            if let (Some(window_id), Some((offset_x, offset_y))) =
+                (&self.dragging_window_id, &self.dragging_offset)
+            {
+                let w = self
+                    .windows
+                    .iter_mut()
+                    .find(|w| w.layer_id().get() == window_id.get())
+                    .ok_or(SimpleWindowManagerError::WindowWasNotFound {
+                        layer_id: window_id.get(),
+                    })?;
+
+                let LayerInfo {
+                    xy: _,
+                    wh: (w_w, w_h),
+                    format: _,
+                } = w.get_layer_info()?;
+
+                let max_w_x = res_x.saturating_sub(w_w);
+                let max_w_y = res_y.saturating_sub(w_h);
+                let new_w_x = (m_x_after as isize - offset_x).clamp(0, max_w_x as isize) as usize;
+                let new_w_y = (m_y_after as isize - offset_y).clamp(0, max_w_y as isize) as usize;
+                w.move_by_root(new_w_x, new_w_y)?;
+            } else {
+                for w in self.windows.iter_mut().rev() {
+                    let LayerInfo {
+                        xy: (w_x, w_y),
+                        wh: (w_w, w_h),
+                        format: _,
+                    } = w.get_layer_info()?;
+
+                    if m_x_after >= w_x
+                        && m_x_after < w_x + w_w
+                        && m_y_after >= w_y
+                        && m_y_after < w_y + w_h
+                    {
+                        let delta_x = m_x_after as isize - m_x_before as isize;
+                        let delta_y = m_y_after as isize - m_y_before as isize;
+                        let max_w_x = res_x.saturating_sub(w_w);
+                        let max_w_y = res_y.saturating_sub(w_h);
+                        let new_w_x = (w_x as isize + delta_x).clamp(0, max_w_x as isize) as usize;
+                        let new_w_y = (w_y as isize + delta_y).clamp(0, max_w_y as isize) as usize;
+
+                        w.move_by_root(new_w_x, new_w_y)?;
+                        self.dragging_window_id = Some(w.layer_id());
+                        break;
+                    }
+                }
+            }
+        } else {
+            self.dragging_window_id = None;
+            self.dragging_offset = None;
         }
 
         Ok(())
