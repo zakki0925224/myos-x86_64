@@ -132,19 +132,20 @@ impl SimpleWindowManager {
                         }
 
                         // drag window event
-                        if m_x_before >= w_x
-                    && m_x_before < w_x + w_w
-                    && m_y_before >= w_y
-                    && m_y_before < w_y + w_h
-                // pointer is in window
-                && m_x_before != m_x_after
-                            || m_y_before != m_y_after
+                        if (m_x_before >= w_x
+                            && m_x_before < w_x + w_w
+                            && m_y_before >= w_y
+                            && m_y_before < w_y + w_h)
+                            // pointer is in window
+                            && (m_x_before != m_x_after || m_y_before != m_y_after)
                         // pointer moved
                         {
-                            let new_w_x = (w_x as isize + m_x_after as isize - m_x_before as isize)
-                                .max(0) as usize;
-                            let new_w_y = (w_y as isize + m_y_after as isize - m_y_before as isize)
-                                .max(0) as usize;
+                            let delta_x = m_x_after as isize - m_x_before as isize;
+                            let delta_y = m_y_after as isize - m_y_before as isize;
+                            let max_w_x = (res_x as isize - w_w as isize).max(0);
+                            let max_w_y = (res_y as isize - w_h as isize).max(0);
+                            let new_w_x = (w_x as isize + delta_x).clamp(0, max_w_x) as usize;
+                            let new_w_y = (w_y as isize + delta_y).clamp(0, max_w_y) as usize;
 
                             w.move_by_root(new_w_x, new_w_y)?;
                             break;
@@ -177,10 +178,12 @@ impl SimpleWindowManager {
                             && m_y_after >= w_y
                             && m_y_after < w_y + w_h
                         {
-                            let new_w_x = (w_x as isize + m_x_after as isize - m_x_before as isize)
-                                .max(0) as usize;
-                            let new_w_y = (w_y as isize + m_y_after as isize - m_y_before as isize)
-                                .max(0) as usize;
+                            let delta_x = m_x_after as isize - m_x_before as isize;
+                            let delta_y = m_y_after as isize - m_y_before as isize;
+                            let max_w_x = (res_x as isize - w_w as isize).max(0);
+                            let max_w_y = (res_y as isize - w_h as isize).max(0);
+                            let new_w_x = (w_x as isize + delta_x).clamp(0, max_w_x) as usize;
+                            let new_w_y = (w_y as isize + delta_y).clamp(0, max_w_y) as usize;
 
                             w.move_by_root(new_w_x, new_w_y)?;
                             break;
