@@ -1,8 +1,8 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    acpi,
     addr::VirtualAddress,
-    arch, async_task,
+    arch::{self, tsc},
+    async_task,
     error::Result,
     idt, kdebug, kinfo,
     sync::{mutex::Mutex, volatile::Volatile},
@@ -175,13 +175,13 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
                 .get_unchecked_mut()
                 .write((2 << 16) | vec_num as u32); // non masked, periodic
             self.start();
-            acpi::pm_timer_wait_ms(1000)?; // wait 1 sec
+            tsc::wait_ms(1000)?; // wait 1 sec
             let tick = self.tick() * DIV_VALUE.divisor();
             self.stop();
 
             assert!(tick > 0);
             kdebug!(
-                "{}: Timer frequency was detected: {}Hz ({:?})",
+                "{}: Timer frequency: {}Hz ({:?})",
                 device_name,
                 tick,
                 DIV_VALUE

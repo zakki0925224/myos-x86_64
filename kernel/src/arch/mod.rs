@@ -11,6 +11,7 @@ pub mod idt;
 pub mod register;
 pub mod syscall;
 pub mod task;
+pub mod tsc;
 pub mod tss;
 
 #[repr(C, packed(2))]
@@ -156,4 +157,15 @@ pub fn write_xcr0(value: u64) {
     unsafe {
         asm!("xsetbv", in("rax") value);
     }
+}
+
+pub fn rdtsc() -> u64 {
+    let low: u32;
+    let high: u32;
+
+    unsafe {
+        asm!("rdtsc", out("eax") low, out("edx") high);
+    }
+
+    ((high as u64) << 32) | (low as u64)
 }

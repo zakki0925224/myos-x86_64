@@ -19,14 +19,18 @@ This is a replacement project for the previous **[myos](https://github.com/Zakki
 -   Bus support
     -   [x] PCI
     -   [x] USB
-        -   [x] HID Keyboard
-        -   [x] HID Tablet
 -   Device support
     -   [x] PS/2 Keyboard and Mouse
     -   [x] UART 16650A
     -   [x] RTL8139
     -   [x] xHCI
         -   [x] HID Keyboard
+        -   [x] HID Tablet
+    -   [x] PC Speaker
+-   Timer support
+    -   [x] Local APIC timer (main timer)
+    -   [x] ACPI PM timer
+    -   [x] TSC
 -   [x] File system
     -   [x] Own VFS (read/write, in-memory)
     -   [x] FAT32 (read only)
@@ -37,9 +41,10 @@ This is a replacement project for the previous **[myos](https://github.com/Zakki
         -   [x] ICMP
         -   [ ] TCP
         -   [x] UDP (receive only)
+-   [x] Async runtime
+    -   [x] Simple priority-based executor
 -   [x] Simple window manager
 -   [x] [Userland applications](/apps/) (libc for myos available [here](/apps/libc/))
--   [x] Async runtime
 -   [x] DOOM challenge!
 
 ## Third party

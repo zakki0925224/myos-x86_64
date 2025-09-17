@@ -3,6 +3,7 @@ use core::arch::asm;
 
 const CPUID_EAX_VENDOR_ID: u32 = 0;
 const CPUID_EAX_VERSION_INFO: u32 = 1;
+// const CPUID_EAX_RESERVED: u32 = 0x80000007;
 
 #[derive(Debug)]
 pub struct VersionInfo {
@@ -189,6 +190,11 @@ pub fn version_info() -> VersionInfo {
     let (eax, ebx, ecx, edx) = cpuid(CPUID_EAX_VERSION_INFO);
     VersionInfo::parse(eax, ebx, ecx, edx)
 }
+
+// pub fn invariant_tsc() -> bool {
+//     let (_, _, _, edx) = cpuid(CPUID_EAX_RESERVED);
+//     ((edx >> 8) & 1) != 0
+// }
 
 #[test_case]
 fn test_cpuid() {

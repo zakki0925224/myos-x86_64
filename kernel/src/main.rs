@@ -74,6 +74,9 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     // initialize ACPI
     acpi::init(boot_info.rsdp_virt_addr.unwrap().into()).unwrap();
 
+    // check TSC
+    tsc::check_available();
+
     // initialize and start local APIC timer
     device::local_apic_timer::probe_and_attach().unwrap();
 
