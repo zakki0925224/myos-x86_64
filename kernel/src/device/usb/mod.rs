@@ -1,6 +1,7 @@
 use crate::{device::usb::usb_bus::UsbDeviceAttachInfo, error::Result};
 
 pub mod hid_keyboard;
+pub mod hid_tablet;
 pub mod usb_bus;
 pub mod xhc;
 

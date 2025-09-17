@@ -1,10 +1,12 @@
 pub mod ansi;
 pub mod audio;
+pub mod bits;
 pub mod cstring;
 pub mod fifo;
 pub mod keyboard;
 pub mod lifo;
 pub mod mmio;
 pub mod random;
+pub mod range;
 pub mod slice;
 pub mod time;

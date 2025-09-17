@@ -223,8 +223,8 @@ impl DeviceDriverFunction for UsbBusDriver {
             let product = info.product().unwrap_or("<UNKNOWN PRODUCT>");
 
             s.push_str(&format!(
-                "({}) Port{}:Slot{} {} - {} - {}",
-                interface, port, slot, vendor, serial, product
+                "({}) p{}:s{} {} - {} - {}\n",
+                interface, port, slot, vendor, product, serial
             ));
         }
 

@@ -19,6 +19,8 @@ This is a replacement project for the previous **[myos](https://github.com/Zakki
 -   Bus support
     -   [x] PCI
     -   [x] USB
+        -   [x] HID Keyboard
+        -   [x] HID Tablet
 -   Device support
     -   [x] PS/2 Keyboard and Mouse
     -   [x] UART 16650A

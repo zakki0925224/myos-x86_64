@@ -4,6 +4,7 @@ use crate::{
     sync::volatile::Volatile,
     util::mmio::IoBox,
 };
+use alloc::boxed::Box;
 use core::{
     marker::PhantomPinned,
     mem::transmute,
@@ -282,10 +283,10 @@ pub struct DataStageTrb {
 }
 
 impl DataStageTrb {
-    pub fn new_in<T: Sized>(buf: Pin<&mut [T]>) -> Self {
+    pub fn new_in(buf: &mut Pin<Box<[u8]>>) -> Self {
         Self {
             buf: buf.as_ptr() as u64,
-            option: (buf.len() * size_of::<T>()) as u32,
+            option: buf.len() as u32,
             ctrl: (TrbType::DataStage as u32) << 10
                 | GenericTrbEntry::CTRL_DATA_DIR_IN
                 | GenericTrbEntry::CTRL_INT_ON_COMPLETION

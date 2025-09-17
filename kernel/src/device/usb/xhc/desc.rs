@@ -1,5 +1,8 @@
-use crate::{sync::pin::IntoPinnedMutableSlice, util::slice::Sliceable};
-use core::marker::PhantomPinned;
+use crate::{
+    error::{Error, Result},
+    util::{self, slice::Sliceable},
+};
+use core::{marker::PhantomPinned, ops::RangeInclusive};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -10,6 +13,8 @@ pub enum UsbDescriptorType {
     String = 3,
     Interface = 4,
     Endpoint = 5,
+    Hid = 0x21,
+    Report = 0x22,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -32,7 +37,7 @@ pub struct UsbDeviceDescriptor {
     pub num_of_config: u8,
 }
 
-unsafe impl IntoPinnedMutableSlice for UsbDeviceDescriptor {}
+unsafe impl Sliceable for UsbDeviceDescriptor {}
 
 #[derive(Debug, Clone, Copy, Default)]
 #[allow(unused)]
@@ -59,7 +64,6 @@ impl ConfigDescriptor {
     }
 }
 
-unsafe impl IntoPinnedMutableSlice for ConfigDescriptor {}
 unsafe impl Sliceable for ConfigDescriptor {}
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -77,7 +81,6 @@ pub struct InterfaceDescriptor {
     interface_index: u8,
 }
 
-unsafe impl IntoPinnedMutableSlice for InterfaceDescriptor {}
 unsafe impl Sliceable for InterfaceDescriptor {}
 
 impl InterfaceDescriptor {
@@ -102,14 +105,98 @@ pub struct EndpointDescriptor {
     pub interval: u8,
 }
 
-unsafe impl IntoPinnedMutableSlice for EndpointDescriptor {}
 unsafe impl Sliceable for EndpointDescriptor {}
+
+#[derive(Debug)]
+#[repr(u8)]
+#[allow(unused)]
+pub enum UsbHidReportItemType {
+    Main = 0,
+    Global = 1,
+    Local = 2,
+    Reserved = 3,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[allow(unused)]
+pub enum UsbHidUsagePage {
+    GenericDesktop,
+    Button,
+    Unknown(usize),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(unused)]
+pub enum UsbHidUsage {
+    Pointer,
+    Mouse,
+    X,
+    Y,
+    Wheel,
+    Button(usize),
+    Unknown(usize),
+    Constant,
+}
+
+#[derive(Debug)]
+pub struct UsbHidReportInputItem {
+    pub usage: UsbHidUsage,
+    pub bit_size: usize,
+    pub is_array: bool,
+    pub is_absolute: bool,
+    pub bit_offset: usize,
+    pub logical_min: u32,
+    pub logical_max: u32,
+}
+
+impl UsbHidReportInputItem {
+    pub fn value_from_report(&self, report: &[u8]) -> Option<i64> {
+        util::bits::extract_bits_from_le_bytes(report, self.bit_offset, self.bit_size).map(|v| {
+            if self.bit_size >= 2 && util::bits::extract_bits(v, self.bit_size - 1, 1) == 1 {
+                -(!util::bits::extract_bits(v, 0, self.bit_size - 1) as i64) - 1
+            } else {
+                v as i64
+            }
+        })
+    }
+
+    pub fn mapped_range_from_report(
+        &self,
+        report: &[u8],
+        to_range: RangeInclusive<i64>,
+    ) -> Result<i64> {
+        let value = self
+            .value_from_report(report)
+            .ok_or(Error::Failed("Value was empty"))?;
+        util::range::map_value_range_inclusive(
+            (self.logical_min as i64)..=(self.logical_max as i64),
+            to_range,
+            value,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+#[allow(unused)]
+#[repr(packed)]
+pub struct HidDescriptor {
+    desc_len: u8,
+    desc_type: u8,
+    hid_release: u16,
+    country_code: u8,
+    num_descs: u8,
+    descriptor_type: u8,
+    pub report_desc_len: u16,
+}
+
+unsafe impl Sliceable for HidDescriptor {}
 
 #[derive(Debug, Clone, Copy)]
 pub enum UsbDescriptor {
     Config(ConfigDescriptor),
     Interface(InterfaceDescriptor),
     Endpoint(EndpointDescriptor),
+    Hid(HidDescriptor),
     Unknown { desc_len: u8, desc_type: u8 },
 }
 
@@ -143,6 +230,9 @@ impl<'a> Iterator for DescriptorIterator<'a> {
                 }
                 e if e == UsbDescriptorType::Endpoint as u8 => {
                     UsbDescriptor::Endpoint(EndpointDescriptor::copy_from_slice(buf).ok()?)
+                }
+                e if e == UsbDescriptorType::Hid as u8 => {
+                    UsbDescriptor::Hid(HidDescriptor::copy_from_slice(buf).ok()?)
                 }
                 _ => UsbDescriptor::Unknown {
                     desc_len,

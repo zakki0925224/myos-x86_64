@@ -13,8 +13,8 @@ use crate::{
     fs::vfs,
     kdebug, kinfo, ktrace,
     mem::{bitmap, paging::PAGE_SIZE},
-    sync::{mutex::Mutex, pin::IntoPinnedMutableSlice},
-    util::{keyboard::key_map::ANSI_US_104_KEY_MAP, mmio::Mmio},
+    sync::mutex::Mutex,
+    util::{keyboard::key_map::ANSI_US_104_KEY_MAP, mmio::Mmio, slice::Sliceable},
 };
 use alloc::{
     boxed::Box,
@@ -65,6 +65,13 @@ pub trait XhcRequestFunction {
         protocol: u8,
     ) -> Result<()>;
     fn hid_report(&mut self, slot: u8, ctrl_ep_ring: &mut CommandRing) -> Result<Vec<u8>>;
+    fn hid_report_desc(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        interface_num: u8,
+        desc_size: usize,
+    ) -> Result<Vec<u8>>;
 }
 
 struct XhcDriver {
@@ -365,14 +372,14 @@ impl XhcDriver {
         Ok(ctrl_ep_ring)
     }
 
-    fn request_desc<T: Sized>(
+    fn request_desc(
         &mut self,
         slot: u8,
         ctrl_ep_ring: &mut CommandRing,
         desc_type: UsbDescriptorType,
         desc_index: u8,
         lang_id: u16,
-        buf: Pin<&mut [T]>,
+        buf: &mut Pin<Box<[u8]>>,
     ) -> Result<()> {
         ctrl_ep_ring.push(
             SetupStageTrb::new(
@@ -380,7 +387,7 @@ impl XhcDriver {
                 SetupStageTrb::REQ_GET_DESC,
                 (desc_type as u16) << 8 | (desc_index as u16),
                 lang_id,
-                (buf.len() * size_of::<T>()) as u16,
+                buf.len() as u16,
             )
             .into(),
         )?;
@@ -403,16 +410,50 @@ impl XhcDriver {
         slot: u8,
         ctrl_ep_ring: &mut CommandRing,
     ) -> Result<UsbDeviceDescriptor> {
-        let mut desc = Box::pin(UsbDeviceDescriptor::default());
+        let buf = vec![0; size_of::<UsbDeviceDescriptor>()];
+        let mut buf = Box::into_pin(buf.into_boxed_slice());
         self.request_desc(
             slot,
             ctrl_ep_ring,
             UsbDescriptorType::Device,
             0,
             0,
-            desc.as_mut().as_mut_slice(),
+            &mut buf,
         )?;
-        Ok(*desc)
+        UsbDeviceDescriptor::copy_from_slice(buf.as_ref().get_ref())
+    }
+
+    fn request_desc_for_interface(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        desc_type: UsbDescriptorType,
+        desc_index: u8,
+        lang_id: u16,
+        buf: &mut Pin<Box<[u8]>>,
+    ) -> Result<()> {
+        ctrl_ep_ring.push(
+            SetupStageTrb::new(
+                SetupStageTrb::REQ_TYPE_DIR_DEV_TO_HOST | SetupStageTrb::REQ_TYPE_TO_INTERFACE,
+                SetupStageTrb::REQ_GET_DESC,
+                (desc_type as u16) << 8 | (desc_index as u16),
+                lang_id,
+                buf.len() as u16,
+            )
+            .into(),
+        )?;
+        ctrl_ep_ring.push(DataStageTrb::new_in(buf).into())?;
+        ctrl_ep_ring.push(StatusStageTrb::new_out().into())?;
+        self.notify_ep(slot, 1)?;
+        loop {
+            if let Some(trb) = self.primary_event_ring()?.pop()? {
+                if trb.transfer_result_ok().is_ok() {
+                    break;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn request_string_desc(
@@ -430,7 +471,7 @@ impl XhcDriver {
             UsbDescriptorType::String,
             index,
             lang_id,
-            buf.as_mut(),
+            &mut buf,
         )?;
         let s = String::from_utf8_lossy(&buf[2..])
             .to_string()
@@ -442,7 +483,7 @@ impl XhcDriver {
         &mut self,
         slot: u8,
         ctrl_ep_ring: &mut CommandRing,
-    ) -> Result<Vec<u16>> {
+    ) -> Result<Vec<u8>> {
         let buf = vec![0; 8];
         let mut buf = Box::into_pin(buf.into_boxed_slice());
         self.request_desc(
@@ -451,7 +492,7 @@ impl XhcDriver {
             UsbDescriptorType::String,
             0,
             0,
-            buf.as_mut(),
+            &mut buf,
         )?;
         Ok(buf.as_ref().get_ref().to_vec())
     }
@@ -461,16 +502,18 @@ impl XhcDriver {
         slot: u8,
         ctrl_ep_ring: &mut CommandRing,
     ) -> Result<Vec<UsbDescriptor>> {
-        let mut conf_desc = Box::pin(ConfigDescriptor::default());
+        let buf = vec![0; size_of::<ConfigDescriptor>()];
+        let mut buf = Box::into_pin(buf.into_boxed_slice());
         self.request_desc(
             slot,
             ctrl_ep_ring,
             UsbDescriptorType::Config,
             0,
             0,
-            conf_desc.as_mut().as_mut_slice(),
+            &mut buf,
         )?;
 
+        let conf_desc = ConfigDescriptor::copy_from_slice(buf.as_ref().get_ref())?;
         let buf = vec![0; conf_desc.total_len()];
         let mut buf = Box::into_pin(buf.into_boxed_slice());
         self.request_desc(
@@ -479,7 +522,7 @@ impl XhcDriver {
             UsbDescriptorType::Config,
             0,
             0,
-            buf.as_mut(),
+            &mut buf,
         )?;
 
         let iter = DescriptorIterator::new(&buf);
@@ -573,7 +616,7 @@ impl XhcDriver {
         &mut self,
         slot: u8,
         ctrl_ep_ring: &mut CommandRing,
-        buf: Pin<&mut [u8]>,
+        buf: &mut Pin<Box<[u8]>>,
     ) -> Result<()> {
         ctrl_ep_ring.push(
             SetupStageTrb::new(
@@ -602,9 +645,9 @@ impl XhcDriver {
     }
 
     fn request_hid_report(&mut self, slot: u8, ctrl_ep_ring: &mut CommandRing) -> Result<Vec<u8>> {
-        let buf = [0u8; 8];
-        let mut buf = Box::into_pin(Box::new(buf));
-        self.request_report_bytes(slot, ctrl_ep_ring, buf.as_mut())?;
+        let buf = vec![0u8; 8];
+        let mut buf = Box::into_pin(buf.into_boxed_slice());
+        self.request_report_bytes(slot, ctrl_ep_ring, &mut buf)?;
         Ok(buf.to_vec())
     }
 
@@ -617,7 +660,7 @@ impl XhcDriver {
         let mut product = None;
         let mut serial = None;
         if let Ok(e) = self.request_string_desc_zero(slot, &mut ctrl_ep_ring) {
-            let lang_id = e[1];
+            let lang_id = u16::from_le_bytes([e[0], e[1]]);
             if dev_desc.manufacturer_index != 0 {
                 vendor = Some(self.request_string_desc(
                     slot,
@@ -669,6 +712,24 @@ impl XhcDriver {
         {
             let attach_info = UsbDeviceAttachInfo::new_xhci(xhci_attach_info);
             let driver = UsbHidKeyboardDriver::new(ANSI_US_104_KEY_MAP);
+            let usb_driver_name = driver.name;
+            let usb_device = UsbDevice::new(attach_info, Box::new(driver));
+            device::usb::usb_bus::attach_usb_device(usb_device)?;
+            kinfo!(
+                "{}: {} attached to {:?} on slot {}",
+                driver_name,
+                usb_driver_name,
+                product,
+                slot
+            );
+        } else if xhci_attach_info
+            .interface_descs()
+            .iter()
+            .find(|d| d.triple() == (3, 0, 0))
+            .is_some()
+        {
+            let attach_info = UsbDeviceAttachInfo::new_xhci(xhci_attach_info);
+            let driver = device::usb::hid_tablet::UsbHidTabletDriver::new();
             let usb_driver_name = driver.name;
             let usb_device = UsbDevice::new(attach_info, Box::new(driver));
             device::usb::usb_bus::attach_usb_device(usb_device)?;
@@ -750,6 +811,26 @@ impl XhcRequestFunction for XhcDriver {
 
     fn hid_report(&mut self, slot: u8, ctrl_ep_ring: &mut CommandRing) -> Result<Vec<u8>> {
         self.request_hid_report(slot, ctrl_ep_ring)
+    }
+
+    fn hid_report_desc(
+        &mut self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        interface_num: u8,
+        desc_size: usize,
+    ) -> Result<Vec<u8>> {
+        let buf = vec![0; desc_size];
+        let mut buf = Box::into_pin(buf.into_boxed_slice());
+        self.request_desc_for_interface(
+            slot,
+            ctrl_ep_ring,
+            UsbDescriptorType::Report,
+            0,
+            interface_num as u16,
+            &mut buf,
+        )?;
+        Ok((*buf).to_vec())
     }
 }
 
