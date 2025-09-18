@@ -96,8 +96,7 @@ impl LocalApicTimerDriver {
 
     fn current_ms(&mut self) -> Result<usize> {
         let _freq = self.freq.ok_or("Frequency not set")?;
-        let current_tick = unsafe { self.tick() };
-        Ok(current_tick * DIV_VALUE.divisor() * INT_INTERVAL_MS)
+        Ok(self.tick * INT_INTERVAL_MS)
     }
 
     fn lvt_timer_reg(&mut self) -> &mut Mmio<Volatile<u32>> {
@@ -174,20 +173,25 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
             self.lvt_timer_reg()
                 .get_unchecked_mut()
                 .write((2 << 16) | vec_num as u32); // non masked, periodic
-            self.start();
+
+            self.int_cnt_reg().get_unchecked_mut().write(u32::MAX);
+
             tsc::wait_ms(1000)?; // wait 1 sec
-            let tick = self.tick() * DIV_VALUE.divisor();
+
+            let remaining = self.curr_cnt_reg().as_ref().read();
+            let ticks_per_second = (u32::MAX - remaining) as usize;
+
             self.stop();
 
-            assert!(tick > 0);
+            assert!(ticks_per_second > 0);
             kdebug!(
                 "{}: Timer frequency: {}Hz ({:?})",
                 device_name,
-                tick,
+                ticks_per_second,
                 DIV_VALUE
             );
 
-            self.freq = Some(tick);
+            self.freq = Some(ticks_per_second);
 
             // start timer
             self.start();
