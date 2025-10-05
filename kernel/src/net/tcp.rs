@@ -103,10 +103,10 @@ pub struct TcpPacket {
     pub src_port: u16,
     pub dst_port: u16,
     pub seq_num: u32,
-    ack_num: u32,
+    pub ack_num: u32,
     flags: u16,
     pub window_size: u16,
-    checksum: u16,
+    pub checksum: u16,
     urgent_ptr: u16,
     pub options_and_data: Vec<u8>,
 }
@@ -190,6 +190,77 @@ impl TcpPacket {
         let mut sum: u32 = 0;
 
         let packet = self.to_vec();
+        for chunk in packet.chunks(2) {
+            let word = match chunk {
+                [h, l] => u16::from_be_bytes([*h, *l]),
+                [h] => u16::from_be_bytes([*h, 0]),
+                _ => 0,
+            };
+            sum = sum.wrapping_add(word as u32);
+        }
+
+        while (sum >> 16) > 0 {
+            sum = (sum & 0xffff) + (sum >> 16);
+        }
+
+        self.checksum = !(sum as u16);
+    }
+
+    pub fn verify_checksum_with_ipv4(&self, src_addr: Ipv4Addr, dst_addr: Ipv4Addr) -> bool {
+        let mut sum: u32 = 0;
+
+        // pseudo header
+        let src_octets = src_addr.octets();
+        sum += ((src_octets[0] as u32) << 8) | (src_octets[1] as u32);
+        sum += ((src_octets[2] as u32) << 8) | (src_octets[3] as u32);
+
+        let dst_octets = dst_addr.octets();
+        sum += ((dst_octets[0] as u32) << 8) | (dst_octets[1] as u32);
+        sum += ((dst_octets[2] as u32) << 8) | (dst_octets[3] as u32);
+
+        sum += 6; // protocol number (TCP = 6)
+
+        // TCP header and data checksum
+        let packet = self.to_vec();
+        let tcp_len = packet.len();
+        sum += tcp_len as u32;
+        for chunk in packet.chunks(2) {
+            let word = match chunk {
+                [h, l] => u16::from_be_bytes([*h, *l]),
+                [h] => u16::from_be_bytes([*h, 0]),
+                _ => 0,
+            };
+            sum = sum.wrapping_add(word as u32);
+        }
+
+        while (sum >> 16) > 0 {
+            sum = (sum & 0xffff) + (sum >> 16);
+        }
+
+        let checksum = !(sum as u16);
+        checksum == 0xffff || checksum == 0
+    }
+
+    pub fn calc_checksum_with_ipv4(&mut self, src_addr: Ipv4Addr, dst_addr: Ipv4Addr) {
+        self.checksum = 0;
+        let mut sum: u32 = 0;
+
+        // pseudo header
+        let src_octets = src_addr.octets();
+        sum += ((src_octets[0] as u32) << 8) | (src_octets[1] as u32);
+        sum += ((src_octets[2] as u32) << 8) | (src_octets[3] as u32);
+
+        let dst_octets = dst_addr.octets();
+        sum += ((dst_octets[0] as u32) << 8) | (dst_octets[1] as u32);
+        sum += ((dst_octets[2] as u32) << 8) | (dst_octets[3] as u32);
+
+        sum += 6; // protocol number (TCP = 6)
+
+        // TCP header and data checksum
+        let packet = self.to_vec();
+        let tcp_len = packet.len();
+        sum += tcp_len as u32;
+
         for chunk in packet.chunks(2) {
             let word = match chunk {
                 [h, l] => u16::from_be_bytes([*h, *l]),

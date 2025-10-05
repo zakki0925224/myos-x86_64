@@ -111,6 +111,7 @@ impl NetworkManager {
                 }
 
                 let next_seq_num = socket_mut.receive_syn()?;
+                let ack_num = seq_num.wrapping_add(1);
 
                 let mut options = Vec::new();
                 let mss_bytes_len = 1460u16;
@@ -120,17 +121,16 @@ impl NetworkManager {
                 options.push((mss_bytes_len & 0xff) as u8); // MSS low byte
 
                 // send SYN-ACK
-                let mut reply_packet = TcpPacket::new_with(
+                let reply_packet = TcpPacket::new_with(
                     dst_port,
                     src_port,
                     next_seq_num,
-                    seq_num.wrapping_add(1),
+                    ack_num,
                     TcpPacket::FLAGS_SYN | TcpPacket::FLAGS_ACK,
                     u16::MAX,
                     0,
                     options,
                 );
-                reply_packet.calc_checksum();
                 kdebug!("net: TCP-SYN-ACK packet: {:?}", reply_packet);
                 return Ok(Some(reply_packet));
             }
@@ -221,7 +221,12 @@ impl NetworkManager {
                 }
             }
             Ipv4Payload::Tcp(tcp_packet) => {
-                if let Some(reply_tcp_packet) = self.receive_tcp_packet(tcp_packet)? {
+                let is_valid =
+                    tcp_packet.verify_checksum_with_ipv4(packet.src_addr, packet.dst_addr);
+                assert!(is_valid, "Invalid TCP checksum");
+
+                if let Some(mut reply_tcp_packet) = self.receive_tcp_packet(tcp_packet)? {
+                    reply_tcp_packet.calc_checksum_with_ipv4(self.my_ipv4_addr, packet.src_addr);
                     reply_payload = Some(Ipv4Payload::Tcp(reply_tcp_packet));
                 }
             }
@@ -238,7 +243,7 @@ impl NetworkManager {
                 packet.id,
                 packet.flags,
                 packet.protocol,
-                packet.dst_addr,
+                self.my_ipv4_addr,
                 packet.src_addr,
                 reply_payload,
             );
