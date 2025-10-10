@@ -61,7 +61,7 @@ fn efi_main() -> Status {
     info!("Exit boot services");
     let mut mem_map = Vec::with_capacity(128);
 
-    let map = unsafe { boot::exit_boot_services(MemoryType::RUNTIME_SERVICES_DATA) };
+    let map = unsafe { boot::exit_boot_services(Some(MemoryType::RUNTIME_SERVICES_DATA)) };
 
     for desc in map.entries() {
         let ty = convert_mem_type(desc.ty);

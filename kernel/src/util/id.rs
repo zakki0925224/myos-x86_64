@@ -91,13 +91,4 @@ impl<T: AtomicIdMarker> AtomicId<T> {
     pub fn get(&self) -> usize {
         self.0
     }
-
-    fn test() {
-        struct IdInner;
-        impl AtomicIdMarker for IdInner {}
-        type TestId = AtomicId<IdInner>;
-
-        let id1 = TestId::new();
-        let b = id1 >= TestId::new_val(1234);
-    }
 }
