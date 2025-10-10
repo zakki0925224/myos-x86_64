@@ -13,7 +13,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 static mut VFS: Mutex<VirtualFileSystem> = Mutex::new(VirtualFileSystem::new());
 
 #[derive(Debug, Clone, Copy)]
-struct VfsFileIdInner;
+pub struct VfsFileIdInner;
 impl AtomicIdMarker for VfsFileIdInner {}
 pub type VfsFileId = AtomicId<VfsFileIdInner>;
 

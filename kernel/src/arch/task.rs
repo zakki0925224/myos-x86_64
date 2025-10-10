@@ -22,7 +22,7 @@ static mut USER_TASKS: Mutex<Vec<Task>> = Mutex::new(Vec::new());
 static mut USER_EXIT_STATUS: Option<i32> = None;
 
 #[derive(Debug, Clone)]
-struct TaskIdInner;
+pub struct TaskIdInner;
 impl AtomicIdMarker for TaskIdInner {}
 pub type TaskId = AtomicId<TaskIdInner>;
 

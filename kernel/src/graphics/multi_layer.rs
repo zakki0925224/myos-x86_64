@@ -19,7 +19,7 @@ pub struct LayerInfo {
 }
 
 #[derive(Debug, Clone)]
-struct LayerIdInner;
+pub struct LayerIdInner;
 impl AtomicIdMarker for LayerIdInner {}
 pub type LayerId = AtomicId<LayerIdInner>;
 
