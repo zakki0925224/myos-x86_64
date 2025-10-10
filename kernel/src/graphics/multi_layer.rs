@@ -1,12 +1,7 @@
 use super::{draw::Draw, frame_buf};
-use crate::{
-    error::{Error, Result},
-    fs::file::bitmap::BitmapImage,
-    sync::mutex::Mutex,
-};
+use crate::{error::Result, fs::file::bitmap::BitmapImage, sync::mutex::Mutex, util::id::*};
 use alloc::vec::Vec;
 use common::graphic_info::PixelFormat;
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 static mut LAYER_MAN: Mutex<LayerManager> = Mutex::new(LayerManager::new());
 
@@ -24,25 +19,9 @@ pub struct LayerInfo {
 }
 
 #[derive(Debug, Clone)]
-pub struct LayerId(usize);
-impl LayerId {
-    pub fn new() -> Self {
-        static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
-        Self(NEXT_ID.fetch_add(1, Ordering::Relaxed))
-    }
-
-    pub const fn new_val(value: i32) -> Result<Self> {
-        if value < 0 {
-            return Err(Error::Failed("Invalid layer id"));
-        }
-
-        Ok(Self(value as usize))
-    }
-
-    pub fn get(&self) -> usize {
-        self.0
-    }
-}
+struct LayerIdInner;
+impl AtomicIdMarker for LayerIdInner {}
+pub type LayerId = AtomicId<LayerIdInner>;
 
 #[derive(Debug)]
 pub struct Layer {

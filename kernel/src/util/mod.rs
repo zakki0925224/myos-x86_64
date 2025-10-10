@@ -3,6 +3,7 @@ pub mod audio;
 pub mod bits;
 pub mod cstring;
 pub mod fifo;
+pub mod id;
 pub mod keyboard;
 pub mod lifo;
 pub mod mmio;

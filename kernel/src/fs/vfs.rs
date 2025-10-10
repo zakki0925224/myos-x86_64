@@ -5,21 +5,17 @@ use crate::{
     fs::fat::dir_entry::Attribute,
     kwarn,
     sync::mutex::Mutex,
+    util::id::*,
 };
 use alloc::{collections::btree_map::BTreeMap, string::String, vec::Vec};
-use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 static mut VFS: Mutex<VirtualFileSystem> = Mutex::new(VirtualFileSystem::new());
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct VfsFileId(usize);
-
-impl VfsFileId {
-    fn new() -> Self {
-        static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
-        Self(NEXT_ID.fetch_add(1, Ordering::Relaxed))
-    }
-}
+#[derive(Debug, Clone, Copy)]
+struct VfsFileIdInner;
+impl AtomicIdMarker for VfsFileIdInner {}
+pub type VfsFileId = AtomicId<VfsFileIdInner>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FileDescriptorNumber(u64);

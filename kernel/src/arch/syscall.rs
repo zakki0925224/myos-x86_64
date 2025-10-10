@@ -483,7 +483,11 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
                 return Err(Error::Failed("Invalid payload size for RemoveComponent"));
             }
 
-            let layer_id = LayerId::new_val(layer_id)?;
+            if layer_id < 0 {
+                return Err(Error::Failed("Invalid layer id"));
+            }
+
+            let layer_id = LayerId::new_val(layer_id as usize);
             simple_window_manager::remove_component(&layer_id)?;
             task::remove_layer_id(&layer_id);
 
@@ -558,7 +562,11 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
                 ));
             }
 
-            let layer_id = LayerId::new_val(layer_id)?;
+            if layer_id < 0 {
+                return Err(Error::Failed("Invalid layer id"));
+            }
+
+            let layer_id = LayerId::new_val(layer_id as usize);
             let wh = (image_width, image_height);
             let framebuf_virt_addr: VirtualAddress = (framebuf_ptr as u64).into();
 

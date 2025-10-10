@@ -10,11 +10,10 @@ use crate::{
         paging::{self, *},
     },
     sync::mutex::Mutex,
-    util,
+    util::{self, id::*},
 };
 use alloc::{string::ToString, vec::Vec};
 use common::elf::{self, Elf64};
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 const USER_TASK_STACK_SIZE: usize = 1024 * 1024; // 1MiB
 
@@ -23,18 +22,9 @@ static mut USER_TASKS: Mutex<Vec<Task>> = Mutex::new(Vec::new());
 static mut USER_EXIT_STATUS: Option<i32> = None;
 
 #[derive(Debug, Clone)]
-pub struct TaskId(usize);
-
-impl TaskId {
-    pub fn new() -> Self {
-        static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
-        Self(NEXT_ID.fetch_add(1, Ordering::Relaxed))
-    }
-
-    pub fn get(&self) -> usize {
-        self.0
-    }
-}
+struct TaskIdInner;
+impl AtomicIdMarker for TaskIdInner {}
+pub type TaskId = AtomicId<TaskIdInner>;
 
 #[derive(Debug, Clone)]
 struct Task {
