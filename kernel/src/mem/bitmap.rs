@@ -1,7 +1,7 @@
-use super::paging::{self, EntryMode, MappingInfo, PageWriteThroughLevel, ReadWrite, PAGE_SIZE};
 use crate::{
-    arch::addr::*,
+    arch::{PhysicalAddress, VirtualAddress},
     error::{Error, Result},
+    mem::paging::{self, *},
     sync::mutex::Mutex,
 };
 use common::mem_desc::{MemoryDescriptor, UEFI_PAGE_SIZE};

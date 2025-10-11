@@ -1,5 +1,5 @@
 use crate::{
-    arch,
+    arch::x86_64,
     debug::qemu::{self, EXIT_FAILURE},
     device::panic_screen,
     kerror,
@@ -12,7 +12,7 @@ fn panic(info: &PanicInfo) -> ! {
     kerror!("{:?}", info.location());
 
     // prevent overwriting by graphics::frame_buf
-    arch::disabled_int(|| {
+    x86_64::disabled_int(|| {
         panic_screen::write_fmt(format_args!("{:?}\n", info.message())).unwrap();
         panic_screen::write_fmt(format_args!("{:?}\n", info.location())).unwrap();
 

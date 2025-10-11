@@ -1,13 +1,15 @@
 use crate::{
     arch::{
-        addr::VirtualAddress,
-        gdt::*,
-        register::{model_specific::*, Register},
-        task,
+        x86_64::{
+            self,
+            gdt::*,
+            registers::{model_specific::*, Register},
+        },
+        VirtualAddress,
     },
     device::tty,
     env,
-    error::*,
+    error::{Error, Result},
     fs::{
         self,
         vfs::{self, FileDescriptorNumber},
@@ -15,10 +17,14 @@ use crate::{
     graphics::{multi_layer::LayerId, simple_window_manager},
     kdebug, kerror, kinfo,
     mem::{bitmap, paging::PAGE_SIZE},
-    print, util,
+    print, task, util,
 };
-use alloc::{boxed::Box, string::*, vec::Vec};
-use common::libc::{Stat, Utsname};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use common::libc::*;
 use core::{arch::naked_asm, slice};
 
 #[derive(Debug, Clone, Copy)]
@@ -256,10 +262,10 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
                 let mut input_s = None;
 
                 while input_s.is_none() {
-                    if let Ok(s) = crate::arch::disabled_int(|| tty::get_line()) {
+                    if let Ok(s) = x86_64::disabled_int(|| tty::get_line()) {
                         input_s = s;
                     } else {
-                        super::hlt();
+                        x86_64::hlt();
                     }
                 }
 
@@ -275,10 +281,10 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
             } else if buf_len == 1 {
                 let mut c = None;
                 while c.is_none() {
-                    if let Ok(ch) = crate::arch::disabled_int(|| tty::get_char()) {
+                    if let Ok(ch) = x86_64::disabled_int(|| tty::get_char()) {
                         c = Some(ch);
                     } else {
-                        super::hlt();
+                        x86_64::hlt();
                     }
                 }
 
@@ -384,7 +390,7 @@ fn sys_uname(buf: *mut Utsname) -> Result<()> {
 
 fn sys_break() {
     task::debug_user_task();
-    super::int3();
+    x86_64::int3();
 }
 
 fn sys_stat(fd_num: i32, buf: *mut Stat) -> Result<()> {

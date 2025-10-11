@@ -1,5 +1,5 @@
 use crate::{
-    arch::{self, acpi, cpu},
+    arch::x86_64::{self, acpi, cpu},
     error::{Error, Result},
     kdebug,
 };
@@ -14,9 +14,9 @@ fn calc_freq() -> Result<u64> {
         return Err(Error::Failed("TSC not available"));
     }
 
-    let start = arch::rdtsc();
+    let start = x86_64::rdtsc();
     acpi::pm_timer_wait_ms(1)?;
-    let end = arch::rdtsc();
+    let end = x86_64::rdtsc();
     Ok((end - start) * 1000)
 }
 
@@ -27,8 +27,8 @@ pub fn check_available() {
 
 pub fn wait_ms(ms: u64) -> Result<()> {
     let current_tsc_freq = calc_freq()?;
-    let start = arch::rdtsc();
+    let start = x86_64::rdtsc();
     let end = start + (current_tsc_freq / 1000) * ms;
-    while arch::rdtsc() < end {}
+    while x86_64::rdtsc() < end {}
     Ok(())
 }

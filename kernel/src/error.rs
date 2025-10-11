@@ -1,5 +1,5 @@
 use crate::{
-    acpi::AcpiError,
+    arch::x86_64::acpi::AcpiError,
     device::{tty::TtyError, usb::xhc::XhcDriverError},
     fs::vfs::VirtualFileSystemError,
     graphics::{

@@ -1,9 +1,12 @@
-use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    arch::{self, addr::IoPortAddress},
+    arch::{
+        x86_64::{self, idt},
+        IoPortAddress,
+    },
+    device::{DeviceDriverFunction, DeviceDriverInfo},
     error::{Error, Result},
     fs::vfs,
-    idt, kinfo,
+    kinfo,
     sync::mutex::Mutex,
     util::fifo::Fifo,
 };
@@ -225,7 +228,7 @@ pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    arch::disabled_int(|| {
+    x86_64::disabled_int(|| {
         let mut driver = unsafe { PS2_MOUSE_DRIVER.try_lock() }?;
         driver.probe()?;
         driver.attach(())?;
@@ -255,7 +258,7 @@ pub fn write(data: &[u8]) -> Result<()> {
 }
 
 pub fn poll_normal() -> Result<Option<Ps2MouseEvent>> {
-    arch::disabled_int(|| {
+    x86_64::disabled_int(|| {
         let mut driver = unsafe { PS2_MOUSE_DRIVER.try_lock() }?;
         driver.poll_normal()
     })

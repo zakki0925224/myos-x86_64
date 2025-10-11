@@ -1,5 +1,7 @@
-use super::{icmp::IcmpPacket, tcp::TcpPacket, udp::UdpPacket};
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    net::{icmp::IcmpPacket, tcp::TcpPacket, udp::UdpPacket},
+};
 use alloc::vec::Vec;
 use core::{fmt::Debug, net::Ipv4Addr};
 

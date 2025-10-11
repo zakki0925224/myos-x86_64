@@ -18,22 +18,25 @@ mod mem;
 mod net;
 mod panic;
 mod sync;
+mod task;
 mod test;
 mod theme;
 mod util;
 
+use crate::{
+    arch::x86_64::{self, *},
+    graphics::{
+        frame_buf, multi_layer,
+        simple_window_manager::{self, MouseEvent},
+    },
+    task::{async_task, syscall},
+    theme::GLOBAL_THEME,
+};
+use alloc::{string::ToString, vec::Vec};
+use common::boot_info::BootInfo;
+
 #[macro_use]
 extern crate alloc;
-
-use alloc::{string::ToString, vec::Vec};
-use arch::*;
-use common::boot_info::BootInfo;
-use graphics::{
-    color::*,
-    frame_buf, multi_layer,
-    simple_window_manager::{self, MouseEvent},
-};
-use theme::GLOBAL_THEME;
 
 #[no_mangle]
 pub extern "sysv64" fn kernel_entry(boot_info: &BootInfo) -> ! {
@@ -206,7 +209,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     }
 
     loop {
-        arch::hlt();
+        x86_64::hlt();
     }
 }
 

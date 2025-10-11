@@ -1,5 +1,5 @@
 use super::{path::Path, vfs};
-use crate::{arch::task, debug::dwarf, error::Result, kerror, kinfo};
+use crate::{debug::dwarf, error::Result, kerror, kinfo, task};
 use common::elf::Elf64;
 
 pub fn exec_elf(elf_path: &Path, args: &[&str], enable_debug: bool) -> Result<()> {

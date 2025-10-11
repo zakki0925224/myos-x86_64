@@ -1,171 +1,153 @@
-use core::arch::asm;
+use crate::{error::Result, mem::paging};
 
-pub mod acpi;
-pub mod addr;
-pub mod apic;
-pub mod async_task;
-pub mod context;
-pub mod cpu;
-pub mod gdt;
-pub mod idt;
-pub mod register;
-pub mod syscall;
-pub mod task;
-pub mod tsc;
-pub mod tss;
+pub mod x86_64;
 
-#[repr(C, packed(2))]
-#[derive(Debug, Default)]
-pub struct DescriptorTableArgs {
-    pub limit: u16,
-    pub base: u64,
-}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(transparent)]
+pub struct PhysicalAddress(u64);
 
-fn sti() {
-    unsafe { asm!("sti") }
-}
+impl PhysicalAddress {
+    pub fn new(addr: u64) -> Self {
+        Self(addr)
+    }
 
-pub fn hlt() {
-    sti(); // enable interrupts
-    unsafe { asm!("hlt") }
-}
+    pub fn get(&self) -> u64 {
+        self.0
+    }
 
-pub fn disabled_int<F: FnMut() -> R, R>(mut func: F) -> R {
-    unsafe { asm!("cli") };
-    let func_res = func();
-    sti();
-    func_res
-}
+    pub fn set(&mut self, addr: u64) {
+        self.0 = addr;
+    }
 
-pub fn int3() {
-    unsafe { asm!("int3") }
-}
+    pub fn offset(&self, offset: usize) -> Self {
+        Self::new(self.0 + offset as u64)
+    }
 
-pub fn out8(port: u16, data: u8) {
-    unsafe {
-        asm!(
-            "out dx, al",
-            in("dx") port,
-            in("al") data
-        );
+    pub fn get_virt_addr(&self) -> Result<VirtualAddress> {
+        paging::calc_virt_addr(*self)
     }
 }
 
-pub fn in8(port: u16) -> u8 {
-    let data: u8;
-    unsafe {
-        asm!(
-            "in al, dx",
-            out("al") data,
-            in("dx") port
-        );
-    }
-    data
-}
-
-pub fn out16(port: u16, data: u16) {
-    unsafe {
-        asm!(
-            "out dx, ax",
-            in("dx") port,
-            in("ax") data
-        );
+impl From<u64> for PhysicalAddress {
+    fn from(addr: u64) -> Self {
+        Self::new(addr)
     }
 }
 
-pub fn in16(port: u16) -> u16 {
-    let data: u16;
-    unsafe {
-        asm!(
-            "in ax, dx",
-            out("ax") data,
-            in("dx") port
-        );
-    }
-    data
-}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(transparent)]
+pub struct VirtualAddress(u64);
 
-pub fn out32(port: u32, data: u32) {
-    unsafe {
-        asm!(
-            "out dx, eax",
-            in("edx") port,
-            in("eax") data
-        );
-    }
-}
-
-pub fn in32(port: u32) -> u32 {
-    let data: u32;
-    unsafe {
-        asm!(
-            "in eax, dx",
-            out("eax") data,
-            in("edx") port
-        );
-    }
-    data
-}
-
-pub fn lidt(desc_table_args: &DescriptorTableArgs) {
-    unsafe {
-        asm!("lidt [{}]", in(reg) desc_table_args);
-    }
-}
-
-pub fn lgdt(desc_table_args: &DescriptorTableArgs) {
-    unsafe {
-        asm!("lgdt [{}]", in(reg) desc_table_args);
-    }
-}
-
-pub fn ltr(sel: u16) {
-    unsafe {
-        asm!("ltr cx", in("cx") sel);
-    }
-}
-
-pub fn read_msr(addr: u32) -> u64 {
-    let low: u32;
-    let high: u32;
-
-    unsafe {
-        asm!("rdmsr", in("ecx") addr, out("eax") low, out("edx") high);
+impl VirtualAddress {
+    pub fn new(addr: u64) -> Self {
+        Self(addr)
     }
 
-    ((high as u64) << 32) | (low as u64)
-}
+    pub fn get(&self) -> u64 {
+        self.0
+    }
 
-pub fn write_msr(addr: u32, value: u64) {
-    let low = value as u32;
-    let high = (value >> 32) as u32;
+    pub fn set(&mut self, addr: u64) {
+        self.0 = addr;
+    }
 
-    unsafe {
-        asm!("wrmsr", in("ecx") addr, in("eax") low, in("edx") high);
+    pub fn offset(&self, offset: usize) -> Self {
+        Self::new(self.0 + offset as u64)
+    }
+
+    pub fn get_phys_addr(&self) -> Result<PhysicalAddress> {
+        paging::calc_phys_addr(*self)
+    }
+
+    pub fn get_pml4_entry_index(&self) -> usize {
+        ((self.0 >> 39) & 0x1ff) as usize
+    }
+
+    pub fn get_pml3_entry_index(&self) -> usize {
+        ((self.0 >> 30) & 0x1ff) as usize
+    }
+
+    pub fn get_pml2_entry_index(&self) -> usize {
+        ((self.0 >> 21) & 0x1ff) as usize
+    }
+
+    pub fn get_pml1_entry_index(&self) -> usize {
+        ((self.0 >> 12) & 0x1ff) as usize
+    }
+
+    pub fn get_page_offset(&self) -> usize {
+        (self.0 & 0xfff) as usize
+    }
+
+    pub fn as_ptr<T>(&self) -> *const T {
+        self.get() as *const T
+    }
+
+    pub fn as_ptr_mut<T>(&self) -> *mut T {
+        self.get() as *mut T
+    }
+
+    pub fn copy_from_nonoverlapping<T>(&self, src: *const T, count: usize) {
+        unsafe { self.as_ptr_mut::<T>().copy_from_nonoverlapping(src, count) }
     }
 }
 
-pub fn read_xcr0() -> u64 {
-    let value;
-    unsafe {
-        asm!("xgetbv", out("rax") value);
-    }
-    value
-}
-
-pub fn write_xcr0(value: u64) {
-    unsafe {
-        asm!("xsetbv", in("rax") value);
+impl From<u64> for VirtualAddress {
+    fn from(addr: u64) -> Self {
+        Self::new(addr)
     }
 }
 
-pub fn rdtsc() -> u64 {
-    let low: u32;
-    let high: u32;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(transparent)]
+pub struct IoPortAddress(u32);
 
-    unsafe {
-        asm!("rdtsc", out("eax") low, out("edx") high);
+impl IoPortAddress {
+    pub const fn new(addr: u32) -> Self {
+        Self(addr)
     }
 
-    ((high as u64) << 32) | (low as u64)
+    pub fn offset(&self, offset: usize) -> Self {
+        Self::new(self.0 + offset as u32)
+    }
+
+    pub fn out8(&self, value: u8) {
+        assert!(self.0 <= u16::MAX as u32);
+        x86_64::out8(self.0 as u16, value);
+    }
+
+    pub fn in8(&self) -> u8 {
+        assert!(self.0 <= u16::MAX as u32);
+        x86_64::in8(self.0 as u16)
+    }
+
+    pub fn out16(&self, value: u16) {
+        assert!(self.0 <= u16::MAX as u32);
+        x86_64::out16(self.0 as u16, value);
+    }
+
+    pub fn in16(&self) -> u16 {
+        assert!(self.0 <= u16::MAX as u32);
+        x86_64::in16(self.0 as u16)
+    }
+
+    pub fn out32(&self, value: u32) {
+        x86_64::out32(self.0, value);
+    }
+
+    pub fn in32(&self) -> u32 {
+        x86_64::in32(self.0)
+    }
+}
+
+impl From<u16> for IoPortAddress {
+    fn from(addr: u16) -> Self {
+        Self::new(addr as u32)
+    }
+}
+
+impl From<u32> for IoPortAddress {
+    fn from(addr: u32) -> Self {
+        Self::new(addr)
+    }
 }

@@ -1,5 +1,4 @@
-use super::task::TaskId;
-use crate::{error::Result, kdebug, sync::mutex::Mutex, util};
+use crate::{error::Result, kdebug, sync::mutex::Mutex, task::TaskId, util};
 use alloc::{
     boxed::Box,
     collections::{btree_map::BTreeMap, VecDeque},

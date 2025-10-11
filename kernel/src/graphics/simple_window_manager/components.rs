@@ -1,13 +1,13 @@
 use crate::{
-    addr::VirtualAddress,
+    arch::VirtualAddress,
     error::{Error, Result},
     fs::file::bitmap::BitmapImage,
     graphics::{
+        color::ColorCode,
         font::FONT,
-        multi_layer::{self, LayerId, LayerInfo},
+        multi_layer::{self, *},
     },
     theme::GLOBAL_THEME,
-    ColorCode,
 };
 use alloc::{
     boxed::Box,

@@ -1,5 +1,7 @@
-use super::{arp::ArpPacket, ip::Ipv4Packet};
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    net::{arp::ArpPacket, ip::Ipv4Packet},
+};
 use alloc::vec::Vec;
 use core::fmt::Debug;
 

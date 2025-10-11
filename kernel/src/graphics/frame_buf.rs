@@ -1,7 +1,7 @@
-use super::{color::ColorCode, draw::Draw, multi_layer::Layer};
 use crate::{
-    arch::addr::VirtualAddress,
+    arch::VirtualAddress,
     error::{Error, Result},
+    graphics::{color::ColorCode, draw::Draw, multi_layer::Layer},
     sync::mutex::Mutex,
 };
 use alloc::vec::Vec;

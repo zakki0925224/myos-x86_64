@@ -1,6 +1,6 @@
-use super::{tty, DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    arch::{self, addr::IoPortAddress},
+    arch::{x86_64, IoPortAddress},
+    device::{tty, DeviceDriverFunction, DeviceDriverInfo},
     error::{Error, Result},
     kinfo,
     sync::mutex::Mutex,
@@ -181,7 +181,7 @@ pub fn write(data: &[u8]) -> Result<()> {
 }
 
 pub fn poll_normal() -> Result<()> {
-    let received_data = match arch::disabled_int(|| {
+    let received_data = match x86_64::disabled_int(|| {
         let mut driver = unsafe { UART_DRIVER.try_lock() }?;
         driver.poll_normal()
     })? {

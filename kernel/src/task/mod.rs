@@ -1,8 +1,14 @@
 use crate::{
-    arch::{addr::VirtualAddress, context::*},
+    arch::{
+        x86_64::context::{Context, ContextMode},
+        VirtualAddress,
+    },
     debug::dwarf::Dwarf,
-    error::*,
-    fs::{self, path::Path, vfs::FileDescriptorNumber},
+    error::{Error, Result},
+    fs::{
+        path::Path,
+        vfs::{self, *},
+    },
     graphics::{multi_layer::LayerId, simple_window_manager},
     kdebug,
     mem::{
@@ -10,10 +16,16 @@ use crate::{
         paging::{self, *},
     },
     sync::mutex::Mutex,
-    util::{self, id::*},
+    util::{
+        self,
+        id::{AtomicId, AtomicIdMarker},
+    },
 };
 use alloc::{string::ToString, vec::Vec};
 use common::elf::{self, Elf64};
+
+pub mod async_task;
+pub mod syscall;
 
 const USER_TASK_STACK_SIZE: usize = 1024 * 1024; // 1MiB
 
@@ -83,7 +95,7 @@ impl Drop for Task {
 
         // close all opend files
         for fd in self.opend_fd_num.iter() {
-            fs::vfs::close_file(fd).unwrap();
+            vfs::close_file(fd).unwrap();
         }
 
         kdebug!("task: Dropped tid: {}", self.id.get());

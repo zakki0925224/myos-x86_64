@@ -1,10 +1,14 @@
-use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    addr::VirtualAddress, error::Result, graphics::font::FONT, kinfo, sync::mutex::Mutex, ColorCode,
+    arch::VirtualAddress,
+    device::{DeviceDriverFunction, DeviceDriverInfo},
+    error::Result,
+    graphics::{color::ColorCode, font::FONT},
+    kinfo,
+    sync::mutex::Mutex,
 };
-use alloc::vec::Vec;
+use alloc::{fmt, vec::Vec};
 use common::graphic_info::{GraphicInfo, PixelFormat};
-use core::fmt::{self, Write};
+use core::fmt::Write;
 
 const BACK_COLOR: ColorCode = ColorCode::BLACK;
 const FORE_COLOR: ColorCode = ColorCode::RED;

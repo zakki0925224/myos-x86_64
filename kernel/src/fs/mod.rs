@@ -1,6 +1,13 @@
-use crate::{arch::addr::VirtualAddress, error::Result, fs::vfs::FileSystem, kinfo};
+use crate::{
+    arch::VirtualAddress,
+    error::Result,
+    fs::{
+        fat::{volume::FatVolume, Fat},
+        vfs::FileSystem,
+    },
+    kinfo,
+};
 use common::kernel_config::KernelConfig;
-use fat::{volume::FatVolume, Fat};
 
 pub mod exec;
 pub mod fat;

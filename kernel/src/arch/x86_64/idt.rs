@@ -1,16 +1,18 @@
-use super::{addr::*, register::status::Rflags, task};
 use crate::{
     arch::{
-        self,
-        register::{control::Cr2, segment::Cs, Register},
+        x86_64::{
+            self,
+            registers::{control::Cr2, segment::Cs, status::Rflags, Register},
+        },
+        IoPortAddress,
     },
     debug, device,
     error::{Error, Result},
     kerror, kinfo,
     mem::paging,
     sync::mutex::Mutex,
+    task,
 };
-use core::{mem::size_of, panic};
 
 static mut IDT: Mutex<InterruptDescriptorTable> = Mutex::new(InterruptDescriptorTable::new());
 
@@ -257,8 +259,8 @@ impl InterruptDescriptorTable {
     fn load(&self) {
         let limit = (size_of::<GateDescriptor>() * IDT_LEN - 1) as u16;
         let base = self.entries.as_ptr() as u64;
-        let args = arch::DescriptorTableArgs { limit, base };
-        arch::disabled_int(|| arch::lidt(&args));
+        let args = x86_64::DescriptorTableArgs { limit, base };
+        x86_64::disabled_int(|| x86_64::lidt(&args));
     }
 }
 
@@ -339,7 +341,7 @@ extern "x86-interrupt" fn double_fault_handler(_stack_frame: InterruptStackFrame
 }
 
 pub fn init_pic() {
-    arch::disabled_int(|| {
+    x86_64::disabled_int(|| {
         // disallow all interrupts
         MASTER_PIC_ADDR.offset(1).out8(0xff);
         SLAVE_PIC_ADDR.offset(1).out8(0xff);

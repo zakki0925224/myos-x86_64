@@ -1,5 +1,10 @@
-use super::{DeviceDriverFunction, DeviceDriverInfo};
-use crate::{arch, error::Result, fs::vfs, kinfo, util};
+use crate::{
+    arch::x86_64,
+    device::{DeviceDriverFunction, DeviceDriverInfo},
+    error::Result,
+    fs::vfs,
+    kinfo, util,
+};
 use alloc::vec::Vec;
 use core::time::Duration;
 
@@ -27,20 +32,20 @@ impl SpeakerDriver {
     fn play(&self, freq: u32) {
         let div = (Self::PIT_BASE_FREQ / freq) as u16;
 
-        arch::out8(
+        x86_64::out8(
             Self::PORT_PIT_CTRL,
             Self::TIMER2_SELECT | Self::WRITE_WORD | Self::MODE_SQUARE_WAVE,
         );
-        arch::out8(Self::PORT_TIMER2_CTRL, div as u8);
+        x86_64::out8(Self::PORT_TIMER2_CTRL, div as u8);
 
-        arch::out8(Self::PORT_TIMER2_CTRL, (div >> 8) as u8);
-        arch::out8(Self::PORT_TIMER2_CTRL, div as u8);
+        x86_64::out8(Self::PORT_TIMER2_CTRL, (div >> 8) as u8);
+        x86_64::out8(Self::PORT_TIMER2_CTRL, div as u8);
 
-        arch::out8(0x61, arch::in8(0x61) | 3);
+        x86_64::out8(0x61, x86_64::in8(0x61) | 3);
     }
 
     fn stop(&self) {
-        arch::out8(0x61, arch::in8(0x61) & !3);
+        x86_64::out8(0x61, x86_64::in8(0x61) & !3);
     }
 }
 

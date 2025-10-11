@@ -1,7 +1,7 @@
-use super::conf_space::{self, *};
 use crate::{
+    arch::x86_64::registers::msi::*,
+    device::pci_bus::conf_space::{self, *},
     error::{Error, Result},
-    register::msi::*,
 };
 use alloc::vec::Vec;
 

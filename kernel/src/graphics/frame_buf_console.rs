@@ -1,4 +1,5 @@
 use super::{
+    color::ColorCode,
     font::FONT,
     frame_buf,
     multi_layer::{self, LayerId},
@@ -8,7 +9,6 @@ use crate::{
     sync::mutex::Mutex,
     theme::GLOBAL_THEME,
     util::ansi::{AnsiEscapeStream, AnsiEvent, CsiSequence},
-    ColorCode,
 };
 use core::fmt;
 

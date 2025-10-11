@@ -1,14 +1,10 @@
-use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    addr::IoPortAddress,
-    device,
+    arch::IoPortAddress,
+    device::{self, DeviceDriverFunction, DeviceDriverInfo},
     error::{Error, Result},
     fs::vfs,
     kdebug, kinfo,
-    net::{
-        self,
-        eth::{EtherType, EthernetAddress, EthernetFrame, EthernetPayload},
-    },
+    net::{self, eth::*},
     sync::mutex::Mutex,
 };
 use alloc::{boxed::Box, vec::Vec};

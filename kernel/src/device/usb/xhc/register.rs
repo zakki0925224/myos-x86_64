@@ -1,5 +1,5 @@
 use crate::{
-    arch::addr::VirtualAddress,
+    arch::VirtualAddress,
     device::usb::xhc::{
         context::OutputContext,
         trb::{GenericTrbEntry, TrbRing, TrbType},

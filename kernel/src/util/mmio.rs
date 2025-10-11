@@ -1,6 +1,6 @@
 use crate::{
-    arch::addr::VirtualAddress,
-    mem::paging::{self, EntryMode, MappingInfo, PageWriteThroughLevel, ReadWrite, PAGE_SIZE},
+    arch::VirtualAddress,
+    mem::paging::{self, *},
 };
 use alloc::boxed::Box;
 use core::{

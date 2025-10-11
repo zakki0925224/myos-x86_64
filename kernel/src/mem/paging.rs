@@ -1,12 +1,11 @@
-use super::bitmap::MemoryFrameInfo;
 use crate::{
     arch::{
-        addr::*,
-        register::{control::*, Register},
+        x86_64::registers::{control::Cr3, Register},
+        PhysicalAddress, VirtualAddress,
     },
     error::Result,
     kinfo,
-    mem::bitmap,
+    mem::bitmap::{self, MemoryFrameInfo},
 };
 
 const PAGE_TABLE_ENTRY_LEN: usize = 512;

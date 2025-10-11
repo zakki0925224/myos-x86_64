@@ -1,4 +1,4 @@
-use crate::ColorCode;
+use crate::graphics::color::ColorCode;
 
 pub const GLOBAL_THEME: Theme = LEGACY_THEME;
 

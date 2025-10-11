@@ -1,10 +1,11 @@
-use super::{
-    boot_sector::BootSector, dir_entry::DirectoryEntry, file_allocation_table::ClusterType,
-    fs_info_sector::FsInfoSector,
+use crate::{
+    arch::VirtualAddress,
+    fs::fat::{
+        boot_sector::BootSector, dir_entry::DirectoryEntry, file_allocation_table::ClusterType,
+        fs_info_sector::FsInfoSector,
+    },
 };
-use crate::arch::addr::VirtualAddress;
 use alloc::vec::Vec;
-use core::mem::size_of;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum FatType {

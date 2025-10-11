@@ -1,11 +1,11 @@
 use crate::{
-    arch::{self, idt::InterruptStackFrame},
+    arch::x86_64::{self, idt::InterruptStackFrame},
+    debug::dwarf::Dwarf,
     device::tty,
     error::Result,
     print, println,
 };
 use alloc::string::ToString;
-use dwarf::Dwarf;
 
 pub mod dwarf;
 pub mod logger;
@@ -88,10 +88,10 @@ pub fn user_app_debugger(
         print!("(dbg) ");
         let mut input_s = None;
         while input_s.is_none() {
-            if let Ok(s) = arch::disabled_int(|| tty::get_line()) {
+            if let Ok(s) = x86_64::disabled_int(|| tty::get_line()) {
                 input_s = s;
             } else {
-                arch::hlt();
+                x86_64::hlt();
             }
         }
 

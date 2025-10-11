@@ -1,4 +1,4 @@
-use crate::{arch, error::Result};
+use crate::{arch::x86_64, error::Result};
 use core::{
     cell::SyncUnsafeCell,
     ops::{Deref, DerefMut},
@@ -39,7 +39,7 @@ impl<T: Sized> Mutex<T> {
             if let Ok(guard) = self.try_lock() {
                 return guard;
             } else {
-                arch::hlt();
+                x86_64::hlt();
             }
         }
     }

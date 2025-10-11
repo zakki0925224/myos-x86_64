@@ -1,11 +1,10 @@
-use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{
-    addr::VirtualAddress,
-    arch::{self, tsc},
-    async_task,
+    arch::{x86_64::*, VirtualAddress},
+    device::*,
     error::Result,
-    idt, kdebug, kinfo,
+    kdebug, kinfo,
     sync::{mutex::Mutex, volatile::Volatile},
+    task::async_task,
     util::mmio::Mmio,
 };
 use alloc::vec::Vec;
@@ -284,6 +283,6 @@ extern "x86-interrupt" fn poll_int_local_apic_timer(_stack_frame: idt::Interrupt
         let driver = LOCAL_APIC_TIMER_DRIVER.get_force_mut();
         let _ = driver.poll_int();
 
-        arch::apic::notify_end_of_int();
+        apic::notify_end_of_int();
     }
 }

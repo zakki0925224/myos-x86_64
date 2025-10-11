@@ -1,5 +1,12 @@
-use super::{DeviceDriverFunction, DeviceDriverInfo};
-use crate::{device, error::Result, fs::vfs, kinfo, sync::mutex::Mutex, util};
+use crate::{
+    device,
+    device::{DeviceDriverFunction, DeviceDriverInfo},
+    error::Result,
+    fs::vfs,
+    kinfo,
+    sync::mutex::Mutex,
+    util,
+};
 use alloc::vec::Vec;
 
 static mut URANDOM_DRIVER: Mutex<UrandomDriver> = Mutex::new(UrandomDriver::new());

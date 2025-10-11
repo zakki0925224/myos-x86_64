@@ -1,7 +1,9 @@
-use super::eth::{EtherType, EthernetAddress};
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    net::eth::*,
+};
 use alloc::vec::Vec;
-use core::net::Ipv4Addr;
+use core::{fmt::Debug, net::Ipv4Addr};
 
 pub enum ArpOperation {
     Request,

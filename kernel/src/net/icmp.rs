@@ -1,5 +1,6 @@
 use crate::error::{Error, Result};
 use alloc::vec::Vec;
+use core::fmt::Debug;
 
 #[derive(Debug, Clone, Copy)]
 pub enum IcmpType {

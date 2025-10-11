@@ -1,17 +1,16 @@
 use crate::{
-    arch::{
+    arch::x86_64::{
         self,
-        register::{
-            segment::{self, *},
+        registers::{
+            segment::{self, Cs, Ss},
             Register,
         },
-        tss,
+        tss::{self, TaskStateSegmentDescriptor},
     },
     error::Result,
     kinfo,
     sync::mutex::Mutex,
 };
-use core::mem::size_of;
 
 pub const KERNEL_MODE_SS_VALUE: u16 = 2 << 3;
 pub const KERNEL_MODE_CS_VALUE: u16 = 1 << 3;
@@ -110,14 +109,14 @@ impl SegmentDescriptor {
 #[repr(C)]
 struct GlobalDescriptorTable {
     entries: [SegmentDescriptor; GDT_LEN],
-    tss_desc: arch::tss::TaskStateSegmentDescriptor,
+    tss_desc: TaskStateSegmentDescriptor,
 }
 
 impl GlobalDescriptorTable {
     pub const fn new() -> Self {
         Self {
             entries: [SegmentDescriptor::new(); GDT_LEN],
-            tss_desc: arch::tss::TaskStateSegmentDescriptor::new(),
+            tss_desc: TaskStateSegmentDescriptor::new(),
         }
     }
 
@@ -137,9 +136,9 @@ impl GlobalDescriptorTable {
         let limit = (size_of::<Self>() - 1) as u16;
         let base = self.entries.as_ptr() as u64;
 
-        let args = arch::DescriptorTableArgs { limit, base };
-        arch::lgdt(&args);
-        arch::ltr(TSS_SEL);
+        let args = x86_64::DescriptorTableArgs { limit, base };
+        x86_64::lgdt(&args);
+        x86_64::ltr(TSS_SEL);
     }
 }
 

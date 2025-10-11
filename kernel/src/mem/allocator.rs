@@ -1,7 +1,7 @@
-use super::{bitmap, paging::PAGE_SIZE};
 use crate::{
-    arch,
+    arch::x86_64,
     error::{Error, Result},
+    mem::{bitmap, paging::PAGE_SIZE},
     sync::mutex::Mutex,
 };
 use core::{
@@ -403,14 +403,14 @@ struct LinkedListAllocator {
 
 unsafe impl GlobalAlloc for LinkedListAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        arch::disabled_int(|| {
+        x86_64::disabled_int(|| {
             let ptr = self.heap.spin_lock().alloc_first_fit(layout).unwrap();
             ptr.as_ptr()
         })
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        arch::disabled_int(|| {
+        x86_64::disabled_int(|| {
             self.heap
                 .spin_lock()
                 .dealloc(NonNull::new_unchecked(ptr), layout)

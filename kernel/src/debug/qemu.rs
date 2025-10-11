@@ -1,4 +1,4 @@
-use crate::{arch::addr::IoPortAddress, kwarn};
+use crate::{arch::IoPortAddress, kwarn};
 
 pub const EXIT_SUCCESS: u32 = 0x10;
 pub const EXIT_FAILURE: u32 = 0x11;

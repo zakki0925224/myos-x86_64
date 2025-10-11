@@ -1,8 +1,7 @@
-use crate::addr::IoPortAddress;
 use crate::{
-    arch::{addr::*, register::msi::*},
+    arch::{x86_64::registers::msi::*, IoPortAddress, PhysicalAddress},
     error::{Error, Result},
-    mem::paging::{self, EntryMode, MappingInfo, PageWriteThroughLevel, ReadWrite, PAGE_SIZE},
+    mem::paging::{self, *},
 };
 use alloc::vec::Vec;
 use core::mem::transmute;
