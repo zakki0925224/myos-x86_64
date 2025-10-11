@@ -1,10 +1,6 @@
 use crate::{
     arch::{
-        x86_64::{
-            self,
-            gdt::*,
-            registers::{model_specific::*, Register},
-        },
+        x86_64::{self, gdt::*, registers::*},
         VirtualAddress,
     },
     device::tty,

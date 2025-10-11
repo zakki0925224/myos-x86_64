@@ -1,10 +1,7 @@
 use crate::{
     arch::x86_64::{
         self,
-        registers::{
-            segment::{self, Cs, Ss},
-            Register,
-        },
+        registers::*,
         tss::{self, TaskStateSegmentDescriptor},
     },
     error::Result,

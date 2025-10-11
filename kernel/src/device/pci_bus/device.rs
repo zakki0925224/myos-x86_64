@@ -1,5 +1,5 @@
 use crate::{
-    arch::x86_64::registers::msi::*,
+    arch::x86_64::registers::*,
     device::pci_bus::conf_space::{self, *},
     error::{Error, Result},
 };

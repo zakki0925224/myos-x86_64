@@ -1,5 +1,5 @@
 use crate::{
-    arch::{x86_64::registers::msi::*, IoPortAddress, PhysicalAddress},
+    arch::{x86_64::registers::*, IoPortAddress, PhysicalAddress},
     error::{Error, Result},
     mem::paging::{self, *},
 };

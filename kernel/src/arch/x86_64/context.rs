@@ -1,7 +1,4 @@
-use super::{
-    gdt::*,
-    registers::{control::Cr3, status::Rflags, Register},
-};
+use super::{gdt::*, registers::*};
 use common::boot_info::BootInfo;
 use core::arch::{asm, naked_asm};
 

@@ -1,9 +1,6 @@
 use crate::{
     arch::{
-        x86_64::{
-            self,
-            registers::{control::Cr2, segment::Cs, status::Rflags, Register},
-        },
+        x86_64::{self, registers::*},
         IoPortAddress,
     },
     debug, device,

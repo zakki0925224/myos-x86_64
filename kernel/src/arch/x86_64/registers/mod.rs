@@ -1,8 +1,14 @@
-pub mod control;
-pub mod model_specific;
-pub mod msi;
+pub use control::*;
+pub use model_specific::*;
+pub use msi::*;
+pub use segment::*;
+pub use status::*;
+
+mod control;
+mod model_specific;
+mod msi;
 pub mod segment;
-pub mod status;
+mod status;
 
 pub trait Register<T> {
     fn read() -> Self;

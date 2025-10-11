@@ -1,8 +1,5 @@
 use crate::{
-    arch::{
-        x86_64::registers::{control::Cr3, Register},
-        PhysicalAddress, VirtualAddress,
-    },
+    arch::{x86_64::registers::*, PhysicalAddress, VirtualAddress},
     error::Result,
     kinfo,
     mem::bitmap::{self, MemoryFrameInfo},
