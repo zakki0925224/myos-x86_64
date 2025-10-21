@@ -90,6 +90,9 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     )
     .unwrap();
 
+    // initialize task scheduler
+    task::scheduler::init().unwrap();
+
     // initialize urandom
     device::urandom::probe_and_attach().unwrap();
 
@@ -197,19 +200,19 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     if let Some(args) = init_app_exec_args {
         let splited: Vec<&str> = args.split(" ").collect();
 
-        loop {
-            if splited.len() == 0 || splited[0] == "" {
-                kerror!("Invalid init app exec args: {:?}", args);
-                break;
-            } else if let Err(err) = fs::exec::exec_elf(&splited[0].into(), &splited[1..], false) {
-                kerror!("{:?}", err);
-                break;
-            }
+        if splited.len() == 0 || splited[0] == "" {
+            kerror!("Invalid init app exec args: {:?}", args);
+        } else if let Err(err) = fs::exec::exec_elf(&splited[0].into(), &splited[1..], false) {
+            kerror!("{:?}", err);
+        } else if let Err(err) = task::scheduler::start() {
+            kerror!("Failed to start scheduler: {:?}", err);
         }
     }
 
+    kinfo!("Exit init app");
+
     loop {
-        x86_64::hlt();
+        x86_64::stihlt();
     }
 }
 

@@ -85,16 +85,13 @@ extern "sysv64" fn asm_syscall_handler() {
 
 #[no_mangle]
 extern "sysv64" fn syscall_handler(
-    arg0: u64, // (sysv abi) rdi
-    arg1: u64, // (sysv abi) rsi
-    arg2: u64, // (sysv abi) rdx
-    arg3: u64, // (sysv abi) rcx from r10
-    arg4: u64, // (sysv abi) r8
-    arg5: u64, // (sysv abi) r9
+    arg0: u64,  // (sysv abi) rdi
+    arg1: u64,  // (sysv abi) rsi
+    arg2: u64,  // (sysv abi) rdx
+    arg3: u64,  // (sysv abi) rcx from r10
+    _arg4: u64, // (sysv abi) r8
+    _arg5: u64, // (sysv abi) r9
 ) -> i64 /* rax */ {
-    // let args = [arg0, arg1, arg2, arg3, arg4, arg5];
-    // debug!("syscall: Called!(args: {:?})", args);
-
     match arg0 {
         // read syscall
         0 => {
@@ -187,6 +184,11 @@ extern "sysv64" fn syscall_handler(
                 kerror!("syscall: exec: {:?}", err);
                 return -1;
             }
+
+            if let Err(err) = task::scheduler::poll() {
+                kerror!("syscall: exec: Failed to switch to new task: {:?}", err);
+                return -1;
+            }
         }
         // getcwd syscall
         11 => {
@@ -247,123 +249,130 @@ extern "sysv64" fn syscall_handler(
 }
 
 fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
-    let fd_num = FileDescriptorNumber::new_val(fd_num)?;
+    x86_64::disabled_int(|| {
+        let fd_num = FileDescriptorNumber::new_val(fd_num)?;
 
-    match fd_num {
-        FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => {
-            return Err(Error::Failed("fd is not defined"));
-        }
-        FileDescriptorNumber::STDIN => {
-            if buf_len > 1 {
-                let mut input_s = None;
+        match fd_num {
+            FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => {
+                return Err(Error::Failed("fd is not defined"));
+            }
+            FileDescriptorNumber::STDIN => {
+                if buf_len > 1 {
+                    let input_s = loop {
+                        if let Some(line) = tty::get_line().ok().flatten() {
+                            break line;
+                        }
+                        x86_64::stihlt();
+                        x86_64::cli();
+                    };
 
-                while input_s.is_none() {
-                    if let Ok(s) = x86_64::disabled_int(|| tty::get_line()) {
-                        input_s = s;
-                    } else {
-                        x86_64::hlt();
+                    let c_s = util::cstring::into_cstring_bytes_with_nul(input_s);
+
+                    if buf_len < c_s.len() {
+                        return Err(Error::Failed("buffer is too small"));
+                    }
+
+                    unsafe {
+                        buf.copy_from_nonoverlapping(c_s.as_ptr(), c_s.len());
+                    }
+                } else if buf_len == 1 {
+                    let c = loop {
+                        if let Some(ch) = tty::get_char().ok() {
+                            break ch;
+                        }
+                        x86_64::stihlt();
+                        x86_64::cli();
+                    };
+
+                    if buf_len < 1 {
+                        return Err(Error::Failed("buffer is too small"));
+                    }
+
+                    unsafe {
+                        buf.write(c as u8);
                     }
                 }
+            }
+            fd => {
+                let data = vfs::read_file(&fd)?;
 
-                let c_s = util::cstring::into_cstring_bytes_with_nul(input_s.unwrap());
-
-                if buf_len < c_s.len() {
+                if buf_len < data.len() {
                     return Err(Error::Failed("buffer is too small"));
                 }
 
                 unsafe {
-                    buf.copy_from_nonoverlapping(c_s.as_ptr(), c_s.len());
-                }
-            } else if buf_len == 1 {
-                let mut c = None;
-                while c.is_none() {
-                    if let Ok(ch) = x86_64::disabled_int(|| tty::get_char()) {
-                        c = Some(ch);
-                    } else {
-                        x86_64::hlt();
-                    }
-                }
-
-                if buf_len < 1 {
-                    return Err(Error::Failed("buffer is too small"));
-                }
-
-                unsafe {
-                    buf.write(c.unwrap() as u8);
+                    buf.copy_from_nonoverlapping(data.as_ptr(), data.len());
                 }
             }
         }
-        fd => {
-            let data = vfs::read_file(&fd)?;
 
-            if buf_len < data.len() {
-                return Err(Error::Failed("buffer is too small"));
-            }
-
-            unsafe {
-                buf.copy_from_nonoverlapping(data.as_ptr(), data.len());
-            }
-        }
-    }
-
-    Ok(())
+        Ok(())
+    })
 }
 
 fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<()> {
-    let fd_num = FileDescriptorNumber::new_val(fd_num)?;
-    let buf_slice = unsafe { slice::from_raw_parts(buf, buf_len) };
+    x86_64::disabled_int(|| {
+        let fd_num = FileDescriptorNumber::new_val(fd_num)?;
+        let buf_slice = unsafe { slice::from_raw_parts(buf, buf_len) };
 
-    match fd_num {
-        FileDescriptorNumber::STDOUT => {
-            let s = String::from_utf8_lossy(buf_slice).to_string();
-            print!("{}", s);
+        match fd_num {
+            FileDescriptorNumber::STDOUT => {
+                let s = String::from_utf8_lossy(buf_slice).to_string();
+                print!("{}", s);
+            }
+            FileDescriptorNumber::STDIN | FileDescriptorNumber::STDERR => {
+                return Err(Error::Failed("fd is not defined"));
+            }
+            fd => {
+                vfs::write_file(&fd, buf_slice)?;
+            }
         }
-        FileDescriptorNumber::STDIN | FileDescriptorNumber::STDERR => {
-            return Err(Error::Failed("fd is not defined"));
-        }
-        fd => {
-            vfs::write_file(&fd, buf_slice)?;
-        }
-    }
 
-    Ok(())
+        Ok(())
+    })
 }
 
 fn sys_open(filepath: *const u8, flags: u32) -> Result<i32> {
-    let filepath = unsafe { util::cstring::from_cstring_ptr(filepath) }
-        .as_str()
-        .into();
-    let create = flags & 0x1 != 0;
-    let fd_num = vfs::open_file(&filepath, create)?;
-    task::push_fd_num(fd_num);
+    x86_64::disabled_int(|| {
+        let filepath = unsafe { util::cstring::from_cstring_ptr(filepath) }
+            .as_str()
+            .into();
+        let create = flags & 0x1 != 0;
+        let fd_num = vfs::open_file(&filepath, create)?;
+        task::scheduler::push_fd_num(fd_num)?;
 
-    Ok(fd_num.get() as i32)
+        Ok(fd_num.get() as i32)
+    })
 }
 
 fn sys_close(fd_num: i32) -> Result<()> {
-    let fd_num = FileDescriptorNumber::new_val(fd_num)?;
-    vfs::close_file(&fd_num)?;
-    task::remove_fd_num(&fd_num);
+    x86_64::disabled_int(|| {
+        let fd_num = FileDescriptorNumber::new_val(fd_num)?;
+        vfs::close_file(&fd_num)?;
+        task::scheduler::remove_fd_num(&fd_num)?;
 
-    Ok(())
+        Ok(())
+    })
 }
 
 fn sys_exit(status: i32) {
-    task::return_task(status);
+    task::scheduler::exit_current_user_task(status);
 }
 
 fn sys_sbrk(len: usize) -> Result<*const u8> {
-    assert!(len > 0);
-    let mem_frame_info = bitmap::alloc_mem_frame((len + PAGE_SIZE).div_ceil(PAGE_SIZE))?;
-    mem_frame_info.set_permissions_to_user()?;
-    let virt_addr = mem_frame_info.frame_start_virt_addr()?;
-    kdebug!(
-        "syscall: sbrk: allocated {} bytes at 0x{:x}",
-        mem_frame_info.frame_size,
-        virt_addr.get()
-    );
-    task::push_allocated_mem_frame_info_for_user_task(mem_frame_info)?;
-    Ok(virt_addr.as_ptr())
+    x86_64::disabled_int(|| {
+        assert!(len > 0);
+        let mem_frame_info = bitmap::alloc_mem_frame((len + PAGE_SIZE).div_ceil(PAGE_SIZE))?;
+        mem_frame_info.set_permissions_to_user()?;
+        let virt_addr = mem_frame_info.frame_start_virt_addr()?;
+        kdebug!(
+            "syscall: sbrk: allocated {} bytes at 0x{:x}",
+            mem_frame_info.frame_size,
+            virt_addr.get()
+        );
+        task::scheduler::push_allocated_mem_frame_info_for_user_task(mem_frame_info)?;
+        Ok(virt_addr.as_ptr())
+    })
 }
 
 fn sys_uname(buf: *mut Utsname) -> Result<()> {
@@ -385,22 +394,24 @@ fn sys_uname(buf: *mut Utsname) -> Result<()> {
 }
 
 fn sys_break() {
-    task::debug_user_task();
+    task::scheduler::debug_current_user_task();
     x86_64::int3();
 }
 
 fn sys_stat(fd_num: i32, buf: *mut Stat) -> Result<()> {
-    let fd_num = FileDescriptorNumber::new_val(fd_num)?;
-    let stat_mut = unsafe { &mut *buf };
+    x86_64::disabled_int(|| {
+        let fd_num = FileDescriptorNumber::new_val(fd_num)?;
+        let stat_mut = unsafe { &mut *buf };
 
-    let size = match fd_num {
-        FileDescriptorNumber::STDIN
-        | FileDescriptorNumber::STDOUT
-        | FileDescriptorNumber::STDERR => 0,
-        fd => vfs::file_size(&fd)?,
-    };
-    stat_mut.size = size;
-    Ok(())
+        let size = match fd_num {
+            FileDescriptorNumber::STDIN
+            | FileDescriptorNumber::STDOUT
+            | FileDescriptorNumber::STDERR => 0,
+            fd => vfs::file_size(&fd)?,
+        };
+        stat_mut.size = size;
+        Ok(())
+    })
 }
 
 fn sys_uptime() -> i64 {
@@ -408,196 +419,208 @@ fn sys_uptime() -> i64 {
 }
 
 fn sys_exec(args: *const u8, flags: u32) -> Result<()> {
-    let args = unsafe { util::cstring::from_cstring_ptr(args) };
-    let args: Vec<&str> = args.split(' ').collect();
+    x86_64::disabled_int(|| {
+        let args = unsafe { util::cstring::from_cstring_ptr(args) };
+        let args: Vec<&str> = args.split(' ').collect();
 
-    let enable_debug = flags & 0x1 != 0;
-    fs::exec::exec_elf(&args[0].into(), &args[1..], enable_debug)?;
-
-    Ok(())
+        let enable_debug = flags & 0x1 != 0;
+        fs::exec::exec_elf(&args[0].into(), &args[1..], enable_debug)
+    })
 }
 
 fn sys_getcwd(buf: *mut u8, buf_len: usize) -> Result<()> {
-    let cwd = vfs::cwd_path()?;
-    let cwd_s = util::cstring::into_cstring_bytes_with_nul(cwd.to_string());
+    x86_64::disabled_int(|| {
+        let cwd = vfs::cwd_path()?;
+        let cwd_s = util::cstring::into_cstring_bytes_with_nul(cwd.to_string());
 
-    if buf_len < cwd_s.len() {
-        return Err(Error::Failed("Buffer is too small"));
-    }
+        if buf_len < cwd_s.len() {
+            return Err(Error::Failed("Buffer is too small"));
+        }
 
-    unsafe {
-        buf.copy_from_nonoverlapping(cwd_s.as_ptr(), cwd_s.len());
-    }
+        unsafe {
+            buf.copy_from_nonoverlapping(cwd_s.as_ptr(), cwd_s.len());
+        }
 
-    Ok(())
+        Ok(())
+    })
 }
 
 fn sys_chdir(path: *const u8) -> Result<()> {
-    let path = unsafe { util::cstring::from_cstring_ptr(path) }
-        .as_str()
-        .into();
-    vfs::chdir(&path)?;
-    Ok(())
+    x86_64::disabled_int(|| {
+        let path = unsafe { util::cstring::from_cstring_ptr(path) }
+            .as_str()
+            .into();
+        vfs::chdir(&path)?;
+        Ok(())
+    })
 }
 
 fn sys_sbrksz(target: *const u8) -> Result<usize> {
     let target_virt_addr: VirtualAddress = (target as u64).into();
-    let size = task::get_memory_frame_size_by_virt_addr(target_virt_addr)?
+    let size = task::scheduler::get_memory_frame_size_by_virt_addr(target_virt_addr)?
         .ok_or(Error::Failed("Failed to get memory frame size"))?;
     Ok(size)
 }
 
 fn sys_getenames(path: *const u8, buf: *mut u8, buf_len: usize) -> Result<()> {
-    let path = unsafe { util::cstring::from_cstring_ptr(path) }
-        .as_str()
-        .into();
+    x86_64::disabled_int(|| {
+        let path = unsafe { util::cstring::from_cstring_ptr(path) }
+            .as_str()
+            .into();
 
-    let entry_names = fs::vfs::entry_names(&path)?;
-    let entry_names_s: Vec<u8> = entry_names
-        .iter()
-        .map(|n| util::cstring::into_cstring_bytes_with_nul(n.clone()))
-        .flatten()
-        .collect();
+        let entry_names = fs::vfs::entry_names(&path)?;
+        let entry_names_s: Vec<u8> = entry_names
+            .iter()
+            .map(|n| util::cstring::into_cstring_bytes_with_nul(n.clone()))
+            .flatten()
+            .collect();
 
-    if buf_len < entry_names_s.len() {
-        return Err(Error::Failed("Buffer is too small"));
-    }
+        if buf_len < entry_names_s.len() {
+            return Err(Error::Failed("Buffer is too small"));
+        }
 
-    unsafe {
-        buf.copy_from_nonoverlapping(entry_names_s.as_ptr(), entry_names_s.len());
-    }
+        unsafe {
+            buf.copy_from_nonoverlapping(entry_names_s.as_ptr(), entry_names_s.len());
+        }
 
-    Ok(())
+        Ok(())
+    })
 }
 
 fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) -> Result<()> {
-    let mut offset = 0;
-    let header: &IomsgHeader = unsafe { &*(msgbuf as *const IomsgHeader) };
-    offset += size_of::<IomsgHeader>();
-    kdebug!("{:?}", header);
+    x86_64::disabled_int(|| {
+        let mut offset = 0;
+        let header: &IomsgHeader = unsafe { &*(msgbuf as *const IomsgHeader) };
+        offset += size_of::<IomsgHeader>();
+        kdebug!("{:?}", header);
 
-    match header.cmd()? {
-        IomsgCommand::RemoveComponent => {
-            let layer_id: i32 = unsafe { *(msgbuf.offset(offset as isize) as *const i32) };
-            offset += size_of::<i32>();
+        match header.cmd()? {
+            IomsgCommand::RemoveComponent => {
+                let layer_id: i32 = unsafe { *(msgbuf.offset(offset as isize) as *const i32) };
+                offset += size_of::<i32>();
 
-            if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
-                return Err(Error::Failed("Invalid payload size for RemoveComponent"));
+                if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
+                    return Err(Error::Failed("Invalid payload size for RemoveComponent"));
+                }
+
+                if layer_id < 0 {
+                    return Err(Error::Failed("Invalid layer id"));
+                }
+
+                let layer_id = LayerId::new_val(layer_id as usize);
+                simple_window_manager::remove_component(&layer_id)?;
+                task::scheduler::remove_layer_id(&layer_id)?;
+
+                // reply
+                let reply_header = IomsgHeader::new(IomsgCommand::RemoveComponent, 0);
+                if replymsgbuf_len < size_of::<IomsgHeader>() {
+                    return Err(Error::Failed("Reply buffer is too small"));
+                }
+
+                unsafe {
+                    let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
+                    reply_header_ptr.write(reply_header);
+                }
             }
+            IomsgCommand::CreateComponentWindow => {
+                let x_pos: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+                offset += size_of::<usize>();
+                let y_pos: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+                offset += size_of::<usize>();
+                let width: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+                offset += size_of::<usize>();
+                let height: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+                offset += size_of::<usize>();
+                let title_ptr = unsafe { msgbuf.offset(offset as isize) as *const u8 };
 
-            if layer_id < 0 {
-                return Err(Error::Failed("Invalid layer id"));
+                let xy = (x_pos as usize, y_pos as usize);
+                let wh = (width as usize, height as usize);
+                let title = unsafe { util::cstring::from_cstring_ptr(title_ptr) };
+                offset += title.len() + 1; // null terminator
+
+                if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
+                    return Err(Error::Failed(
+                        "Invalid payload size for CreateComponentWindow",
+                    ));
+                }
+
+                let layer_id = simple_window_manager::create_window(title, xy, wh)?;
+                task::scheduler::push_layer_id(layer_id.clone())?;
+
+                // reply
+                let reply_header =
+                    IomsgHeader::new(IomsgCommand::CreateComponentWindow, size_of::<u64>() as u32);
+                if replymsgbuf_len < size_of::<IomsgHeader>() + reply_header.payload_size as usize {
+                    return Err(Error::Failed("Reply buffer is too small"));
+                }
+
+                unsafe {
+                    let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
+                    reply_header_ptr.write(reply_header);
+                    let reply_wd = layer_id.get() as u64;
+                    (replymsgbuf.offset(size_of::<IomsgHeader>() as isize) as *mut u64)
+                        .write(reply_wd);
+                }
             }
+            IomsgCommand::CreateComponentImage => {
+                let layer_id: i32 = unsafe { *(msgbuf.offset(offset as isize) as *const i32) };
+                offset += size_of::<i32>();
+                offset += 4; // padding
+                let image_width: usize =
+                    unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+                offset += size_of::<usize>();
+                let image_height: usize =
+                    unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+                offset += size_of::<usize>();
+                let pixel_format: u8 = unsafe { *(msgbuf.offset(offset as isize) as *const u8) };
+                offset += size_of::<u8>();
+                offset += 7; // padding
+                let framebuf_ptr =
+                    unsafe { *(msgbuf.offset(offset as isize) as *const usize) } as *const u8;
+                offset += size_of::<usize>();
 
-            let layer_id = LayerId::new_val(layer_id as usize);
-            simple_window_manager::remove_component(&layer_id)?;
-            task::remove_layer_id(&layer_id);
+                if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
+                    return Err(Error::Failed(
+                        "Invalid payload size for CreateComponentImage",
+                    ));
+                }
 
-            // reply
-            let reply_header = IomsgHeader::new(IomsgCommand::RemoveComponent, 0);
-            if replymsgbuf_len < size_of::<IomsgHeader>() {
-                return Err(Error::Failed("Reply buffer is too small"));
-            }
+                if layer_id < 0 {
+                    return Err(Error::Failed("Invalid layer id"));
+                }
 
-            unsafe {
-                let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
-                reply_header_ptr.write(reply_header);
+                let layer_id = LayerId::new_val(layer_id as usize);
+                let wh = (image_width, image_height);
+                let framebuf_virt_addr: VirtualAddress = (framebuf_ptr as u64).into();
+
+                let image =
+                    simple_window_manager::components::Image::create_and_push_from_framebuf(
+                        (0, 0),
+                        wh,
+                        framebuf_virt_addr,
+                        pixel_format.into(),
+                    )?;
+                let new_layer_id =
+                    simple_window_manager::add_component_to_window(&layer_id, Box::new(image))?;
+
+                // reply
+                let reply_header =
+                    IomsgHeader::new(IomsgCommand::CreateComponentImage, size_of::<i32>() as u32);
+                if replymsgbuf_len < size_of::<IomsgHeader>() + reply_header.payload_size as usize {
+                    return Err(Error::Failed("Reply buffer is too small"));
+                }
+
+                unsafe {
+                    let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
+                    reply_header_ptr.write(reply_header);
+                    (replymsgbuf.offset(size_of::<IomsgHeader>() as isize) as *mut i32)
+                        .write(new_layer_id.get() as i32);
+                }
             }
         }
-        IomsgCommand::CreateComponentWindow => {
-            let x_pos: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
-            offset += size_of::<usize>();
-            let y_pos: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
-            offset += size_of::<usize>();
-            let width: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
-            offset += size_of::<usize>();
-            let height: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
-            offset += size_of::<usize>();
-            let title_ptr = unsafe { msgbuf.offset(offset as isize) as *const u8 };
 
-            let xy = (x_pos as usize, y_pos as usize);
-            let wh = (width as usize, height as usize);
-            let title = unsafe { util::cstring::from_cstring_ptr(title_ptr) };
-            offset += title.len() + 1; // null terminator
-
-            if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
-                return Err(Error::Failed(
-                    "Invalid payload size for CreateComponentWindow",
-                ));
-            }
-
-            let layer_id = simple_window_manager::create_window(title, xy, wh)?;
-            task::push_layer_id(layer_id.clone());
-
-            // reply
-            let reply_header =
-                IomsgHeader::new(IomsgCommand::CreateComponentWindow, size_of::<u64>() as u32);
-            if replymsgbuf_len < size_of::<IomsgHeader>() + reply_header.payload_size as usize {
-                return Err(Error::Failed("Reply buffer is too small"));
-            }
-
-            unsafe {
-                let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
-                reply_header_ptr.write(reply_header);
-                let reply_wd = layer_id.get() as u64;
-                (replymsgbuf.offset(size_of::<IomsgHeader>() as isize) as *mut u64).write(reply_wd);
-            }
-        }
-        IomsgCommand::CreateComponentImage => {
-            let layer_id: i32 = unsafe { *(msgbuf.offset(offset as isize) as *const i32) };
-            offset += size_of::<i32>();
-            offset += 4; // padding
-            let image_width: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
-            offset += size_of::<usize>();
-            let image_height: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
-            offset += size_of::<usize>();
-            let pixel_format: u8 = unsafe { *(msgbuf.offset(offset as isize) as *const u8) };
-            offset += size_of::<u8>();
-            offset += 7; // padding
-            let framebuf_ptr =
-                unsafe { *(msgbuf.offset(offset as isize) as *const usize) } as *const u8;
-            offset += size_of::<usize>();
-
-            if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
-                return Err(Error::Failed(
-                    "Invalid payload size for CreateComponentImage",
-                ));
-            }
-
-            if layer_id < 0 {
-                return Err(Error::Failed("Invalid layer id"));
-            }
-
-            let layer_id = LayerId::new_val(layer_id as usize);
-            let wh = (image_width, image_height);
-            let framebuf_virt_addr: VirtualAddress = (framebuf_ptr as u64).into();
-
-            let image = simple_window_manager::components::Image::create_and_push_from_framebuf(
-                (0, 0),
-                wh,
-                framebuf_virt_addr,
-                pixel_format.into(),
-            )?;
-            let new_layer_id =
-                simple_window_manager::add_component_to_window(&layer_id, Box::new(image))?;
-
-            // reply
-            let reply_header =
-                IomsgHeader::new(IomsgCommand::CreateComponentImage, size_of::<i32>() as u32);
-            if replymsgbuf_len < size_of::<IomsgHeader>() + reply_header.payload_size as usize {
-                return Err(Error::Failed("Reply buffer is too small"));
-            }
-
-            unsafe {
-                let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
-                reply_header_ptr.write(reply_header);
-                (replymsgbuf.offset(size_of::<IomsgHeader>() as isize) as *mut i32)
-                    .write(new_layer_id.get() as i32);
-            }
-        }
-    }
-
-    Ok(())
+        Ok(())
+    })
 }
 
 pub fn enable() {

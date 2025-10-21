@@ -1,7 +1,8 @@
 use super::{draw::Draw, frame_buf};
-use crate::{error::Result, fs::file::bitmap::BitmapImage, sync::mutex::Mutex, util::id::*};
+use crate::{error::Result, fs::file::bitmap::BitmapImage, sync::mutex::Mutex};
 use alloc::vec::Vec;
 use common::graphic_info::PixelFormat;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 static mut LAYER_MAN: Mutex<LayerManager> = Mutex::new(LayerManager::new());
 
@@ -18,10 +19,23 @@ pub struct LayerInfo {
     pub format: PixelFormat,
 }
 
-#[derive(Debug, Clone)]
-pub struct LayerIdInner;
-impl AtomicIdMarker for LayerIdInner {}
-pub type LayerId = AtomicId<LayerIdInner>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LayerId(usize);
+
+impl LayerId {
+    fn new() -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
+
+    pub fn new_val(value: usize) -> Self {
+        Self(value)
+    }
+
+    pub fn get(&self) -> usize {
+        self.0
+    }
+}
 
 #[derive(Debug)]
 pub struct Layer {

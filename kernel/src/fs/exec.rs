@@ -1,5 +1,6 @@
 use super::{path::Path, vfs};
-use crate::{debug::dwarf, error::Result, kerror, kinfo, task};
+use crate::{debug::dwarf, error::Result, kerror, task};
+use alloc::string::ToString;
 use common::elf::Elf64;
 
 pub fn exec_elf(elf_path: &Path, args: &[&str], enable_debug: bool) -> Result<()> {
@@ -24,8 +25,9 @@ pub fn exec_elf(elf_path: &Path, args: &[&str], enable_debug: bool) -> Result<()
         None
     };
 
-    let exit_code = task::exec_user_task(elf64, elf_path, args, dwarf)?;
-    kinfo!("exec: Exited (code: {})", exit_code);
+    let arg0 = elf_path.to_string();
+    let args = &[&[arg0.as_str()], args].concat();
+    task::scheduler::add_user_task(elf64, args, dwarf)?;
 
     Ok(())
 }

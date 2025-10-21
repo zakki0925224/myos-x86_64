@@ -17,19 +17,18 @@ pub struct DescriptorTableArgs {
     pub base: u64,
 }
 
-fn sti() {
-    unsafe { asm!("sti") }
+pub fn cli() {
+    unsafe { asm!("cli") }
 }
 
-pub fn hlt() {
-    sti(); // enable interrupts
-    unsafe { asm!("hlt") }
+pub fn stihlt() {
+    unsafe { asm!("sti", "hlt") }
 }
 
-pub fn disabled_int<F: FnMut() -> R, R>(mut func: F) -> R {
-    unsafe { asm!("cli") };
+pub fn disabled_int<F: FnOnce() -> R, R>(func: F) -> R {
+    cli();
     let func_res = func();
-    sti();
+    unsafe { asm!("sti") }
     func_res
 }
 

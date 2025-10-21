@@ -91,7 +91,7 @@ pub fn user_app_debugger(
             if let Ok(s) = x86_64::disabled_int(|| tty::get_line()) {
                 input_s = s;
             } else {
-                x86_64::hlt();
+                x86_64::stihlt();
             }
         }
 

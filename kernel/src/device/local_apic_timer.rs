@@ -4,7 +4,7 @@ use crate::{
     error::Result,
     kdebug, kinfo,
     sync::{mutex::Mutex, volatile::Volatile},
-    task::async_task,
+    task::{async_task, scheduler},
     util::mmio::Mmio,
 };
 use alloc::vec::Vec;
@@ -217,6 +217,9 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
 
         // poll async tasks
         let _ = async_task::poll();
+
+        // poll user tasks
+        // let _ = scheduler::poll();
 
         Ok(())
     }

@@ -1,57 +1,68 @@
 use crate::{
-    arch::{
-        x86_64::context::{Context, ContextMode},
-        VirtualAddress,
-    },
+    arch::x86_64::context::{Context, ContextMode},
     debug::dwarf::Dwarf,
     error::{Error, Result},
-    fs::{
-        path::Path,
-        vfs::{self, *},
-    },
+    fs::vfs::{self, *},
     graphics::{multi_layer::LayerId, simple_window_manager},
     kdebug,
     mem::{
         bitmap::{self, MemoryFrameInfo},
         paging::{self, *},
     },
-    sync::mutex::Mutex,
-    util::{
-        self,
-        id::{AtomicId, AtomicIdMarker},
-    },
+    util,
 };
 use alloc::{string::ToString, vec::Vec};
 use common::elf::{self, Elf64};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 pub mod async_task;
+pub mod scheduler;
 pub mod syscall;
 
-const USER_TASK_STACK_SIZE: usize = 1024 * 1024; // 1MiB
+pub const USER_TASK_STACK_SIZE: usize = 1024 * 1024; // 1MiB
 
-static mut KERNEL_TASK: Mutex<Option<Task>> = Mutex::new(None);
-static mut USER_TASKS: Mutex<Vec<Task>> = Mutex::new(Vec::new());
-static mut USER_EXIT_STATUS: Option<i32> = None;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TaskId(usize);
+
+impl TaskId {
+    fn new() -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
+
+    pub fn get(&self) -> usize {
+        self.0
+    }
+}
 
 #[derive(Debug, Clone)]
-pub struct TaskIdInner;
-impl AtomicIdMarker for TaskIdInner {}
-pub type TaskId = AtomicId<TaskIdInner>;
-
-#[derive(Debug, Clone)]
-struct Task {
-    id: TaskId,
-    context: Context,
+pub struct TaskResource {
     args_mem_frame_info: Option<MemoryFrameInfo>,
     stack_mem_frame_info: MemoryFrameInfo,
     program_mem_info: Vec<(MemoryFrameInfo, MappingInfo)>,
     allocated_mem_frame_info: Vec<MemoryFrameInfo>,
     created_layer_ids: Vec<LayerId>,
     opend_fd_num: Vec<FileDescriptorNumber>,
-    dwarf: Option<Dwarf>,
 }
 
-impl Drop for Task {
+impl TaskResource {
+    fn new(
+        args_mem_frame_info: Option<MemoryFrameInfo>,
+        stack_mem_frame_info: MemoryFrameInfo,
+        program_mem_info: Vec<(MemoryFrameInfo, MappingInfo)>,
+    ) -> Self {
+        Self {
+            args_mem_frame_info,
+            stack_mem_frame_info,
+            program_mem_info,
+            allocated_mem_frame_info: Vec::new(),
+            created_layer_ids: Vec::new(),
+            opend_fd_num: Vec::new(),
+        }
+    }
+}
+
+impl Drop for TaskResource {
     fn drop(&mut self) {
         if let Some(args_mem_frame_info) = self.args_mem_frame_info {
             args_mem_frame_info.set_permissions_to_supervisor().unwrap();
@@ -75,11 +86,6 @@ impl Drop for Task {
                 pcd: false,
             })
             .unwrap();
-
-            // assert_eq!(
-            //     paging::calc_virt_addr(start.get().into()).unwrap().get(),
-            //     start.get()
-            // );
             bitmap::dealloc_mem_frame(*mem_info).unwrap();
         }
 
@@ -97,16 +103,32 @@ impl Drop for Task {
         for fd in self.opend_fd_num.iter() {
             vfs::close_file(fd).unwrap();
         }
-
-        kdebug!("task: Dropped tid: {}", self.id.get());
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskState {
+    Ready,
+    Running,
+    Sleeping,
+    Zombie,
+}
+
+#[derive(Debug, Clone)]
+pub struct Task {
+    id: TaskId,
+    state: TaskState,
+    resource: TaskResource,
+    context: Context,
+    exit_code: Option<i32>,
+    dwarf: Option<Dwarf>,
 }
 
 impl Task {
     fn new(
-        stack_size: usize, // 4KiB align
+        stack_size: usize,
         elf64: Option<Elf64>,
-        args: Option<&[&str]>, // file name + args
+        args: Option<&[&str]>,
         mode: ContextMode,
         dwarf: Option<Dwarf>,
     ) -> Result<Self> {
@@ -227,19 +249,20 @@ impl Task {
 
         Ok(Self {
             id: TaskId::new(),
+            state: TaskState::Ready,
+            resource: TaskResource::new(
+                args_mem_frame_info,
+                stack_mem_frame_info,
+                program_mem_info,
+            ),
             context,
-            args_mem_frame_info,
-            stack_mem_frame_info,
-            program_mem_info,
-            allocated_mem_frame_info: Vec::new(),
-            created_layer_ids: Vec::new(),
-            opend_fd_num: Vec::new(),
+            exit_code: None,
             dwarf,
         })
     }
 
     fn unmap_virt_addr(&self) -> Result<()> {
-        for (_, mapping_info) in self.program_mem_info.iter() {
+        for (_, mapping_info) in self.resource.program_mem_info.iter() {
             let start = mapping_info.start;
             paging::update_mapping(&MappingInfo {
                 start,
@@ -250,18 +273,13 @@ impl Task {
                 pwt: PageWriteThroughLevel::WriteThrough,
                 pcd: false,
             })?;
-
-            // assert_eq!(
-            //     paging::calc_virt_addr(start.get().into()).unwrap().get(),
-            //     start.get()
-            // );
         }
 
         Ok(())
     }
 
     fn remap_virt_addr(&self) -> Result<()> {
-        for (_, mapping_info) in self.program_mem_info.iter() {
+        for (_, mapping_info) in self.resource.program_mem_info.iter() {
             paging::update_mapping(mapping_info)?;
         }
 
@@ -279,189 +297,16 @@ impl Task {
     }
 }
 
-pub fn exec_user_task(
-    elf64: Elf64,
-    path: &Path,
-    args: &[&str],
-    dwarf: Option<Dwarf>,
-) -> Result<i32> {
-    let kernel_task = unsafe { KERNEL_TASK.get_force_mut() };
-    let user_tasks = unsafe { USER_TASKS.get_force_mut() };
-
-    if kernel_task.is_none() {
-        // stack is unused, because already allocated static area for kernel stack
-        *kernel_task = Some(Task::new(0, None, None, ContextMode::Kernel, None)?);
-    }
-
-    let is_user = !user_tasks.is_empty();
-    if is_user {
-        user_tasks.last().unwrap().unmap_virt_addr()?;
-    }
-
-    let user_task = Task::new(
-        USER_TASK_STACK_SIZE,
-        Some(elf64),
-        Some(&[&[path.to_string().as_str()], args].concat()),
-        ContextMode::User,
-        dwarf,
-    );
-
-    let task = match user_task {
-        Ok(task) => task,
-        Err(e) => {
-            if is_user {
-                user_tasks.last().unwrap().remap_virt_addr()?;
-            }
-            return Err(e);
-        }
-    };
-
-    // debug_task(&task);
-    user_tasks.push(task);
-
-    let is_user = user_tasks.len() > 1;
-    let current_task = if is_user {
-        user_tasks.get(user_tasks.len() - 2).unwrap()
-    } else {
-        kernel_task.as_ref().unwrap()
-    };
-
-    current_task.switch_to(user_tasks.last().unwrap());
-
-    // returned
-    drop(user_tasks.pop().unwrap());
-    if let Some(task) = user_tasks.last() {
-        task.remap_virt_addr()?;
-    }
-
-    // get exit status
-    let exit_status = unsafe {
-        let status = match USER_EXIT_STATUS {
-            Some(s) => s,
-            None => panic!("task: User exit status was not found"),
-        };
-        USER_EXIT_STATUS = None;
-        status
-    };
-
-    Ok(exit_status)
-}
-
-pub fn push_allocated_mem_frame_info_for_user_task(mem_frame_info: MemoryFrameInfo) -> Result<()> {
-    let user_task = unsafe { USER_TASKS.get_force_mut() }
-        .iter_mut()
-        .last()
-        .unwrap();
-    user_task.allocated_mem_frame_info.push(mem_frame_info);
-
-    Ok(())
-}
-
-pub fn get_memory_frame_size_by_virt_addr(virt_addr: VirtualAddress) -> Result<Option<usize>> {
-    let user_task = unsafe { USER_TASKS.get_force_mut() }
-        .iter_mut()
-        .last()
-        .unwrap();
-
-    for mem_frame_info in &user_task.allocated_mem_frame_info {
-        if mem_frame_info.frame_start_virt_addr()? == virt_addr {
-            return Ok(Some(mem_frame_info.frame_size));
-        }
-    }
-
-    Ok(None)
-}
-
-pub fn push_layer_id(layer_id: LayerId) {
-    let user_task = unsafe { USER_TASKS.get_force_mut() }
-        .iter_mut()
-        .last()
-        .unwrap();
-
-    user_task.created_layer_ids.push(layer_id);
-}
-
-pub fn remove_layer_id(layer_id: &LayerId) {
-    let user_task = unsafe { USER_TASKS.get_force_mut() }
-        .iter_mut()
-        .last()
-        .unwrap();
-
-    user_task
-        .created_layer_ids
-        .retain(|cwd| cwd.get() != layer_id.get());
-}
-
-pub fn push_fd_num(fd_num: FileDescriptorNumber) {
-    let user_task = unsafe { USER_TASKS.get_force_mut() }
-        .iter_mut()
-        .last()
-        .unwrap();
-
-    user_task.opend_fd_num.push(fd_num);
-}
-
-pub fn remove_fd_num(fd_num: &FileDescriptorNumber) {
-    let user_task = unsafe { USER_TASKS.get_force_mut() }
-        .iter_mut()
-        .last()
-        .unwrap();
-
-    user_task
-        .opend_fd_num
-        .retain(|cfdn| cfdn.get() != fd_num.get());
-}
-
-pub fn return_task(exit_status: i32) {
-    unsafe {
-        USER_EXIT_STATUS = Some(exit_status);
-    }
-
-    let user_tasks = unsafe { USER_TASKS.get_force_mut() };
-    let current_task = user_tasks.last().unwrap();
-
-    let before_task;
-    if let Some(before_task_i) = user_tasks.len().checked_sub(2) {
-        before_task = user_tasks.get(before_task_i).unwrap();
-    } else {
-        before_task = unsafe { KERNEL_TASK.get_force_mut() }.as_ref().unwrap();
-    }
-
-    current_task.switch_to(before_task);
-
-    unreachable!();
-}
-
-pub fn debug_user_task() {
-    kdebug!("===USER TASK INFO===");
-    let user_task = unsafe { USER_TASKS.get_force_mut() }.last();
-    if let Some(task) = user_task {
-        debug_task(task);
-    } else {
-        kdebug!("User task no available");
-    }
-}
-
-pub fn get_running_user_task_dwarf() -> Option<Dwarf> {
-    let user_task = unsafe { USER_TASKS.get_force_mut() }.last();
-    if let Some(task) = user_task {
-        task.dwarf.clone()
-    } else {
-        None
-    }
-}
-
-pub fn is_running_user_task() -> bool {
-    unsafe { USER_TASKS.get_force_mut() }.len() > 1
-}
-
-fn debug_task(task: &Task) {
+pub fn debug_task(task: &Task) {
     let ctx = &task.context;
     kdebug!("task id: {}", task.id.get());
     kdebug!(
         "stack: (phys)0x{:x}, size: 0x{:x}bytes",
-        task.stack_mem_frame_info.frame_start_phys_addr.get(),
-        task.stack_mem_frame_info.frame_size,
+        task.resource
+            .stack_mem_frame_info
+            .frame_start_phys_addr
+            .get(),
+        task.resource.stack_mem_frame_info.frame_size,
     );
     kdebug!("context:");
     kdebug!(
@@ -507,7 +352,7 @@ fn debug_task(task: &Task) {
     );
 
     kdebug!("args mem frame info:");
-    if let Some(mem_frame_info) = &task.args_mem_frame_info {
+    if let Some(mem_frame_info) = &task.resource.args_mem_frame_info {
         let virt_addr = mem_frame_info.frame_start_virt_addr().unwrap();
         kdebug!(
             "\t(virt)0x{:x}-0x{:x}",
@@ -517,15 +362,21 @@ fn debug_task(task: &Task) {
     }
 
     kdebug!("stack mem frame info:");
-    let virt_addr = task.stack_mem_frame_info.frame_start_virt_addr().unwrap();
+    let virt_addr = task
+        .resource
+        .stack_mem_frame_info
+        .frame_start_virt_addr()
+        .unwrap();
     kdebug!(
         "\t(virt)0x{:x}-0x{:x}",
         virt_addr.get(),
-        virt_addr.offset(task.stack_mem_frame_info.frame_size).get(),
+        virt_addr
+            .offset(task.resource.stack_mem_frame_info.frame_size)
+            .get(),
     );
 
     kdebug!("program mem frame info:");
-    for (mem_frame_info, mapping_info) in &task.program_mem_info {
+    for (mem_frame_info, mapping_info) in &task.resource.program_mem_info {
         let virt_addr = mem_frame_info.frame_start_virt_addr().unwrap();
         kdebug!(
             "\t(virt)0x{:x}-0x{:x} mapped to (virt)0x{:x}-0x{:x}",
@@ -537,7 +388,7 @@ fn debug_task(task: &Task) {
     }
 
     kdebug!("allocated mem frame info:");
-    for mem_frame_info in &task.allocated_mem_frame_info {
+    for mem_frame_info in &task.resource.allocated_mem_frame_info {
         let virt_addr = mem_frame_info.frame_start_virt_addr().unwrap();
 
         kdebug!(
