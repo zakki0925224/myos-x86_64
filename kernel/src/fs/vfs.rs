@@ -5,20 +5,33 @@ use crate::{
     fs::fat::dir_entry::Attribute,
     kwarn,
     sync::mutex::Mutex,
-    util::id::*,
 };
 use alloc::{collections::btree_map::BTreeMap, string::String, vec::Vec};
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::{
+    fmt,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 static mut VFS: Mutex<VirtualFileSystem> = Mutex::new(VirtualFileSystem::new());
 
-#[derive(Debug, Clone, Copy)]
-pub struct VfsFileIdInner;
-impl AtomicIdMarker for VfsFileIdInner {}
-pub type VfsFileId = AtomicId<VfsFileIdInner>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct VfsFileId(usize);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FileDescriptorNumber(u64);
+impl VfsFileId {
+    fn new() -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FileDescriptorNumber(usize);
+
+impl fmt::Display for FileDescriptorNumber {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl FileDescriptorNumber {
     pub const STDIN: Self = Self(0);
@@ -26,8 +39,8 @@ impl FileDescriptorNumber {
     pub const STDERR: Self = Self(2);
 
     pub fn new() -> Self {
-        static NEXT_NUM: AtomicU64 = AtomicU64::new(3);
-        Self(NEXT_NUM.fetch_add(1, Ordering::Relaxed))
+        static NEXT: AtomicUsize = AtomicUsize::new(3);
+        Self(NEXT.fetch_add(1, Ordering::Relaxed))
     }
 
     pub fn new_val(value: i32) -> Result<Self> {
@@ -35,10 +48,10 @@ impl FileDescriptorNumber {
             return Err(Error::Failed("Invalid file descriptor number"));
         }
 
-        Ok(Self(value as u64))
+        Ok(Self(value as usize))
     }
 
-    pub fn get(&self) -> u64 {
+    pub fn get(&self) -> usize {
         self.0
     }
 }

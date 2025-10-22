@@ -16,13 +16,14 @@ use crate::{
         paging::{self, *},
     },
     sync::mutex::Mutex,
-    util::{
-        self,
-        id::{AtomicId, AtomicIdMarker},
-    },
+    util,
 };
 use alloc::{string::ToString, vec::Vec};
 use common::elf::{self, Elf64};
+use core::{
+    fmt,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 pub mod async_task;
 pub mod syscall;
@@ -33,10 +34,25 @@ static mut KERNEL_TASK: Mutex<Option<Task>> = Mutex::new(None);
 static mut USER_TASKS: Mutex<Vec<Task>> = Mutex::new(Vec::new());
 static mut USER_EXIT_STATUS: Option<i32> = None;
 
-#[derive(Debug, Clone)]
-pub struct TaskIdInner;
-impl AtomicIdMarker for TaskIdInner {}
-pub type TaskId = AtomicId<TaskIdInner>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TaskId(usize);
+
+impl fmt::Display for TaskId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TaskId {
+    fn new() -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
+
+    pub fn new_val(value: usize) -> Self {
+        Self(value)
+    }
+}
 
 #[derive(Debug, Clone)]
 struct Task {
@@ -98,7 +114,7 @@ impl Drop for Task {
             vfs::close_file(fd).unwrap();
         }
 
-        kdebug!("task: Dropped tid: {}", self.id.get());
+        kdebug!("task: Dropped tid: {}", self.id);
     }
 }
 
@@ -269,11 +285,7 @@ impl Task {
     }
 
     fn switch_to(&self, next_task: &Task) {
-        kdebug!(
-            "task: Switch context tid: {} to {}",
-            self.id.get(),
-            next_task.id.get()
-        );
+        kdebug!("task: Switch context tid: {} to {}", self.id, next_task.id);
 
         self.context.switch_to(&next_task.context);
     }
@@ -387,9 +399,7 @@ pub fn remove_layer_id(layer_id: &LayerId) {
         .last()
         .unwrap();
 
-    user_task
-        .created_layer_ids
-        .retain(|cwd| cwd.get() != layer_id.get());
+    user_task.created_layer_ids.retain(|cwd| *cwd != *layer_id);
 }
 
 pub fn push_fd_num(fd_num: FileDescriptorNumber) {
@@ -407,9 +417,7 @@ pub fn remove_fd_num(fd_num: &FileDescriptorNumber) {
         .last()
         .unwrap();
 
-    user_task
-        .opend_fd_num
-        .retain(|cfdn| cfdn.get() != fd_num.get());
+    user_task.opend_fd_num.retain(|cfdn| *cfdn != *fd_num);
 }
 
 pub fn return_task(exit_status: i32) {
@@ -457,7 +465,7 @@ pub fn is_running_user_task() -> bool {
 
 fn debug_task(task: &Task) {
     let ctx = &task.context;
-    kdebug!("task id: {}", task.id.get());
+    kdebug!("task id: {}", task.id);
     kdebug!(
         "stack: (phys)0x{:x}, size: 0x{:x}bytes",
         task.stack_mem_frame_info.frame_start_phys_addr.get(),

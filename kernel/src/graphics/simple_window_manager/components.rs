@@ -229,7 +229,7 @@ impl Component for Window {
             // title
             l.draw_string_wrap(
                 (7, 7),
-                &format!("<{}> {}", self.layer_id.get(), self.title),
+                &format!("<{}> {}", self.layer_id, self.title),
                 GLOBAL_THEME.wm_window_titlebar_fore_color,
                 GLOBAL_THEME.wm_window_titlebar_back_color,
             )?;
@@ -309,11 +309,7 @@ impl Window {
     }
 
     pub fn remove_child(&mut self, layer_id: &LayerId) -> Result<()> {
-        if let Some(pos) = self
-            .children
-            .iter()
-            .position(|c| c.layer_id().get() == layer_id.get())
-        {
+        if let Some(pos) = self.children.iter().position(|c| c.layer_id() == *layer_id) {
             self.children.remove(pos);
             Ok(())
         } else {

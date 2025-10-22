@@ -123,7 +123,7 @@ impl Executor {
                     let mut context = Context::from_waker(&waker);
                     match task.poll(&mut context) {
                         Poll::Ready(()) => {
-                            kdebug!("task: Done (id: {})", task.id.get());
+                            kdebug!("task: Done (id: {})", task.id);
                         }
                         Poll::Pending => {
                             queue.push_back(task);

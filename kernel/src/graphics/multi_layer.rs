@@ -1,7 +1,11 @@
 use super::{draw::Draw, frame_buf};
-use crate::{error::Result, fs::file::bitmap::BitmapImage, sync::mutex::Mutex, util::id::*};
+use crate::{error::Result, fs::file::bitmap::BitmapImage, sync::mutex::Mutex};
 use alloc::vec::Vec;
 use common::graphic_info::PixelFormat;
+use core::{
+    fmt,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 static mut LAYER_MAN: Mutex<LayerManager> = Mutex::new(LayerManager::new());
 
@@ -18,10 +22,29 @@ pub struct LayerInfo {
     pub format: PixelFormat,
 }
 
-#[derive(Debug, Clone)]
-pub struct LayerIdInner;
-impl AtomicIdMarker for LayerIdInner {}
-pub type LayerId = AtomicId<LayerIdInner>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LayerId(usize);
+
+impl fmt::Display for LayerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl LayerId {
+    fn new() -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
+
+    pub fn new_val(value: usize) -> Self {
+        Self(value)
+    }
+
+    pub fn get(&self) -> usize {
+        self.0
+    }
+}
 
 #[derive(Debug)]
 pub struct Layer {
@@ -106,22 +129,18 @@ impl LayerManager {
 
     fn remove_layer(&mut self, layer_id: &LayerId) -> Result<()> {
         if self.get_layer(layer_id).is_err() {
-            return Err(LayerError::InvalidLayerIdError(layer_id.get()).into());
+            return Err(LayerError::InvalidLayerIdError(layer_id.0).into());
         }
 
-        self.layers.retain(|l| l.id.get() != layer_id.get());
+        self.layers.retain(|l| l.id != *layer_id);
 
         Ok(())
     }
 
     fn bring_layer_to_front(&mut self, layer_id: &LayerId) -> Result<()> {
-        let index = match self
-            .layers
-            .iter()
-            .position(|l| l.id.get() == layer_id.get())
-        {
+        let index = match self.layers.iter().position(|l| l.id == *layer_id) {
             Some(i) => i,
-            None => return Err(LayerError::InvalidLayerIdError(layer_id.get()).into()),
+            None => return Err(LayerError::InvalidLayerIdError(layer_id.0).into()),
         };
         let layer = self.layers.remove(index);
 
@@ -146,8 +165,8 @@ impl LayerManager {
     fn get_layer(&mut self, layer_id: &LayerId) -> Result<&mut Layer> {
         self.layers
             .iter_mut()
-            .find(|l| l.id.get() == layer_id.get())
-            .ok_or(LayerError::InvalidLayerIdError(layer_id.get()).into())
+            .find(|l| l.id == *layer_id)
+            .ok_or(LayerError::InvalidLayerIdError(layer_id.0).into())
     }
 
     fn draw_to_frame_buf(&mut self) -> Result<()> {

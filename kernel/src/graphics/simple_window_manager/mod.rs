@@ -181,7 +181,7 @@ impl SimpleWindowManager {
                 let w = self
                     .windows
                     .iter_mut()
-                    .find(|w| w.layer_id().get() == window_id.get())
+                    .find(|w| w.layer_id() == *window_id)
                     .ok_or(SimpleWindowManagerError::WindowWasNotFound {
                         layer_id: window_id.get(),
                     })?;
@@ -283,7 +283,7 @@ impl SimpleWindowManager {
         let window = self
             .windows
             .iter_mut()
-            .find(|w| w.layer_id().get() == layer_id.get())
+            .find(|w| w.layer_id() == *layer_id)
             .ok_or(SimpleWindowManagerError::WindowWasNotFound {
                 layer_id: layer_id.get(),
             })?;
@@ -296,11 +296,7 @@ impl SimpleWindowManager {
         }
 
         // try remove window
-        if let Some(index) = self
-            .windows
-            .iter()
-            .position(|w| w.layer_id().get() == layer_id.get())
-        {
+        if let Some(index) = self.windows.iter().position(|w| w.layer_id() == *layer_id) {
             self.windows.remove(index);
             return Ok(());
         }
