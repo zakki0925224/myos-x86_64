@@ -249,7 +249,10 @@ fn test_simple_csi() {
         stream.push('[').unwrap(),
         Some(AnsiEvent::AnsiControlChar('['))
     );
-    assert_eq!(stream.push('1').unwrap(), None);
+    assert_eq!(
+        stream.push('1').unwrap(),
+        Some(AnsiEvent::AnsiControlChar('1'))
+    );
     assert_eq!(
         stream.push('A').unwrap(),
         Some(AnsiEvent::CsiSequence(CsiSequence::CursorUp(1)))
