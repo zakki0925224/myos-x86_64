@@ -8,7 +8,6 @@ use common::mem_desc::MemoryDescriptor;
 
 pub mod allocator;
 pub mod bitmap;
-pub mod frame_collection;
 pub mod paging;
 
 pub fn init(mem_map: &[MemoryDescriptor]) -> Result<()> {

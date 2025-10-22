@@ -258,11 +258,8 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
                 let mut input_s = None;
 
                 while input_s.is_none() {
-                    if let Ok(s) = x86_64::disabled_int(|| tty::get_line()) {
-                        input_s = s;
-                    } else {
-                        x86_64::hlt();
-                    }
+                    input_s = x86_64::disabled_int(|| tty::get_line()).ok().flatten();
+                    x86_64::hlt();
                 }
 
                 let c_s = util::cstring::into_cstring_bytes_with_nul(input_s.unwrap());
@@ -277,11 +274,8 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
             } else if buf_len == 1 {
                 let mut c = None;
                 while c.is_none() {
-                    if let Ok(ch) = x86_64::disabled_int(|| tty::get_char()) {
-                        c = Some(ch);
-                    } else {
-                        x86_64::hlt();
-                    }
+                    c = x86_64::disabled_int(|| tty::get_char()).ok();
+                    x86_64::hlt();
                 }
 
                 if buf_len < 1 {
