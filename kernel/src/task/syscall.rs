@@ -329,7 +329,7 @@ fn sys_open(filepath: *const u8, flags: u32) -> Result<i32> {
         .into();
     let create = flags & 0x1 != 0;
     let fd_num = vfs::open_file(&filepath, create)?;
-    task::push_fd_num(fd_num);
+    task::scheduler::push_fd_num(fd_num);
 
     Ok(fd_num.get() as i32)
 }
@@ -337,13 +337,13 @@ fn sys_open(filepath: *const u8, flags: u32) -> Result<i32> {
 fn sys_close(fd_num: i32) -> Result<()> {
     let fd_num = FileDescriptorNumber::new_val(fd_num)?;
     vfs::close_file(&fd_num)?;
-    task::remove_fd_num(&fd_num);
+    task::scheduler::remove_fd_num(&fd_num);
 
     Ok(())
 }
 
 fn sys_exit(status: i32) {
-    task::return_task(status);
+    task::scheduler::return_task(status)
 }
 
 fn sys_sbrk(len: usize) -> Result<*const u8> {
@@ -356,7 +356,7 @@ fn sys_sbrk(len: usize) -> Result<*const u8> {
         mem_frame_info.frame_size,
         virt_addr.get()
     );
-    task::push_allocated_mem_frame_info_for_user_task(mem_frame_info)?;
+    task::scheduler::push_allocated_mem_frame_info_for_user_task(mem_frame_info)?;
     Ok(virt_addr.as_ptr())
 }
 
@@ -379,7 +379,7 @@ fn sys_uname(buf: *mut Utsname) -> Result<()> {
 }
 
 fn sys_break() {
-    task::debug_user_task();
+    task::scheduler::debug_user_task();
     x86_64::int3();
 }
 
@@ -436,7 +436,7 @@ fn sys_chdir(path: *const u8) -> Result<()> {
 
 fn sys_sbrksz(target: *const u8) -> Result<usize> {
     let target_virt_addr: VirtualAddress = (target as u64).into();
-    let size = task::get_memory_frame_size_by_virt_addr(target_virt_addr)?
+    let size = task::scheduler::get_memory_frame_size_by_virt_addr(target_virt_addr)?
         .ok_or(Error::Failed("Failed to get memory frame size"))?;
     Ok(size)
 }
@@ -485,7 +485,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
 
             let layer_id = LayerId::new_val(layer_id as usize);
             simple_window_manager::remove_component(&layer_id)?;
-            task::remove_layer_id(&layer_id);
+            task::scheduler::remove_layer_id(&layer_id);
 
             // reply
             let reply_header = IomsgHeader::new(IomsgCommand::RemoveComponent, 0);
@@ -521,7 +521,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             }
 
             let layer_id = simple_window_manager::create_window(title, xy, wh)?;
-            task::push_layer_id(layer_id.clone());
+            task::scheduler::push_layer_id(layer_id.clone());
 
             // reply
             let reply_header =

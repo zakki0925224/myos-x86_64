@@ -271,7 +271,7 @@ extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
 
     let debugger_result;
 
-    if let Some(dwarf) = task::get_running_user_task_dwarf() {
+    if let Some(dwarf) = task::scheduler::get_running_user_task_dwarf() {
         match debug::user_app_debugger(&stack_frame, &dwarf) {
             Ok(res) => debugger_result = res,
             Err(err) => {
@@ -302,10 +302,8 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 extern "x86-interrupt" fn general_protection_fault_handler(stack_frame: InterruptStackFrame) {
     kerror!("int: GENERAL PROTECTION FAULT, {:?}", stack_frame);
 
-    if task::is_running_user_task() {
-        task::debug_user_task();
-        task::return_task(122);
-        unreachable!();
+    if task::scheduler::debug_user_task() {
+        task::scheduler::return_task(122);
     }
 
     panic!();
@@ -324,10 +322,8 @@ extern "x86-interrupt" fn page_fault_handler(
         accessed_virt_addr, error_code, stack_frame, page_virt_addr.get(), page_table_entry
     );
 
-    if task::is_running_user_task() {
-        task::debug_user_task();
-        task::return_task(123);
-        unreachable!();
+    if task::scheduler::debug_user_task() {
+        task::scheduler::return_task(123);
     }
 
     panic!();
