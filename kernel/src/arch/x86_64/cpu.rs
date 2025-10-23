@@ -169,8 +169,9 @@ fn cpuid(eax: u32) -> (u32, u32, u32, u32) {
             lateout("eax") eax_out,
             lateout("ecx") ecx,
             lateout("edx") edx,
+            options(nomem, nostack)
         );
-        asm!("mov {:e}, ebx", out(reg) ebx);
+        asm!("mov {:e}, ebx", out(reg) ebx, options(nomem, nostack));
     }
 
     (eax_out, ebx, ecx, edx)

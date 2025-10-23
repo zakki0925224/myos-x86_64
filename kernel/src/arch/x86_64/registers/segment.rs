@@ -8,7 +8,7 @@ impl Register<u16> for Cs {
         let cs;
 
         unsafe {
-            asm!("mov {:x}, cs", out(reg) cs);
+            asm!("mov {:x}, cs", out(reg) cs, options(nomem, nostack));
         }
 
         Self(cs)
@@ -23,7 +23,8 @@ impl Register<u16> for Cs {
                 "ljmp [rsp]",
                 "55:",
                 "add rsp, 8 + 2",
-                in("cx") self.0
+                in("cx") self.0,
+                options(nomem, nostack)
             );
         }
     }
@@ -44,7 +45,7 @@ impl Register<u16> for Ss {
         let ss;
 
         unsafe {
-            asm!("mov {:x}, ss", out(reg) ss);
+            asm!("mov {:x}, ss", out(reg) ss, options(nomem, nostack));
         }
 
         Self(ss)
@@ -52,7 +53,7 @@ impl Register<u16> for Ss {
 
     fn write(&self) {
         unsafe {
-            asm!("mov ss, ax", in("ax") self.0);
+            asm!("mov ss, ax", in("ax") self.0, options(nomem, nostack));
         }
     }
 
@@ -72,7 +73,7 @@ impl Register<u16> for Ds {
         let ds;
 
         unsafe {
-            asm!("mov {:x}, ds", out(reg) ds);
+            asm!("mov {:x}, ds", out(reg) ds, options(nomem, nostack));
         }
 
         Self(ds)
@@ -80,7 +81,7 @@ impl Register<u16> for Ds {
 
     fn write(&self) {
         unsafe {
-            asm!("mov ds, ax", in("ax") self.0);
+            asm!("mov ds, ax", in("ax") self.0, options(nomem, nostack));
         }
     }
 
@@ -100,7 +101,7 @@ impl Register<u16> for Es {
         let es;
 
         unsafe {
-            asm!("mov {:x}, es", out(reg) es);
+            asm!("mov {:x}, es", out(reg) es, options(nomem, nostack));
         }
 
         Self(es)
@@ -108,7 +109,7 @@ impl Register<u16> for Es {
 
     fn write(&self) {
         unsafe {
-            asm!("mov es, ax", in("ax") self.0);
+            asm!("mov es, ax", in("ax") self.0, options(nomem, nostack));
         }
     }
 
@@ -128,7 +129,7 @@ impl Register<u16> for Fs {
         let fs;
 
         unsafe {
-            asm!("mov {:x}, fs", out(reg) fs);
+            asm!("mov {:x}, fs", out(reg) fs, options(nomem, nostack));
         }
 
         Self(fs)
@@ -136,7 +137,7 @@ impl Register<u16> for Fs {
 
     fn write(&self) {
         unsafe {
-            asm!("mov fs, ax", in("ax") self.0);
+            asm!("mov fs, ax", in("ax") self.0, options(nomem, nostack));
         }
     }
 
@@ -156,7 +157,7 @@ impl Register<u16> for Gs {
         let gs;
 
         unsafe {
-            asm!("mov {:x}, gs", out(reg) gs);
+            asm!("mov {:x}, gs", out(reg) gs, options(nomem, nostack));
         }
 
         Self(gs)
@@ -164,7 +165,7 @@ impl Register<u16> for Gs {
 
     fn write(&self) {
         unsafe {
-            asm!("mov gs, ax", in("ax") self.0);
+            asm!("mov gs, ax", in("ax") self.0, options(nomem, nostack));
         }
     }
 

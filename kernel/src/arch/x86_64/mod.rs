@@ -17,24 +17,19 @@ pub struct DescriptorTableArgs {
     pub base: u64,
 }
 
-fn sti() {
-    unsafe { asm!("sti") }
-}
-
-pub fn hlt() {
-    sti(); // enable interrupts
-    unsafe { asm!("hlt") }
+pub fn stihlt() {
+    unsafe { asm!("sti", "hlt", options(nomem, nostack)) }
 }
 
 pub fn disabled_int<F: FnMut() -> R, R>(mut func: F) -> R {
-    unsafe { asm!("cli") };
+    unsafe { asm!("cli", options(nomem, nostack)) };
     let func_res = func();
-    sti();
+    unsafe { asm!("sti", options(nomem, nostack)) };
     func_res
 }
 
 pub fn int3() {
-    unsafe { asm!("int3") }
+    unsafe { asm!("int3", options(nomem, nostack)) }
 }
 
 pub fn out8(port: u16, data: u8) {
@@ -42,7 +37,8 @@ pub fn out8(port: u16, data: u8) {
         asm!(
             "out dx, al",
             in("dx") port,
-            in("al") data
+            in("al") data,
+            options(nomem, nostack)
         );
     }
 }
@@ -53,7 +49,8 @@ pub fn in8(port: u16) -> u8 {
         asm!(
             "in al, dx",
             out("al") data,
-            in("dx") port
+            in("dx") port,
+            options(nomem, nostack)
         );
     }
     data
@@ -64,7 +61,8 @@ pub fn out16(port: u16, data: u16) {
         asm!(
             "out dx, ax",
             in("dx") port,
-            in("ax") data
+            in("ax") data,
+            options(nomem, nostack)
         );
     }
 }
@@ -75,7 +73,8 @@ pub fn in16(port: u16) -> u16 {
         asm!(
             "in ax, dx",
             out("ax") data,
-            in("dx") port
+            in("dx") port,
+            options(nomem, nostack)
         );
     }
     data
@@ -86,7 +85,8 @@ pub fn out32(port: u32, data: u32) {
         asm!(
             "out dx, eax",
             in("edx") port,
-            in("eax") data
+            in("eax") data,
+            options(nomem, nostack)
         );
     }
 }
@@ -97,7 +97,8 @@ pub fn in32(port: u32) -> u32 {
         asm!(
             "in eax, dx",
             out("eax") data,
-            in("edx") port
+            in("edx") port,
+            options(nomem, nostack)
         );
     }
     data
@@ -105,19 +106,19 @@ pub fn in32(port: u32) -> u32 {
 
 pub fn lidt(desc_table_args: &DescriptorTableArgs) {
     unsafe {
-        asm!("lidt [{}]", in(reg) desc_table_args);
+        asm!("lidt [{}]", in(reg) desc_table_args, options(nomem, nostack));
     }
 }
 
 pub fn lgdt(desc_table_args: &DescriptorTableArgs) {
     unsafe {
-        asm!("lgdt [{}]", in(reg) desc_table_args);
+        asm!("lgdt [{}]", in(reg) desc_table_args, options(nomem, nostack));
     }
 }
 
 pub fn ltr(sel: u16) {
     unsafe {
-        asm!("ltr cx", in("cx") sel);
+        asm!("ltr cx", in("cx") sel, options(nomem, nostack));
     }
 }
 
@@ -126,7 +127,7 @@ pub fn read_msr(addr: u32) -> u64 {
     let high: u32;
 
     unsafe {
-        asm!("rdmsr", in("ecx") addr, out("eax") low, out("edx") high);
+        asm!("rdmsr", in("ecx") addr, out("eax") low, out("edx") high, options(nomem, nostack));
     }
 
     ((high as u64) << 32) | (low as u64)
@@ -137,21 +138,21 @@ pub fn write_msr(addr: u32, value: u64) {
     let high = (value >> 32) as u32;
 
     unsafe {
-        asm!("wrmsr", in("ecx") addr, in("eax") low, in("edx") high);
+        asm!("wrmsr", in("ecx") addr, in("eax") low, in("edx") high, options(nomem, nostack));
     }
 }
 
 pub fn read_xcr0() -> u64 {
     let value;
     unsafe {
-        asm!("xgetbv", out("rax") value);
+        asm!("xgetbv", out("rax") value, options(nomem, nostack));
     }
     value
 }
 
 pub fn write_xcr0(value: u64) {
     unsafe {
-        asm!("xsetbv", in("rax") value);
+        asm!("xsetbv", in("rax") value, options(nomem, nostack));
     }
 }
 
@@ -160,7 +161,7 @@ pub fn rdtsc() -> u64 {
     let high: u32;
 
     unsafe {
-        asm!("rdtsc", out("eax") low, out("edx") high);
+        asm!("rdtsc", out("eax") low, out("edx") high, options(nomem, nostack));
     }
 
     ((high as u64) << 32) | (low as u64)

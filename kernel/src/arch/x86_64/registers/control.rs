@@ -9,7 +9,7 @@ impl Register<u64> for Cr0 {
         let cr0;
 
         unsafe {
-            asm!("mov {}, cr0", out(reg) cr0);
+            asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack));
         }
 
         Self(cr0)
@@ -17,7 +17,7 @@ impl Register<u64> for Cr0 {
 
     fn write(&self) {
         unsafe {
-            asm!("mov cr0, {}", in(reg) self.0);
+            asm!("mov cr0, {}", in(reg) self.0, options(nomem, nostack));
         }
     }
 
@@ -62,7 +62,7 @@ impl Register<u64> for Cr2 {
     fn read() -> Self {
         let cr2;
         unsafe {
-            asm!("mov {}, cr2", out(reg) cr2);
+            asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack));
         }
 
         Self(cr2)
@@ -70,7 +70,7 @@ impl Register<u64> for Cr2 {
 
     fn write(&self) {
         unsafe {
-            asm!("mov cr2, {}", in(reg) self.0);
+            asm!("mov cr2, {}", in(reg) self.0, options(nomem, nostack));
         }
     }
 
@@ -90,7 +90,7 @@ impl Register<u64> for Cr3 {
     fn read() -> Self {
         let cr3;
         unsafe {
-            asm!("mov {}, cr3", out(reg) cr3);
+            asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack));
         }
 
         Self(cr3)
@@ -98,7 +98,7 @@ impl Register<u64> for Cr3 {
 
     fn write(&self) {
         unsafe {
-            asm!("mov cr3, {}", in(reg) self.0);
+            asm!("mov cr3, {}", in(reg) self.0, options(nomem, nostack));
         }
     }
 
@@ -118,7 +118,7 @@ impl Register<u64> for Cr4 {
     fn read() -> Self {
         let cr4;
         unsafe {
-            asm!("mov {}, cr4", out(reg) cr4);
+            asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack));
         }
 
         Self(cr4)
@@ -126,7 +126,7 @@ impl Register<u64> for Cr4 {
 
     fn write(&self) {
         unsafe {
-            asm!("mov cr4, {}", in(reg) self.0);
+            asm!("mov cr4, {}", in(reg) self.0, options(nomem, nostack));
         }
     }
 

@@ -209,7 +209,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     }
 
     loop {
-        x86_64::hlt();
+        x86_64::stihlt();
     }
 }
 

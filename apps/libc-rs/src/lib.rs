@@ -79,8 +79,8 @@ macro_rules! parse_args {
         let argc: usize;
         let argv: *const *const u8;
         unsafe {
-            asm!("mov {}, rdi", out(reg) argc);
-            asm!("mov {}, rsi", out(reg) argv);
+            asm!("mov {}, rdi", out(reg) argc, options(nomem, nostack));
+            asm!("mov {}, rsi", out(reg) argv, options(nomem, nostack));
         }
 
         $crate::_init_heap();

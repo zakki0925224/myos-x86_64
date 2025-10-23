@@ -39,7 +39,7 @@ impl<T: Sized> Mutex<T> {
             if let Ok(guard) = self.try_lock() {
                 return guard;
             } else {
-                x86_64::hlt();
+                x86_64::stihlt();
             }
         }
     }
