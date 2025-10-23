@@ -84,8 +84,9 @@ impl TcpSocket {
         }
 
         self.state = TcpSocketState::SynReceived;
+        let isn = self.seq_num;
         self.seq_num = self.seq_num.wrapping_add(1);
-        Ok(self.seq_num)
+        Ok(isn)
     }
 
     pub fn receive_ack(&mut self) -> Result<()> {

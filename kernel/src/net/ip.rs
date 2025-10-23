@@ -147,8 +147,12 @@ impl Ipv4Packet {
         self.checksum = 0;
         let mut sum: u32 = 0;
 
+        // IPv4 checksum is calculated over the header only, not the data
+        let ihl = (self.version_ihl & 0x0f) as usize * 4;
         let packet = self.to_vec();
-        for chunk in packet.chunks(2) {
+        let header = &packet[..ihl.min(packet.len())];
+
+        for chunk in header.chunks(2) {
             let word = match chunk {
                 [h, l] => u16::from_be_bytes([*h, *l]),
                 [h] => u16::from_be_bytes([*h, 0]),
