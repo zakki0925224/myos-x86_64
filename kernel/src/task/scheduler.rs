@@ -28,6 +28,32 @@ impl TaskScheduler {
         }
     }
 
+    fn current_user_task(&self) -> Option<&Task> {
+        self.user_tasks.last()
+    }
+
+    fn current_user_task_mut(&mut self) -> Option<&mut Task> {
+        self.user_tasks.last_mut()
+    }
+
+    fn prev_task(&self) -> Option<&Task> {
+        if self.user_tasks.len() >= 2 {
+            self.user_tasks.get(self.user_tasks.len() - 2)
+        } else {
+            self.kernel_task.as_ref()
+        }
+    }
+
+    /// temporarily pop the current user task, execute closure `f`, and push back if needed.
+    fn with_popped_user_task<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(Task, &mut Self) -> R,
+    {
+        let task = self.user_tasks.pop().expect("No user task to pop");
+        let result = f(task, self);
+        result
+    }
+
     fn exec_user_task(
         &mut self,
         elf64: Elf64,
@@ -36,13 +62,14 @@ impl TaskScheduler {
         dwarf: Option<Dwarf>,
     ) -> Result<i32> {
         if self.kernel_task.is_none() {
-            // stack is unused, because already allocated static area for kernel stack
             self.kernel_task = Some(Task::new(0, None, None, ContextMode::Kernel, None)?);
         }
 
-        let is_user = !self.user_tasks.is_empty();
-        if is_user {
-            self.user_tasks.last().unwrap().unmap_virt_addr()?;
+        let has_user = !self.user_tasks.is_empty();
+        if has_user {
+            self.current_user_task()
+                .ok_or("No current user task")?
+                .unmap_virt_addr()?;
         }
 
         let user_task = Task::new(
@@ -51,41 +78,25 @@ impl TaskScheduler {
             Some(&[&[path.to_string().as_str()], args].concat()),
             ContextMode::User,
             dwarf,
-        );
+        )?;
 
-        let task = match user_task {
-            Ok(task) => task,
-            Err(e) => {
-                if is_user {
-                    self.user_tasks.last().unwrap().remap_virt_addr()?;
-                }
-                return Err(e);
+        self.user_tasks.push(user_task);
+
+        let current = self.prev_task().ok_or("No prev task")?;
+        let new_task = self.current_user_task().ok_or("No current user task")?;
+        current.switch_to(new_task);
+
+        self.with_popped_user_task(|finished_task, sched| {
+            drop(finished_task);
+            if let Some(prev) = sched.current_user_task_mut() {
+                prev.remap_virt_addr().unwrap();
             }
-        };
+        });
 
-        self.user_tasks.push(task);
-
-        let is_user = self.user_tasks.len() > 1;
-        let current_task = if is_user {
-            self.user_tasks.get(self.user_tasks.len() - 2).unwrap()
-        } else {
-            self.kernel_task.as_ref().unwrap()
-        };
-
-        current_task.switch_to(self.user_tasks.last().unwrap());
-
-        // returned
-        drop(self.user_tasks.pop().unwrap());
-        if let Some(task) = self.user_tasks.last() {
-            task.remap_virt_addr()?;
-        }
-
-        // get exit status
-        let exit_status = match self.user_exit_status {
-            Some(s) => s,
-            None => return Err(Error::Failed("User exit status was not found")),
-        };
-        self.user_exit_status = None;
+        let exit_status = self
+            .user_exit_status
+            .take()
+            .ok_or(Error::Failed("User exit status not found"))?;
 
         Ok(exit_status)
     }
@@ -94,7 +105,7 @@ impl TaskScheduler {
         &mut self,
         mem_frame_info: MemoryFrameInfo,
     ) -> Result<()> {
-        let user_task = self.user_tasks.iter_mut().last().unwrap();
+        let user_task = self.current_user_task_mut().ok_or("No current user task")?;
         user_task
             .resource
             .allocated_mem_frame_info
@@ -107,7 +118,7 @@ impl TaskScheduler {
         &mut self,
         virt_addr: VirtualAddress,
     ) -> Result<Option<usize>> {
-        let user_task = self.user_tasks.iter_mut().last().unwrap();
+        let user_task = self.current_user_task_mut().ok_or("No current user task")?;
 
         for mem_frame_info in &user_task.resource.allocated_mem_frame_info {
             if mem_frame_info.frame_start_virt_addr()? == virt_addr {
@@ -118,45 +129,38 @@ impl TaskScheduler {
         Ok(None)
     }
 
-    fn push_layer_id(&mut self, layer_id: LayerId) {
-        let user_task = self.user_tasks.iter_mut().last().unwrap();
+    fn push_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
+        let user_task = self.current_user_task_mut().ok_or("No current user task")?;
         user_task.resource.created_layer_ids.push(layer_id);
+        Ok(())
     }
 
-    fn remove_layer_id(&mut self, layer_id: &LayerId) {
-        let user_task = self.user_tasks.iter_mut().last().unwrap();
-
+    fn remove_layer_id(&mut self, layer_id: &LayerId) -> Result<()> {
+        let user_task = self.current_user_task_mut().ok_or("No current user task")?;
         user_task
             .resource
             .created_layer_ids
             .retain(|cwd| *cwd != *layer_id);
+        Ok(())
     }
 
-    fn push_fd_num(&mut self, fd_num: FileDescriptorNumber) {
-        let user_task = self.user_tasks.iter_mut().last().unwrap();
+    fn push_fd_num(&mut self, fd_num: FileDescriptorNumber) -> Result<()> {
+        let user_task = self.current_user_task_mut().ok_or("No current user task")?;
         user_task.resource.opend_fd_num.push(fd_num);
+        Ok(())
     }
 
-    fn remove_fd_num(&mut self, fd_num: &FileDescriptorNumber) {
-        let user_task = self.user_tasks.iter_mut().last().unwrap();
-
-        user_task
-            .resource
-            .opend_fd_num
-            .retain(|cfdn| *cfdn != *fd_num);
+    fn remove_fd_num(&mut self, fd_num: &FileDescriptorNumber) -> Result<()> {
+        let user_task = self.current_user_task_mut().ok_or("No current user task")?;
+        user_task.resource.opend_fd_num.retain(|f| f != fd_num);
+        Ok(())
     }
 
     fn return_task(&mut self, exit_status: i32) {
         self.user_exit_status = Some(exit_status);
 
-        let current_task = self.user_tasks.last().unwrap();
-
-        let before_task;
-        if let Some(before_task_i) = self.user_tasks.len().checked_sub(2) {
-            before_task = self.user_tasks.get(before_task_i).unwrap();
-        } else {
-            before_task = self.kernel_task.as_ref().unwrap();
-        }
+        let current_task = self.current_user_task().unwrap();
+        let before_task = self.prev_task().unwrap();
 
         current_task.switch_to(before_task);
         unreachable!();
@@ -164,8 +168,7 @@ impl TaskScheduler {
 
     fn debug_user_task(&self) -> bool {
         kdebug!("===USER TASK INFO===");
-        let user_task = self.user_tasks.last();
-        if let Some(task) = user_task {
+        if let Some(task) = self.current_user_task() {
             task::debug_task(task);
             true
         } else {
@@ -175,12 +178,7 @@ impl TaskScheduler {
     }
 
     fn get_running_user_task_dwarf(&self) -> Option<Dwarf> {
-        let user_task = self.user_tasks.last();
-        if let Some(task) = user_task {
-            task.dwarf.clone()
-        } else {
-            None
-        }
+        self.current_user_task()?.dwarf.clone()
     }
 }
 
@@ -201,19 +199,19 @@ pub fn get_memory_frame_size_by_virt_addr(virt_addr: VirtualAddress) -> Result<O
     unsafe { TASK_SCHED.get_memory_frame_size_by_virt_addr(virt_addr) }
 }
 
-pub fn push_layer_id(layer_id: LayerId) {
+pub fn push_layer_id(layer_id: LayerId) -> Result<()> {
     unsafe { TASK_SCHED.push_layer_id(layer_id) }
 }
 
-pub fn remove_layer_id(layer_id: &LayerId) {
+pub fn remove_layer_id(layer_id: &LayerId) -> Result<()> {
     unsafe { TASK_SCHED.remove_layer_id(layer_id) }
 }
 
-pub fn push_fd_num(fd_num: FileDescriptorNumber) {
+pub fn push_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
     unsafe { TASK_SCHED.push_fd_num(fd_num) }
 }
 
-pub fn remove_fd_num(fd_num: &FileDescriptorNumber) {
+pub fn remove_fd_num(fd_num: &FileDescriptorNumber) -> Result<()> {
     unsafe { TASK_SCHED.remove_fd_num(fd_num) }
 }
 

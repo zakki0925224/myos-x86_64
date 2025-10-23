@@ -329,7 +329,7 @@ fn sys_open(filepath: *const u8, flags: u32) -> Result<i32> {
         .into();
     let create = flags & 0x1 != 0;
     let fd_num = vfs::open_file(&filepath, create)?;
-    task::scheduler::push_fd_num(fd_num);
+    task::scheduler::push_fd_num(fd_num)?;
 
     Ok(fd_num.get() as i32)
 }
@@ -337,7 +337,7 @@ fn sys_open(filepath: *const u8, flags: u32) -> Result<i32> {
 fn sys_close(fd_num: i32) -> Result<()> {
     let fd_num = FileDescriptorNumber::new_val(fd_num)?;
     vfs::close_file(&fd_num)?;
-    task::scheduler::remove_fd_num(&fd_num);
+    task::scheduler::remove_fd_num(&fd_num)?;
 
     Ok(())
 }
@@ -485,7 +485,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
 
             let layer_id = LayerId::new_val(layer_id as usize);
             simple_window_manager::remove_component(&layer_id)?;
-            task::scheduler::remove_layer_id(&layer_id);
+            task::scheduler::remove_layer_id(&layer_id)?;
 
             // reply
             let reply_header = IomsgHeader::new(IomsgCommand::RemoveComponent, 0);
@@ -521,7 +521,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             }
 
             let layer_id = simple_window_manager::create_window(title, xy, wh)?;
-            task::scheduler::push_layer_id(layer_id.clone());
+            task::scheduler::push_layer_id(layer_id.clone())?;
 
             // reply
             let reply_header =
