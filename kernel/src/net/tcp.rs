@@ -24,6 +24,7 @@ pub struct TcpSocket {
     dst_ipv4_addr: Option<Ipv4Addr>,
     dst_port: Option<u16>,
     seq_num: u32,
+    next_recv_seq: u32,
     buf: Vec<u8>,
 }
 
@@ -35,12 +36,21 @@ impl TcpSocket {
             dst_ipv4_addr: None,
             dst_port: None,
             seq_num: 0,
+            next_recv_seq: 0,
             buf: Vec::new(),
         }
     }
 
     pub fn state(&self) -> TcpSocketState {
         self.state
+    }
+
+    pub fn seq_num(&self) -> u32 {
+        self.seq_num
+    }
+
+    pub fn next_recv_seq(&self) -> u32 {
+        self.next_recv_seq
     }
 
     pub fn get_and_reset_buf(&mut self) -> Vec<u8> {
@@ -78,24 +88,57 @@ impl TcpSocket {
         Ok(())
     }
 
-    pub fn receive_syn(&mut self) -> Result<u32> {
+    pub fn receive_syn(&mut self, remote_seq: u32) -> Result<u32> {
         if self.state != TcpSocketState::Listen {
             return Err(Error::Failed("Invalid state"));
         }
 
         self.state = TcpSocketState::SynReceived;
+        self.next_recv_seq = remote_seq.wrapping_add(1);
         let isn = self.seq_num;
         self.seq_num = self.seq_num.wrapping_add(1);
         Ok(isn)
     }
 
     pub fn receive_ack(&mut self) -> Result<()> {
-        if self.state != TcpSocketState::SynReceived {
+        if self.state != TcpSocketState::SynReceived && self.state != TcpSocketState::Established {
             return Err(Error::Failed("Invalid state"));
         }
 
         self.state = TcpSocketState::Established;
         Ok(())
+    }
+
+    pub fn receive_fin(&mut self) -> Result<()> {
+        if self.state != TcpSocketState::Established {
+            return Err(Error::Failed("Invalid state"));
+        }
+
+        self.state = TcpSocketState::CloseWait;
+        self.next_recv_seq = self.next_recv_seq.wrapping_add(1);
+        Ok(())
+    }
+
+    pub fn receive_data(&mut self, data: &[u8], seq_num: u32) -> Result<()> {
+        if self.state != TcpSocketState::Established {
+            return Err(Error::Failed("Invalid state"));
+        }
+
+        if seq_num != self.next_recv_seq {
+            // Out of order packet, ignore for now
+            return Ok(());
+        }
+
+        if !data.is_empty() {
+            self.buf.extend_from_slice(data);
+            self.next_recv_seq = self.next_recv_seq.wrapping_add(data.len() as u32);
+        }
+
+        Ok(())
+    }
+
+    pub fn close(&mut self) {
+        *self = Self::new();
     }
 }
 
@@ -129,8 +172,16 @@ impl TryFrom<&[u8]> for TcpPacket {
         let checksum = u16::from_be_bytes([value[16], value[17]]);
         let urgent_ptr = u16::from_be_bytes([value[18], value[19]]);
 
-        let data_offset = (flags >> 12) as usize * 4;
-        let options_and_data = value[20..data_offset].to_vec();
+        let data_offset_words = (flags >> 12) as usize;
+        if data_offset_words < 5 {
+            return Err(Error::Failed("Invalid TCP data offset"));
+        }
+        let header_len = data_offset_words * 4;
+        if value.len() < header_len {
+            return Err(Error::Failed("Packet shorter than header length"));
+        }
+
+        let options_and_data = value[20..].to_vec();
 
         Ok(Self {
             src_port,

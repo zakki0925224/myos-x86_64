@@ -93,7 +93,15 @@ impl TryFrom<&[u8]> for Ipv4Packet {
         let checksum = u16::from_be_bytes([value[10], value[11]]);
         let src_addr = Ipv4Addr::new(value[12], value[13], value[14], value[15]);
         let dst_addr = Ipv4Addr::new(value[16], value[17], value[18], value[19]);
-        let data = value[20..].to_vec();
+
+        let ihl = (version_ihl & 0x0f) as usize * 4;
+        if value.len() < ihl {
+            return Err("Invalid IHL".into());
+        }
+
+        let payload_len = (len as usize).saturating_sub(ihl);
+        let data_end = ihl + payload_len;
+        let data = value[ihl..data_end.min(value.len())].to_vec();
 
         Ok(Self {
             version_ihl,

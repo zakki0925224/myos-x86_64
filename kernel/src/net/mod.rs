@@ -4,7 +4,7 @@ use crate::{
     net::{arp::*, eth::*, icmp::*, ip::*, tcp::*, udp::*},
     sync::mutex::Mutex,
 };
-use alloc::{collections::btree_map::BTreeMap, vec::Vec};
+use alloc::{collections::btree_map::BTreeMap, string::String, vec::Vec};
 use core::net::Ipv4Addr;
 
 pub mod arp;
@@ -65,8 +65,6 @@ impl NetworkManager {
     }
 
     fn receive_icmp_packet(&mut self, packet: IcmpPacket) -> Result<Option<IcmpPacket>> {
-        kinfo!("net: ICMP packet received");
-
         let ty = packet.ty;
 
         match ty {
@@ -105,8 +103,8 @@ impl NetworkManager {
                     return Ok(None);
                 }
 
-                let next_seq_num = socket_mut.receive_syn()?;
-                let ack_num = seq_num.wrapping_add(1);
+                let next_seq_num = socket_mut.receive_syn(seq_num)?;
+                let ack_num = socket_mut.next_recv_seq();
 
                 let mut options = Vec::new();
                 let mss_bytes_len = 1460u16;
@@ -130,7 +128,6 @@ impl NetworkManager {
                 return Ok(Some(reply_packet));
             }
             TcpSocketState::SynReceived => {
-                // TODO: TCP retransmission because of timeout (0.1s?)
                 if !packet.flags_ack() {
                     kwarn!("net: TCP-ACK not received");
                     return Ok(None);
@@ -139,12 +136,55 @@ impl NetworkManager {
                 socket_mut.receive_ack()?;
             }
             TcpSocketState::Established => {
-                if packet.flags_fin() {
-                    todo!();
+                let mut ack_needed = false;
+
+                if packet.flags_ack() {
+                    socket_mut.receive_ack()?;
                 }
 
-                // send ACK
-                todo!();
+                let header_len = packet.flags_header_len();
+                let options_len = header_len.checked_sub(20).unwrap_or(0);
+                let data = &packet.options_and_data[options_len..];
+
+                if !data.is_empty() {
+                    kdebug!(
+                        "net: TCP data packet received: {:?}",
+                        String::from_utf8_lossy(data)
+                    );
+                    socket_mut.receive_data(data, seq_num)?;
+                    ack_needed = true;
+                }
+
+                if packet.flags_fin() {
+                    kdebug!("net: TCP-FIN received");
+                    socket_mut.receive_fin()?;
+                    ack_needed = true;
+                }
+
+                if ack_needed {
+                    let next_seq_num = socket_mut.seq_num();
+                    let ack_num = socket_mut.next_recv_seq();
+
+                    let reply_packet = TcpPacket::new_with(
+                        dst_port,
+                        src_port,
+                        next_seq_num,
+                        ack_num,
+                        TcpPacket::FLAGS_ACK,
+                        u16::MAX,
+                        0,
+                        Vec::new(),
+                    );
+                    kdebug!("net: TCP-ACK packet: {:?}", reply_packet);
+                    return Ok(Some(reply_packet));
+                }
+
+                return Ok(None);
+            }
+            TcpSocketState::CloseWait => {
+                // ignore received packets
+                // must be close socket from app
+                return Ok(None);
             }
             state => {
                 kwarn!("net: Unsupported TCP state: {:?}", state);
@@ -155,8 +195,6 @@ impl NetworkManager {
     }
 
     fn receive_udp_packet(&mut self, packet: UdpPacket) -> Result<Option<UdpPacket>> {
-        kinfo!("net: UDP packet received");
-
         let dst_port = packet.dst_port;
         let socket_mut = self.udp_socket_mut(dst_port);
         socket_mut.receive(&packet.data);
@@ -167,8 +205,6 @@ impl NetworkManager {
     }
 
     fn receive_arp_packet(&mut self, packet: ArpPacket) -> Result<Option<ArpPacket>> {
-        kinfo!("net: ARP packet received");
-
         let arp_op = packet.op()?;
         let sender_ipv4_addr = packet.sender_ipv4_addr;
         let sender_mac_addr = packet.sender_eth_addr;
@@ -177,7 +213,6 @@ impl NetworkManager {
         match arp_op {
             ArpOperation::Request => {
                 self.arp_table.insert(sender_ipv4_addr, sender_mac_addr);
-                kinfo!("net: ARP table updated: {:?}", self.arp_table);
 
                 if target_ipv4_addr != self.my_ipv4_addr {
                     return Ok(None);
@@ -200,8 +235,6 @@ impl NetworkManager {
     }
 
     fn receive_ipv4_packet(&mut self, packet: Ipv4Packet) -> Result<Option<Ipv4Packet>> {
-        kinfo!("net: IPv4 packet received");
-
         packet.validate()?;
 
         if packet.dst_addr != self.my_ipv4_addr {
@@ -250,8 +283,6 @@ impl NetworkManager {
     }
 
     fn receive_eth_payload(&mut self, payload: EthernetPayload) -> Result<Option<EthernetPayload>> {
-        kinfo!("net: Ethernet payload received");
-
         let mut reply_payload = None;
 
         match payload {
