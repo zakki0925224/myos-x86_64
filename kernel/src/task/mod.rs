@@ -93,12 +93,12 @@ impl Drop for TaskResource {
 
         // destroy all created windows
         for layer_id in self.created_layer_ids.iter() {
-            let _ = simple_window_manager::remove_component(layer_id);
+            let _ = simple_window_manager::remove_component(*layer_id);
         }
 
         // close all opend files
         for fd in self.opend_fd_num.iter() {
-            vfs::close_file(fd).unwrap();
+            vfs::close_file(*fd).unwrap();
         }
     }
 }

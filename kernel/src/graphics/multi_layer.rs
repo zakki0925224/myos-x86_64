@@ -127,18 +127,18 @@ impl LayerManager {
         self.layers.push(layer);
     }
 
-    fn remove_layer(&mut self, layer_id: &LayerId) -> Result<()> {
+    fn remove_layer(&mut self, layer_id: LayerId) -> Result<()> {
         if self.get_layer(layer_id).is_err() {
             return Err(LayerError::InvalidLayerIdError(layer_id.0).into());
         }
 
-        self.layers.retain(|l| l.id != *layer_id);
+        self.layers.retain(|l| l.id != layer_id);
 
         Ok(())
     }
 
-    fn bring_layer_to_front(&mut self, layer_id: &LayerId) -> Result<()> {
-        let index = match self.layers.iter().position(|l| l.id == *layer_id) {
+    fn bring_layer_to_front(&mut self, layer_id: LayerId) -> Result<()> {
+        let index = match self.layers.iter().position(|l| l.id == layer_id) {
             Some(i) => i,
             None => return Err(LayerError::InvalidLayerIdError(layer_id.0).into()),
         };
@@ -162,10 +162,10 @@ impl LayerManager {
         Ok(())
     }
 
-    fn get_layer(&mut self, layer_id: &LayerId) -> Result<&mut Layer> {
+    fn get_layer(&mut self, layer_id: LayerId) -> Result<&mut Layer> {
         self.layers
             .iter_mut()
-            .find(|l| l.id == *layer_id)
+            .find(|l| l.id == layer_id)
             .ok_or(LayerError::InvalidLayerIdError(layer_id.0).into())
     }
 
@@ -237,28 +237,28 @@ pub fn draw_to_frame_buf() -> Result<()> {
     unsafe { LAYER_MAN.try_lock() }?.draw_to_frame_buf()
 }
 
-pub fn draw_layer<F: Fn(&mut dyn Draw) -> Result<()>>(layer_id: &LayerId, draw: F) -> Result<()> {
+pub fn draw_layer<F: Fn(&mut dyn Draw) -> Result<()>>(layer_id: LayerId, draw: F) -> Result<()> {
     draw(unsafe { LAYER_MAN.try_lock() }?.get_layer(layer_id)?)
 }
 
-pub fn get_layer_info(layer_id: &LayerId) -> Result<LayerInfo> {
+pub fn get_layer_info(layer_id: LayerId) -> Result<LayerInfo> {
     let mut layer_man = unsafe { LAYER_MAN.try_lock() }?;
     let layer = layer_man.get_layer(layer_id)?;
     let layer_info = layer.layer_info();
     Ok(layer_info)
 }
 
-pub fn move_layer(layer_id: &LayerId, to_x: usize, to_y: usize) -> Result<()> {
+pub fn move_layer(layer_id: LayerId, to_x: usize, to_y: usize) -> Result<()> {
     unsafe { LAYER_MAN.try_lock() }?
         .get_layer(layer_id)?
         .move_to(to_x, to_y);
     Ok(())
 }
 
-pub fn remove_layer(layer_id: &LayerId) -> Result<()> {
+pub fn remove_layer(layer_id: LayerId) -> Result<()> {
     unsafe { LAYER_MAN.try_lock() }?.remove_layer(layer_id)
 }
 
-pub fn bring_layer_to_front(layer_id: &LayerId) -> Result<()> {
+pub fn bring_layer_to_front(layer_id: LayerId) -> Result<()> {
     unsafe { LAYER_MAN.try_lock() }?.bring_layer_to_front(layer_id)
 }

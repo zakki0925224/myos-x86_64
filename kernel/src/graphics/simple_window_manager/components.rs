@@ -19,10 +19,10 @@ use common::graphic_info::PixelFormat;
 pub trait Component {
     fn layer_id(&self) -> LayerId;
     fn get_layer_info(&self) -> Result<LayerInfo> {
-        multi_layer::get_layer_info(&self.layer_id())
+        multi_layer::get_layer_info(self.layer_id())
     }
     fn move_by_root(&self, to_x: usize, to_y: usize) -> Result<()> {
-        multi_layer::move_layer(&self.layer_id(), to_x, to_y)
+        multi_layer::move_layer(self.layer_id(), to_x, to_y)
     }
     fn move_by_parent(&self, parent: &dyn Component, to_x: usize, to_y: usize) -> Result<()> {
         let (x, y) = self.get_layer_info()?.xy;
@@ -41,13 +41,13 @@ pub struct Image {
 
 impl Drop for Image {
     fn drop(&mut self) {
-        let _ = multi_layer::remove_layer(&self.layer_id);
+        let _ = multi_layer::remove_layer(self.layer_id);
     }
 }
 
 impl Component for Image {
     fn layer_id(&self) -> LayerId {
-        self.layer_id.clone()
+        self.layer_id
     }
 
     fn draw_flush(&mut self) -> Result<()> {
@@ -87,7 +87,7 @@ impl Component for Image {
         }
 
         // write to layer
-        multi_layer::draw_layer(&self.layer_id, |l| unsafe { l.copy_from_slice_u32(&buf) })?;
+        multi_layer::draw_layer(self.layer_id, |l| unsafe { l.copy_from_slice_u32(&buf) })?;
 
         Ok(())
     }
@@ -105,7 +105,7 @@ impl Image {
 
         let mut layer = multi_layer::create_layer_from_bitmap_image(xy, bitmap_image)?;
         layer.always_on_top = always_on_top;
-        let layer_id = layer.id.clone();
+        let layer_id = layer.id;
         multi_layer::push_layer(layer)?;
         Ok(Self {
             layer_id,
@@ -124,7 +124,7 @@ impl Image {
         let framebuf_virt_addr = Some(framebuf_virt_addr);
         let pixel_format = Some(pixel_format);
         let layer = multi_layer::create_layer(xy, wh)?;
-        let layer_id = layer.id.clone();
+        let layer_id = layer.id;
         multi_layer::push_layer(layer)?;
         Ok(Self {
             layer_id,
@@ -149,13 +149,13 @@ pub struct Window {
 
 impl Drop for Window {
     fn drop(&mut self) {
-        let _ = multi_layer::remove_layer(&self.layer_id);
+        let _ = multi_layer::remove_layer(self.layer_id);
     }
 }
 
 impl Component for Window {
     fn layer_id(&self) -> LayerId {
-        self.layer_id.clone()
+        self.layer_id
     }
 
     fn move_by_root(&self, to_x: usize, to_y: usize) -> Result<()> {
@@ -167,7 +167,7 @@ impl Component for Window {
             child.move_by_parent(self, to_x, to_y)?;
         }
 
-        multi_layer::move_layer(&self.layer_id, to_x, to_y)?;
+        multi_layer::move_layer(self.layer_id, to_x, to_y)?;
 
         Ok(())
     }
@@ -180,18 +180,18 @@ impl Component for Window {
         } = self.get_layer_info()?;
 
         if self.request_bring_to_front {
-            multi_layer::bring_layer_to_front(&self.layer_id)?;
-            multi_layer::bring_layer_to_front(&self.close_button.layer_id())?;
-            multi_layer::bring_layer_to_front(&self.resize_button.layer_id())?;
-            multi_layer::bring_layer_to_front(&self.minimize_button.layer_id())?;
+            multi_layer::bring_layer_to_front(self.layer_id)?;
+            multi_layer::bring_layer_to_front(self.close_button.layer_id())?;
+            multi_layer::bring_layer_to_front(self.resize_button.layer_id())?;
+            multi_layer::bring_layer_to_front(self.minimize_button.layer_id())?;
             for child in &self.children {
-                multi_layer::bring_layer_to_front(&child.layer_id())?;
+                multi_layer::bring_layer_to_front(child.layer_id())?;
             }
 
             self.request_bring_to_front = false;
         }
 
-        multi_layer::draw_layer(&self.layer_id, |l| {
+        multi_layer::draw_layer(self.layer_id, |l| {
             // back color
             l.fill(GLOBAL_THEME.wm_component_back_color)?;
 
@@ -308,8 +308,8 @@ impl Window {
         Ok(child_layer_id)
     }
 
-    pub fn remove_child(&mut self, layer_id: &LayerId) -> Result<()> {
-        if let Some(pos) = self.children.iter().position(|c| c.layer_id() == *layer_id) {
+    pub fn remove_child(&mut self, layer_id: LayerId) -> Result<()> {
+        if let Some(pos) = self.children.iter().position(|c| c.layer_id() == layer_id) {
             self.children.remove(pos);
             Ok(())
         } else {
@@ -324,19 +324,19 @@ pub struct Panel {
 
 impl Drop for Panel {
     fn drop(&mut self) {
-        let _ = multi_layer::remove_layer(&self.layer_id);
+        let _ = multi_layer::remove_layer(self.layer_id);
     }
 }
 
 impl Component for Panel {
     fn layer_id(&self) -> LayerId {
-        self.layer_id.clone()
+        self.layer_id
     }
 
     fn draw_flush(&mut self) -> Result<()> {
         let (w, h) = self.get_layer_info()?.wh;
 
-        multi_layer::draw_layer(&self.layer_id, |l| {
+        multi_layer::draw_layer(self.layer_id, |l| {
             // back color
             l.fill(GLOBAL_THEME.wm_component_back_color)?;
 
@@ -372,13 +372,13 @@ impl Component for Panel {
 impl Panel {
     pub fn create_and_push(xy: (usize, usize), wh: (usize, usize)) -> Result<Self> {
         let layer = multi_layer::create_layer(xy, wh)?;
-        let layer_id = layer.id.clone();
+        let layer_id = layer.id;
         multi_layer::push_layer(layer)?;
         Ok(Self { layer_id })
     }
 
     pub fn draw_string(&self, xy: (usize, usize), s: &str) -> Result<()> {
-        multi_layer::draw_layer(&self.layer_id, |l| {
+        multi_layer::draw_layer(self.layer_id, |l| {
             l.draw_string_wrap(
                 xy,
                 s,
@@ -396,19 +396,19 @@ pub struct Button {
 
 impl Drop for Button {
     fn drop(&mut self) {
-        let _ = multi_layer::remove_layer(&self.layer_id);
+        let _ = multi_layer::remove_layer(self.layer_id);
     }
 }
 
 impl Component for Button {
     fn layer_id(&self) -> LayerId {
-        self.layer_id.clone()
+        self.layer_id
     }
 
     fn draw_flush(&mut self) -> Result<()> {
         let (w, h) = self.get_layer_info()?.wh;
 
-        multi_layer::draw_layer(&self.layer_id, |l| {
+        multi_layer::draw_layer(self.layer_id, |l| {
             // back color
             l.fill(GLOBAL_THEME.wm_component_back_color)?;
 
@@ -453,7 +453,7 @@ impl Component for Button {
 impl Button {
     pub fn create_and_push(title: String, xy: (usize, usize), wh: (usize, usize)) -> Result<Self> {
         let layer = multi_layer::create_layer(xy, wh)?;
-        let layer_id = layer.id.clone();
+        let layer_id = layer.id;
         multi_layer::push_layer(layer)?;
         Ok(Self { layer_id, title })
     }
@@ -468,17 +468,17 @@ pub struct Label {
 
 impl Drop for Label {
     fn drop(&mut self) {
-        let _ = multi_layer::remove_layer(&self.layer_id);
+        let _ = multi_layer::remove_layer(self.layer_id);
     }
 }
 
 impl Component for Label {
     fn layer_id(&self) -> LayerId {
-        self.layer_id.clone()
+        self.layer_id
     }
 
     fn draw_flush(&mut self) -> Result<()> {
-        multi_layer::draw_layer(&self.layer_id, |l| {
+        multi_layer::draw_layer(self.layer_id, |l| {
             // back color
             l.fill(self.back_color)?;
 
@@ -510,7 +510,7 @@ impl Label {
         let h = label.lines().count() * f_h;
 
         let layer = multi_layer::create_layer(xy, (w, h))?;
-        let layer_id = layer.id.clone();
+        let layer_id = layer.id;
         multi_layer::push_layer(layer)?;
         Ok(Self {
             layer_id,

@@ -84,9 +84,9 @@ impl SimpleWindowManager {
         if self.mouse_pointer.is_none() {
             let mouse_pointer_bmp_fd =
                 vfs::open_file(&((&self.mouse_pointer_bmp_path).into()), false)?;
-            let bmp_data = vfs::read_file(&mouse_pointer_bmp_fd)?;
+            let bmp_data = vfs::read_file(mouse_pointer_bmp_fd)?;
             let pointer_bmp = BitmapImage::new(&bmp_data);
-            vfs::close_file(&mouse_pointer_bmp_fd)?;
+            vfs::close_file(mouse_pointer_bmp_fd)?;
             self.create_mouse_pointer(&pointer_bmp)?;
         }
 
@@ -273,7 +273,7 @@ impl SimpleWindowManager {
 
     fn add_component_to_window(
         &mut self,
-        layer_id: &LayerId,
+        layer_id: LayerId,
         component: Box<dyn Component>,
     ) -> Result<LayerId> {
         if self.res_xy.is_none() {
@@ -283,20 +283,20 @@ impl SimpleWindowManager {
         let window = self
             .windows
             .iter_mut()
-            .find(|w| w.layer_id() == *layer_id)
+            .find(|w| w.layer_id() == layer_id)
             .ok_or(SimpleWindowManagerError::WindowWasNotFound {
                 layer_id: layer_id.get(),
             })?;
         window.push_child(component)
     }
 
-    fn remove_component(&mut self, layer_id: &LayerId) -> Result<()> {
+    fn remove_component(&mut self, layer_id: LayerId) -> Result<()> {
         if self.res_xy.is_none() {
             return Err(Error::NotInitialized);
         }
 
         // try remove window
-        if let Some(index) = self.windows.iter().position(|w| w.layer_id() == *layer_id) {
+        if let Some(index) = self.windows.iter().position(|w| w.layer_id() == layer_id) {
             self.windows.remove(index);
             return Ok(());
         }
@@ -383,13 +383,13 @@ pub fn create_window(title: String, xy: (usize, usize), wh: (usize, usize)) -> R
 }
 
 pub fn add_component_to_window(
-    layer_id: &LayerId,
+    layer_id: LayerId,
     component: Box<dyn Component>,
 ) -> Result<LayerId> {
     unsafe { SIMPLE_WM.try_lock() }?.add_component_to_window(layer_id, component)
 }
 
-pub fn remove_component(layer_id: &LayerId) -> Result<()> {
+pub fn remove_component(layer_id: LayerId) -> Result<()> {
     unsafe { SIMPLE_WM.try_lock() }?.remove_component(layer_id)
 }
 

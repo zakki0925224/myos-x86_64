@@ -135,12 +135,12 @@ impl TaskScheduler {
         Ok(())
     }
 
-    fn remove_layer_id(&mut self, layer_id: &LayerId) -> Result<()> {
+    fn remove_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
         let user_task = self.current_user_task_mut().ok_or("No current user task")?;
         user_task
             .resource
             .created_layer_ids
-            .retain(|cwd| *cwd != *layer_id);
+            .retain(|cwd| *cwd != layer_id);
         Ok(())
     }
 
@@ -150,9 +150,9 @@ impl TaskScheduler {
         Ok(())
     }
 
-    fn remove_fd_num(&mut self, fd_num: &FileDescriptorNumber) -> Result<()> {
+    fn remove_fd_num(&mut self, fd_num: FileDescriptorNumber) -> Result<()> {
         let user_task = self.current_user_task_mut().ok_or("No current user task")?;
-        user_task.resource.opend_fd_num.retain(|f| f != fd_num);
+        user_task.resource.opend_fd_num.retain(|f| *f != fd_num);
         Ok(())
     }
 
@@ -203,7 +203,7 @@ pub fn push_layer_id(layer_id: LayerId) -> Result<()> {
     unsafe { TASK_SCHED.push_layer_id(layer_id) }
 }
 
-pub fn remove_layer_id(layer_id: &LayerId) -> Result<()> {
+pub fn remove_layer_id(layer_id: LayerId) -> Result<()> {
     unsafe { TASK_SCHED.remove_layer_id(layer_id) }
 }
 
@@ -211,7 +211,7 @@ pub fn push_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
     unsafe { TASK_SCHED.push_fd_num(fd_num) }
 }
 
-pub fn remove_fd_num(fd_num: &FileDescriptorNumber) -> Result<()> {
+pub fn remove_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
     unsafe { TASK_SCHED.remove_fd_num(fd_num) }
 }
 

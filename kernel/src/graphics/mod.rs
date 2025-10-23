@@ -33,10 +33,10 @@ pub fn enable_shadow_buf() -> Result<()> {
 pub fn init_layer_man(graphic_info: &GraphicInfo) -> Result<()> {
     let (res_x, res_y) = graphic_info.resolution;
     let console_layer = multi_layer::create_layer((0, 0), (res_x, res_y - 30))?;
-    let console_layer_id = console_layer.id.clone();
+    let console_layer_id = console_layer.id;
 
     multi_layer::push_layer(console_layer)?;
-    frame_buf_console::set_target_layer_id(&console_layer_id)?;
+    frame_buf_console::set_target_layer_id(console_layer_id)?;
 
     kinfo!("graphics: Layer manager initialized");
     Ok(())

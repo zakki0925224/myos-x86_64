@@ -43,7 +43,7 @@ impl FrameBufferConsole {
 
     fn screen_wh(&self) -> Result<(usize, usize)> {
         if let Some(layer_id) = &self.target_layer_id {
-            let wh = multi_layer::get_layer_info(layer_id)?.wh;
+            let wh = multi_layer::get_layer_info(*layer_id)?.wh;
             Ok(wh)
         } else {
             frame_buf::resolution()
@@ -78,8 +78,8 @@ impl FrameBufferConsole {
         Ok(())
     }
 
-    fn set_target_layer_id(&mut self, layer_id: &LayerId) -> Result<()> {
-        self.target_layer_id = Some(layer_id.clone());
+    fn set_target_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
+        self.target_layer_id = Some(layer_id);
 
         // update
         self.init(self.back_color, self.fore_color)
@@ -373,7 +373,7 @@ impl FrameBufferConsole {
 
     fn fill(&self, color: ColorCode) -> Result<()> {
         if let Some(layer_id) = &self.target_layer_id {
-            multi_layer::draw_layer(layer_id, |l| l.fill(color))?;
+            multi_layer::draw_layer(*layer_id, |l| l.fill(color))?;
         } else {
             frame_buf::fill(color)?;
         }
@@ -383,7 +383,7 @@ impl FrameBufferConsole {
 
     fn draw_rect(&self, xy: (usize, usize), wh: (usize, usize), color: ColorCode) -> Result<()> {
         if let Some(layer_id) = &self.target_layer_id {
-            multi_layer::draw_layer(layer_id, |l| l.draw_rect(xy, wh, color))?;
+            multi_layer::draw_layer(*layer_id, |l| l.draw_rect(xy, wh, color))?;
         } else {
             frame_buf::draw_rect(xy, wh, color)?;
         }
@@ -398,7 +398,7 @@ impl FrameBufferConsole {
         wh: (usize, usize),
     ) -> Result<()> {
         if let Some(layer_id) = &self.target_layer_id {
-            multi_layer::draw_layer(layer_id, |l| l.copy_rect(src_xy, dst_xy, wh))?;
+            multi_layer::draw_layer(*layer_id, |l| l.copy_rect(src_xy, dst_xy, wh))?;
         } else {
             frame_buf::copy_rect(src_xy, dst_xy, wh)?;
         }
@@ -414,7 +414,7 @@ impl FrameBufferConsole {
         back_color: ColorCode,
     ) -> Result<()> {
         if let Some(layer_id) = &self.target_layer_id {
-            multi_layer::draw_layer(layer_id, |l| l.draw_char(xy, c, fore_color, back_color))?;
+            multi_layer::draw_layer(*layer_id, |l| l.draw_char(xy, c, fore_color, back_color))?;
         } else {
             frame_buf::draw_char(xy, c, fore_color, back_color)?;
         }
@@ -447,7 +447,7 @@ pub fn init(back_color: ColorCode, fore_color: ColorCode) -> Result<()> {
     unsafe { FRAME_BUF_CONSOLE.try_lock() }?.init(back_color, fore_color)
 }
 
-pub fn set_target_layer_id(layer_id: &LayerId) -> Result<()> {
+pub fn set_target_layer_id(layer_id: LayerId) -> Result<()> {
     unsafe { FRAME_BUF_CONSOLE.try_lock() }?.set_target_layer_id(layer_id)
 }
 

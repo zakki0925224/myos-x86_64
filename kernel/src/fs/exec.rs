@@ -4,13 +4,13 @@ use common::elf::Elf64;
 
 pub fn exec_elf(elf_path: &Path, args: &[&str], enable_debug: bool) -> Result<()> {
     let fd_num = vfs::open_file(elf_path, false)?;
-    let elf_data = vfs::read_file(&fd_num)?;
+    let elf_data = vfs::read_file(fd_num)?;
     let elf64 = match Elf64::new(&elf_data) {
         Ok(e) => e,
         Err(err) => return Err(err.into()),
     };
 
-    vfs::close_file(&fd_num)?;
+    vfs::close_file(fd_num)?;
 
     let dwarf = if enable_debug {
         match dwarf::parse(&elf64) {

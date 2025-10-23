@@ -288,7 +288,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
             }
         }
         fd => {
-            let data = vfs::read_file(&fd)?;
+            let data = vfs::read_file(fd)?;
 
             if buf_len < data.len() {
                 return Err(Error::Failed("buffer is too small"));
@@ -316,7 +316,7 @@ fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<()> {
             return Err(Error::Failed("fd is not defined"));
         }
         fd => {
-            vfs::write_file(&fd, buf_slice)?;
+            vfs::write_file(fd, buf_slice)?;
         }
     }
 
@@ -336,8 +336,8 @@ fn sys_open(filepath: *const u8, flags: u32) -> Result<i32> {
 
 fn sys_close(fd_num: i32) -> Result<()> {
     let fd_num = FileDescriptorNumber::new_val(fd_num)?;
-    vfs::close_file(&fd_num)?;
-    task::scheduler::remove_fd_num(&fd_num)?;
+    vfs::close_file(fd_num)?;
+    task::scheduler::remove_fd_num(fd_num)?;
 
     Ok(())
 }
@@ -391,7 +391,7 @@ fn sys_stat(fd_num: i32, buf: *mut Stat) -> Result<()> {
         FileDescriptorNumber::STDIN
         | FileDescriptorNumber::STDOUT
         | FileDescriptorNumber::STDERR => 0,
-        fd => vfs::file_size(&fd)?,
+        fd => vfs::file_size(fd)?,
     };
     stat_mut.size = size;
     Ok(())
@@ -484,8 +484,8 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             }
 
             let layer_id = LayerId::new_val(layer_id as usize);
-            simple_window_manager::remove_component(&layer_id)?;
-            task::scheduler::remove_layer_id(&layer_id)?;
+            simple_window_manager::remove_component(layer_id)?;
+            task::scheduler::remove_layer_id(layer_id)?;
 
             // reply
             let reply_header = IomsgHeader::new(IomsgCommand::RemoveComponent, 0);
@@ -573,7 +573,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
                 pixel_format.into(),
             )?;
             let new_layer_id =
-                simple_window_manager::add_component_to_window(&layer_id, Box::new(image))?;
+                simple_window_manager::add_component_to_window(layer_id, Box::new(image))?;
 
             // reply
             let reply_header =
