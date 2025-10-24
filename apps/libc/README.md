@@ -70,26 +70,46 @@ Sends a generic I/O message to the system for various advanced operations.
 The message buffer should be formatted according to the specific command.
 A reply buffer can be provided to receive the result or response from the system.
 
+### socket
+
+TODO
+
+### bind
+
+TODO
+
+### sendto
+
+TODO
+
+### recvfrom
+
+TODO
+
 ## Syscall tables
 
-| number | name          | syscall num | arg1(%rdi)            | arg2(%rsi)         | arg3(%rdx)             | arg4(%r10) | arg5(%r8) | arg6(%r9) | ret(%rax)                        |
-| ------ | ------------- | ----------- | --------------------- | ------------------ | ---------------------- | ---------- | --------- | --------- | -------------------------------- |
-| 0      | sys_read      | 0x00        | int fd                | void \*buf         | size_t buf_len         | -          | -         | -         | int (read bytes, -1 on error)    |
-| 1      | sys_write     | 0x01        | int fd                | const void \*buf   | size_t buf_len         | -          | -         | -         | int (written bytes, -1 on error) |
-| 2      | sys_open      | 0x02        | const char \*filepath | uint32_t flags     | -                      | -          | -         | -         | int (fd, -1 on error)            |
-| 3      | sys_close     | 0x03        | int fd                | -                  | -                      | -          | -         | -         | int (0 on success, -1 on error)  |
-| 4      | sys_exit      | 0x04        | int status            | -                  | -                      | -          | -         | -         | void (noreturn)                  |
-| 5      | sys_sbrk      | 0x05        | size_t len            | -                  | -                      | -          | -         | -         | void\* (pointer, NULL on error)  |
-| 6      | sys_uname     | 0x06        | struct utsname \*buf  | -                  | -                      | -          | -         | -         | int (0 on success, -1 on error)  |
-| 7      | sys_break     | 0x07        | -                     | -                  | -                      | -          | -         | -         | void (noreturn)                  |
-| 8      | sys_stat      | 0x08        | int fd                | struct stat \*buf  | -                      | -          | -         | -         | int (0 on success, -1 on error)  |
-| 9      | sys_uptime    | 0x09        | -                     | -                  | -                      | -          | -         | -         | uint64_t (uptime ms)             |
-| 10     | sys_exec      | 0x0a        | const char \*args     | uint32_t flags     | -                      | -          | -         | -         | int (0 on success, -1 on error)  |
-| 11     | sys_getcwd    | 0x0b        | char \*buf            | size_t buf_len     | -                      | -          | -         | -         | int (0 on success, -1 on error)  |
-| 12     | sys_chdir     | 0x0c        | const char \*path     | -                  | -                      | -          | -         | -         | int (0 on success, -1 on error)  |
-| 13     | -             | -           | -                     | -                  | -                      | -          | -         | -         | -                                |
-| 14     | -             | -           | -                     | -                  | -                      | -          | -         | -         | -                                |
-| 15     | sys_sbrksz    | 0x0f        | const void \*target   | -                  | -                      | -          | -         | -         | size_t (size, 0 on error)        |
-| 16     | -             | -           | -                     | -                  | -                      | -          | -         | -         | -                                |
-| 17     | sys_getenames | 0x11        | const char \*path     | char \*buf         | size_t buf_len         | -          | -         | -         | int (0 on success, -1 on error)  |
-| 18     | sys_iomsg     | 0x12        | const void \*msgbuf   | void \*replymsgbuf | size_t replymsgbuf_len | -          | -         | -         | int (0 on success, -1 on error)  |
+| number | name          | syscall num(%rax) | arg1(%rdi)            | arg2(%rsi)                   | arg3(%rdx)             | arg4(%r10) | arg5(%r8)                         | arg6(%r9)      | ret(%rax)                         |
+| ------ | ------------- | ----------------- | --------------------- | ---------------------------- | ---------------------- | ---------- | --------------------------------- | -------------- | --------------------------------- |
+| 0      | sys_read      | 0x00              | int fd                | void \*buf                   | size_t buf_len         | -          | -                                 | -              | int (read bytes, -1 on error)     |
+| 1      | sys_write     | 0x01              | int fd                | const void \*buf             | size_t buf_len         | -          | -                                 | -              | int (written bytes, -1 on error)  |
+| 2      | sys_open      | 0x02              | const char \*filepath | uint32_t flags               | -                      | -          | -                                 | -              | int (fd, -1 on error)             |
+| 3      | sys_close     | 0x03              | int fd                | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)   |
+| 4      | sys_exit      | 0x04              | int status            | -                            | -                      | -          | -                                 | -              | void (noreturn)                   |
+| 5      | sys_sbrk      | 0x05              | size_t len            | -                            | -                      | -          | -                                 | -              | void\* (pointer, NULL on error)   |
+| 6      | sys_uname     | 0x06              | struct utsname \*buf  | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)   |
+| 7      | sys_break     | 0x07              | -                     | -                            | -                      | -          | -                                 | -              | void (noreturn)                   |
+| 8      | sys_stat      | 0x08              | int fd                | struct stat \*buf            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)   |
+| 9      | sys_uptime    | 0x09              | -                     | -                            | -                      | -          | -                                 | -              | uint64_t (uptime ms)              |
+| 10     | sys_exec      | 0x0a              | const char \*args     | uint32_t flags               | -                      | -          | -                                 | -              | int (0 on success, -1 on error)   |
+| 11     | sys_getcwd    | 0x0b              | char \*buf            | size_t buf_len               | -                      | -          | -                                 | -              | int (0 on success, -1 on error)   |
+| 12     | sys_chdir     | 0x0c              | const char \*path     | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)   |
+| 13     | -             | -                 | -                     | -                            | -                      | -          | -                                 | -              | -                                 |
+| 14     | -             | -                 | -                     | -                            | -                      | -          | -                                 | -              | -                                 |
+| 15     | sys_sbrksz    | 0x0f              | const void \*target   | -                            | -                      | -          | -                                 | -              | size_t (size, 0 on error)         |
+| 16     | -             | -                 | -                     | -                            | -                      | -          | -                                 | -              | -                                 |
+| 17     | sys_getenames | 0x11              | const char \*path     | char \*buf                   | size_t buf_len         | -          | -                                 | -              | int (0 on success, -1 on error)   |
+| 18     | sys_iomsg     | 0x12              | const void \*msgbuf   | void \*replymsgbuf           | size_t replymsgbuf_len | -          | -                                 | -              | int (0 on success, -1 on error)   |
+| 19     | sys_socket    | 0x13              | int domain            | int type                     | int protocol           | -          | -                                 | -              | int (sockfd, -1 on error)         |
+| 20     | sys_bind      | 0x14              | int sockfd            | const struct sockaddr \*addr | size_t addrlen         | -          | -                                 | -              | int (0 on success, -1 on error)   |
+| 21     | sys_sendto    | 0x15              | int sockfd            | const void \*buf             | size_t len             | int flags  | const struct sockaddr \*dest_addr | size_t addrlen | int (sent bytes, -1 on error)     |
+| 22     | sys_recvfrom  | 0x16              | int sockfd            | void \*buf                   | size_t len             | int flags  | struct sockaddr \*src_addr        | size_t addrlen | int (received bytes, -1 on error) |

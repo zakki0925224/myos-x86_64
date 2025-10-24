@@ -74,7 +74,15 @@ extern "sysv64" fn asm_syscall_handler() {
         "and r11, ~0x100", // clear TF
         "push r11",
         "popfq",
+        "push r9",      // save r9 (arg6) temporarily
+        "mov r9, r8",   // 6th arg (was r8/arg5)
+        "mov r8, rcx",  // 5th arg (was rcx/r10/arg4)
+        "mov rcx, rdx", // 4th arg (was rdx/arg3)
+        "mov rdx, rsi", // 3rd arg (was rsi/arg2)
+        "mov rsi, rdi", // 2nd arg (was rdi/arg1)
+        "mov rdi, rax", // 1st arg (syscall number from rax)
         "call syscall_handler",
+        "pop r9", // restore r9
         "mov rsp, rbp",
         "pop r11",
         "pop rcx",
@@ -85,22 +93,27 @@ extern "sysv64" fn asm_syscall_handler() {
 
 #[no_mangle]
 extern "sysv64" fn syscall_handler(
-    arg0: u64, // (sysv abi) rdi
-    arg1: u64, // (sysv abi) rsi
-    arg2: u64, // (sysv abi) rdx
-    arg3: u64, // (sysv abi) rcx from r10
-    arg4: u64, // (sysv abi) r8
-    arg5: u64, // (sysv abi) r9
+    syscall_num: u64, // (sysv abi) rax - syscall number
+    arg0: u64,        // (sysv abi) rdi
+    arg1: u64,        // (sysv abi) rsi
+    arg2: u64,        // (sysv abi) rdx
+    arg3: u64,        // (sysv abi) rcx from r10
+    arg4: u64,        // (sysv abi) r8
+    arg5: u64,        // (sysv abi) r9
 ) -> i64 /* rax */ {
     // let args = [arg0, arg1, arg2, arg3, arg4, arg5];
-    // debug!("syscall: Called!(args: {:?})", args);
+    // kdebug!(
+    //     "syscall: Called!(syscall num: {}, args: {:?})",
+    //     syscall_num,
+    //     args
+    // );
 
-    match arg0 {
+    match syscall_num {
         // read syscall
         0 => {
-            let fd_num = arg1 as i32;
-            let buf = arg2 as *mut u8;
-            let buf_len = arg3 as usize;
+            let fd_num = arg0 as i32;
+            let buf = arg1 as *mut u8;
+            let buf_len = arg2 as usize;
             if let Err(err) = sys_read(fd_num, buf, buf_len) {
                 kerror!("syscall: read: {:?}", err);
                 return -1;
@@ -108,9 +121,9 @@ extern "sysv64" fn syscall_handler(
         }
         // write syscall
         1 => {
-            let fd_num = arg1 as i32;
-            let buf = arg2 as *const u8;
-            let buf_len = arg3 as usize;
+            let fd_num = arg0 as i32;
+            let buf = arg1 as *const u8;
+            let buf_len = arg2 as usize;
             if let Err(err) = sys_write(fd_num, buf, buf_len) {
                 kerror!("syscall: write: {:?}", err);
                 return -1;
@@ -118,8 +131,8 @@ extern "sysv64" fn syscall_handler(
         }
         // open syscall
         2 => {
-            let filepath = arg1 as *const u8;
-            let flags = arg2 as u32;
+            let filepath = arg0 as *const u8;
+            let flags = arg1 as u32;
             match sys_open(filepath, flags) {
                 Ok(fd) => return fd as i64,
                 Err(err) => {
@@ -130,7 +143,7 @@ extern "sysv64" fn syscall_handler(
         }
         // close syscall
         3 => {
-            let fd_num = arg1 as i32;
+            let fd_num = arg0 as i32;
             if let Err(err) = sys_close(fd_num) {
                 kerror!("syscall: close: {:?}", err);
                 return -1;
@@ -138,13 +151,13 @@ extern "sysv64" fn syscall_handler(
         }
         // exit syscall
         4 => {
-            let status = arg1 as i32;
+            let status = arg0 as i32;
             sys_exit(status);
             unreachable!();
         }
         // sbrk syscall
         5 => {
-            let len = arg1 as usize;
+            let len = arg0 as usize;
             match sys_sbrk(len) {
                 Ok(ptr) => return ptr as i64,
                 Err(err) => {
@@ -155,7 +168,7 @@ extern "sysv64" fn syscall_handler(
         }
         // uname syscall
         6 => {
-            let buf = arg1 as *mut Utsname;
+            let buf = arg0 as *mut Utsname;
             if let Err(err) = sys_uname(buf) {
                 kerror!("syscall: uname: {:?}", err);
                 return -1;
@@ -168,8 +181,8 @@ extern "sysv64" fn syscall_handler(
         }
         // stat syscall
         8 => {
-            let fd_num = arg1 as i32;
-            let buf = arg2 as *mut Stat;
+            let fd_num = arg0 as i32;
+            let buf = arg1 as *mut Stat;
             if let Err(err) = sys_stat(fd_num, buf) {
                 kerror!("syscall: stat: {:?}", err);
                 return -1;
@@ -181,8 +194,8 @@ extern "sysv64" fn syscall_handler(
         }
         // exec syscall
         10 => {
-            let args = arg1 as *const u8;
-            let flags = arg2 as u32;
+            let args = arg0 as *const u8;
+            let flags = arg1 as u32;
             if let Err(err) = sys_exec(args, flags) {
                 kerror!("syscall: exec: {:?}", err);
                 return -1;
@@ -190,8 +203,8 @@ extern "sysv64" fn syscall_handler(
         }
         // getcwd syscall
         11 => {
-            let buf = arg1 as *mut u8;
-            let buf_len = arg2 as usize;
+            let buf = arg0 as *mut u8;
+            let buf_len = arg1 as usize;
             if let Err(err) = sys_getcwd(buf, buf_len) {
                 kerror!("syscall: getcwd: {:?}", err);
                 return -1;
@@ -199,7 +212,7 @@ extern "sysv64" fn syscall_handler(
         }
         // chdir syscall
         12 => {
-            let path = arg1 as *const u8;
+            let path = arg0 as *const u8;
             if let Err(err) = sys_chdir(path) {
                 kerror!("syscall: chdir: {:?}", err);
                 return -1;
@@ -207,20 +220,20 @@ extern "sysv64" fn syscall_handler(
         }
         // sbrksz syscall
         15 => {
-            let target = arg1 as *const u8;
+            let target = arg0 as *const u8;
             match sys_sbrksz(target) {
                 Ok(size) => return size as i64,
                 Err(err) => {
-                    kerror!("syscall: sbrksz: {:?}, target addr: 0x{:x}", err, arg1);
+                    kerror!("syscall: sbrksz: {:?}, target addr: 0x{:x}", err, arg0);
                     return 0;
                 }
             };
         }
         // getenames syscall
         17 => {
-            let path = arg1 as *const u8;
-            let buf = arg2 as *mut u8;
-            let buf_len = arg3 as usize;
+            let path = arg0 as *const u8;
+            let buf = arg1 as *mut u8;
+            let buf_len = arg2 as usize;
 
             if let Err(err) = sys_getenames(path, buf, buf_len) {
                 kerror!("syscall: getenames: {:?}", err);
@@ -229,13 +242,51 @@ extern "sysv64" fn syscall_handler(
         }
         // iomsg syscall
         18 => {
-            let msgbuf = arg1 as *const u8;
-            let replymsgbuf = arg2 as *mut u8;
-            let replymsgbuf_len = arg3 as usize;
+            let msgbuf = arg0 as *const u8;
+            let replymsgbuf = arg1 as *mut u8;
+            let replymsgbuf_len = arg2 as usize;
             if let Err(err) = sys_iomsg(msgbuf, replymsgbuf, replymsgbuf_len) {
                 kerror!("syscall: iomsg: {:?}", err);
                 return -1;
             }
+        }
+        // socket syscall
+        19 => {
+            let _domain = arg0 as i32;
+            let _type = arg1 as i32;
+            let _protocol = arg2 as i32;
+            kerror!("syscall: socket: Not implemented yet");
+            return -1;
+        }
+        // bind syscall
+        20 => {
+            let sockfd = arg0 as i32;
+            let addr = arg1 as *const u8;
+            let addrlen = arg2 as usize;
+            kerror!("syscall: bind: Not implemented yet");
+            return -1;
+        }
+        // sendto syscall
+        21 => {
+            let sockfd = arg0 as i32;
+            let buf = arg1 as *const u8;
+            let len = arg2 as usize;
+            let flags = arg3 as i32;
+            let dest_addr = arg4 as *const u8;
+            let addrlen = arg5 as usize;
+            kerror!("syscall: sendto: Not implemented yet");
+            return -1;
+        }
+        // recvfrom syscall
+        22 => {
+            let sockfd = arg0 as i32;
+            let buf = arg1 as *mut u8;
+            let len = arg2 as usize;
+            let flags = arg3 as i32;
+            let src_addr = arg4 as *const u8;
+            let addrlen = arg5 as usize;
+            kerror!("syscall: recvfrom: Not implemented yet");
+            return -1;
         }
         num => {
             kerror!("syscall: Syscall number 0x{:x} is not defined", num);
