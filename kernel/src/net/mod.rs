@@ -1,7 +1,15 @@
 use crate::{
     error::{Error, Result},
     kdebug, kinfo, kwarn,
-    net::{arp::*, eth::*, icmp::*, ip::*, tcp::*, udp::*},
+    net::{
+        arp::*,
+        eth::*,
+        icmp::*,
+        ip::*,
+        socket::{SocketTable, SocketType},
+        tcp::*,
+        udp::*,
+    },
     sync::mutex::Mutex,
 };
 use alloc::{collections::btree_map::BTreeMap, string::String, vec::Vec};
@@ -11,12 +19,11 @@ pub mod arp;
 pub mod eth;
 pub mod icmp;
 pub mod ip;
+pub mod socket;
 pub mod tcp;
 pub mod udp;
 
 type ArpTable = BTreeMap<Ipv4Addr, EthernetAddress>;
-type UdpSocketTable = BTreeMap<u16, UdpSocket>;
-type TcpSocketTable = BTreeMap<u16, TcpSocket>;
 
 static mut NETWORK_MAN: Mutex<NetworkManager> =
     Mutex::new(NetworkManager::new(Ipv4Addr::new(192, 168, 100, 2)));
@@ -25,8 +32,7 @@ struct NetworkManager {
     my_ipv4_addr: Ipv4Addr,
     my_mac_addr: Option<EthernetAddress>,
     arp_table: ArpTable,
-    udp_socket_table: UdpSocketTable,
-    tcp_socket_table: TcpSocketTable,
+    socket_table: SocketTable,
 }
 
 impl NetworkManager {
@@ -35,8 +41,7 @@ impl NetworkManager {
             my_ipv4_addr: ipv4_addr,
             my_mac_addr: None,
             arp_table: ArpTable::new(),
-            udp_socket_table: UdpSocketTable::new(),
-            tcp_socket_table: TcpSocketTable::new(),
+            socket_table: SocketTable::new(),
         }
     }
 
