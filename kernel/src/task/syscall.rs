@@ -234,7 +234,6 @@ extern "sysv64" fn syscall_handler(
             let path = arg0 as *const u8;
             let buf = arg1 as *mut u8;
             let buf_len = arg2 as usize;
-
             if let Err(err) = sys_getenames(path, buf, buf_len) {
                 kerror!("syscall: getenames: {:?}", err);
                 return -1;
@@ -252,19 +251,23 @@ extern "sysv64" fn syscall_handler(
         }
         // socket syscall
         19 => {
-            let _domain = arg0 as i32;
-            let _type = arg1 as i32;
-            let _protocol = arg2 as i32;
-            kerror!("syscall: socket: Not implemented yet");
-            return -1;
+            let domain = arg0 as i32;
+            let type_ = arg1 as i32;
+            let protocol = arg2 as i32;
+            if let Err(err) = sys_socket(domain, type_, protocol) {
+                kerror!("syscall: socket: {:?}", err);
+                return -1;
+            }
         }
         // bind syscall
         20 => {
             let sockfd = arg0 as i32;
-            let addr = arg1 as *const u8;
+            let addr = arg1 as *const Sockaddr;
             let addrlen = arg2 as usize;
-            kerror!("syscall: bind: Not implemented yet");
-            return -1;
+            if let Err(err) = sys_bind(sockfd, addr, addrlen) {
+                kerror!("syscall: bind: {:?}", err);
+                return -1;
+            }
         }
         // sendto syscall
         21 => {
@@ -272,10 +275,12 @@ extern "sysv64" fn syscall_handler(
             let buf = arg1 as *const u8;
             let len = arg2 as usize;
             let flags = arg3 as i32;
-            let dest_addr = arg4 as *const u8;
+            let dest_addr = arg4 as *const Sockaddr;
             let addrlen = arg5 as usize;
-            kerror!("syscall: sendto: Not implemented yet");
-            return -1;
+            if let Err(err) = sys_sendto(sockfd, buf, len, flags, dest_addr, addrlen) {
+                kerror!("syscall: sendto: {:?}", err);
+                return -1;
+            }
         }
         // recvfrom syscall
         22 => {
@@ -283,10 +288,12 @@ extern "sysv64" fn syscall_handler(
             let buf = arg1 as *mut u8;
             let len = arg2 as usize;
             let flags = arg3 as i32;
-            let src_addr = arg4 as *const u8;
+            let src_addr = arg4 as *const Sockaddr;
             let addrlen = arg5 as usize;
-            kerror!("syscall: recvfrom: Not implemented yet");
-            return -1;
+            if let Err(err) = sys_recvfrom(sockfd, buf, len, flags, src_addr, addrlen) {
+                kerror!("syscall: recvfrom: {:?}", err);
+                return -1;
+            }
         }
         num => {
             kerror!("syscall: Syscall number 0x{:x} is not defined", num);
@@ -642,6 +649,36 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
         }
     }
 
+    Ok(())
+}
+
+fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<()> {
+    Ok(())
+}
+
+fn sys_bind(sockfd: i32, addr: *const Sockaddr, addrlen: usize) -> Result<()> {
+    Ok(())
+}
+
+fn sys_sendto(
+    sockfd: i32,
+    buf: *const u8,
+    len: usize,
+    flags: i32,
+    dest_addr: *const Sockaddr,
+    addrlen: usize,
+) -> Result<()> {
+    Ok(())
+}
+
+fn sys_recvfrom(
+    sockfd: i32,
+    buf: *mut u8,
+    len: usize,
+    flags: i32,
+    src_addr: *const Sockaddr,
+    addrlen: usize,
+) -> Result<()> {
     Ok(())
 }
 

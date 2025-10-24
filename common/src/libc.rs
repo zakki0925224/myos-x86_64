@@ -27,3 +27,19 @@ impl Default for Utsname {
 pub struct Stat {
     pub size: usize, // file size (bytes)
 }
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Sockaddr {
+    pub sa_family: u16, // sa_family_t
+    pub sa_data: [u8; 14],
+}
+
+impl Default for Sockaddr {
+    fn default() -> Self {
+        Self {
+            sa_family: 0,
+            sa_data: [0; 14],
+        }
+    }
+}
