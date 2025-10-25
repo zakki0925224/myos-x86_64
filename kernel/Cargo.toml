@@ -7,4 +7,5 @@ description = "A hobby operating system written in Rust."
 
 [dependencies]
 common = { path = "../common" }
+libc-rs = { path = "../apps/libc-rs", features = ["for-kernel-stubs"] }
 pci-ids = "0.2.5"

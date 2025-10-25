@@ -1,15 +1,7 @@
 use crate::{
     error::{Error, Result},
     kdebug, kinfo, kwarn,
-    net::{
-        arp::*,
-        eth::*,
-        icmp::*,
-        ip::*,
-        socket::{SocketTable, SocketType},
-        tcp::*,
-        udp::*,
-    },
+    net::{arp::*, eth::*, icmp::*, ip::*, socket::*, tcp::*, udp::*},
     sync::mutex::Mutex,
 };
 use alloc::{collections::btree_map::BTreeMap, string::String, vec::Vec};
@@ -57,16 +49,43 @@ impl NetworkManager {
             .ok_or(Error::Failed("MAC address is not set"))
     }
 
-    fn udp_socket_mut(&mut self, port: u16) -> &mut UdpSocket {
-        self.udp_socket_table
-            .entry(port)
-            .or_insert(UdpSocket::new())
+    fn insert_new_socket(&mut self, type_: SocketType) -> Result<SocketId> {
+        let protocol = match type_ {
+            SocketType::Stream => Protocol::Tcp,
+            SocketType::Dgram => Protocol::Tcp,
+        };
+
+        self.socket_table.insert_new_socket(type_, protocol)
     }
 
-    fn tcp_socket_mut(&mut self, port: u16) -> &mut TcpSocket {
-        self.tcp_socket_table
-            .entry(port)
-            .or_insert(TcpSocket::new())
+    fn udp_socket_mut(&mut self, port: u16) -> Result<&mut UdpSocket> {
+        let type_ = SocketType::Dgram;
+
+        let socket_id = if let Ok(id) = self.socket_table.socket_id_by_port_and_type(port, type_) {
+            id
+        } else {
+            let id = self.socket_table.insert_new_socket(type_, Protocol::Udp)?;
+            self.socket_table.bind_port(id, Some(port))?;
+            id
+        };
+
+        let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+        socket.inner_udp_mut()
+    }
+
+    fn tcp_socket_mut(&mut self, port: u16) -> Result<&mut TcpSocket> {
+        let type_ = SocketType::Stream;
+
+        let socket_id = if let Ok(id) = self.socket_table.socket_id_by_port_and_type(port, type_) {
+            id
+        } else {
+            let id = self.socket_table.insert_new_socket(type_, Protocol::Tcp)?;
+            self.socket_table.bind_port(id, Some(port))?;
+            id
+        };
+
+        let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+        socket.inner_tcp_mut()
     }
 
     fn receive_icmp_packet(&mut self, packet: IcmpPacket) -> Result<Option<IcmpPacket>> {
@@ -91,7 +110,7 @@ impl NetworkManager {
         let src_port = packet.src_port;
         let dst_port = packet.dst_port;
         let seq_num = packet.seq_num;
-        let socket_mut = self.tcp_socket_mut(dst_port);
+        let socket_mut = self.tcp_socket_mut(dst_port)?;
 
         // TODO: Remove after
         if socket_mut.state() == TcpSocketState::Closed {
@@ -201,7 +220,7 @@ impl NetworkManager {
 
     fn receive_udp_packet(&mut self, packet: UdpPacket) -> Result<Option<UdpPacket>> {
         let dst_port = packet.dst_port;
-        let socket_mut = self.udp_socket_mut(dst_port);
+        let socket_mut = self.udp_socket_mut(dst_port)?;
         socket_mut.receive(&packet.data);
         let s = socket_mut.buf_to_string_utf8_lossy();
         kdebug!("net: UDP data: {:?}", s);
@@ -319,4 +338,8 @@ pub fn my_mac_addr() -> Result<EthernetAddress> {
 
 pub fn receive_eth_payload(payload: EthernetPayload) -> Result<Option<EthernetPayload>> {
     unsafe { NETWORK_MAN.try_lock() }?.receive_eth_payload(payload)
+}
+
+pub fn insert_new_socket(type_: SocketType) -> Result<SocketId> {
+    unsafe { NETWORK_MAN.try_lock() }?.insert_new_socket(type_)
 }

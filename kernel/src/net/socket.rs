@@ -38,8 +38,8 @@ impl SocketId {
 
 #[derive(Debug)]
 pub enum SocketInner {
-    Udp(UdpSocket),
     Tcp(TcpSocket),
+    Udp(UdpSocket),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -56,6 +56,10 @@ pub struct Socket {
 }
 
 impl Socket {
+    pub fn type_(&self) -> SocketType {
+        self.type_
+    }
+
     pub fn inner_udp_mut(&mut self) -> Result<&mut UdpSocket> {
         if self.type_ != SocketType::Dgram {
             return Err(Error::Failed("Invalid socket type"));
@@ -104,18 +108,14 @@ impl SocketTable {
             .ok_or(Error::Failed("Invalid socket ID"))
     }
 
-    pub fn socket_mut_by_port_and_type(
-        &mut self,
-        port: u16,
-        type_: SocketType,
-    ) -> Result<&mut Socket> {
+    pub fn socket_id_by_port_and_type(&self, port: u16, type_: SocketType) -> Result<SocketId> {
         let socket_id = match type_ {
             SocketType::Stream => self.tcp_port_socket_id_map.get(&port),
             SocketType::Dgram => self.udp_port_socket_id_map.get(&port),
         }
         .ok_or(Error::Failed("Port is not used"))?;
 
-        self.socket_mut_by_id(*socket_id)
+        Ok(*socket_id)
     }
 
     pub fn insert_new_socket(&mut self, type_: SocketType, protocol: Protocol) -> Result<SocketId> {

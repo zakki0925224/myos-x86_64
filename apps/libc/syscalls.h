@@ -47,9 +47,14 @@
 #define EXEC_FLAG_NONE 0x0
 #define EXEC_FLAG_DEBUG 0x1
 
+// sys_socket args
+#define SOCKET_DOMAIN_AF_INET 1
+#define SOCKET_TYPE_SOCK_DGRAM 1
+#define SOCKET_TYPE_SOCK_STREAM 2
+
 extern int sys_read(int fd, void* buf, size_t buf_len);
 extern int sys_write(int fd, const void* buf, size_t buf_len);
-extern int sys_open(const char* filepath, uint32_t flags);
+extern int sys_open(const char* filepath, int flags);
 extern int sys_close(int fd);
 extern void sys_exit(int status);
 extern void* sys_sbrk(size_t len);
@@ -57,7 +62,7 @@ extern int sys_uname(utsname* buf);
 extern void sys_break(void);
 extern int sys_stat(int fd, f_stat* buf);
 extern uint64_t sys_uptime(void);
-extern int sys_exec(const char* args, uint32_t flags);
+extern int sys_exec(const char* args, int flags);
 extern int sys_getcwd(char* buf, size_t buf_len);
 extern int sys_chdir(const char* path);
 extern size_t sys_sbrksz(const void* target);

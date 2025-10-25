@@ -20,19 +20,26 @@ fn find_headers_recursively(dir: PathBuf) -> Vec<PathBuf> {
 }
 
 fn main() {
-    Command::new("make")
-        .arg("-C")
-        .arg("../libc")
-        .status()
-        .expect("Failed to run make");
-
-    println!("cargo::rustc-link-search=../libc");
-    println!("cargo::rustc-link-lib=c");
+    let is_for_kernel = std::env::var("CARGO_FEATURE_FOR_KERNEL_STUBS").is_ok();
 
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let out_path = std::path::PathBuf::from(out_dir);
 
     let libc_path = PathBuf::from("../libc");
+    let headers = find_headers_recursively(libc_path.clone());
+    if headers.is_empty() {
+        Command::new("make")
+            .arg("-C")
+            .arg("../libc")
+            .status()
+            .expect("Failed to run make");
+    }
+
+    if !is_for_kernel {
+        println!("cargo:rustc-link-search=../libc");
+        println!("cargo:rustc-link-lib=c");
+    }
+
     let headers = find_headers_recursively(libc_path);
     let mut builder = bindgen::Builder::default();
 
@@ -46,5 +53,5 @@ fn main() {
         .expect("Failed to generate bindings");
     bindings
         .write_to_file(out_path.join("bindings.rs"))
-        .expect("Fialed to wrote bindings");
+        .expect("Failed to write bindings");
 }

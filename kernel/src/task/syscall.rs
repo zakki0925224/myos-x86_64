@@ -13,6 +13,7 @@ use crate::{
     graphics::{multi_layer::LayerId, simple_window_manager},
     kdebug, kerror, kinfo,
     mem::{bitmap, paging::PAGE_SIZE},
+    net::{self, socket::*},
     print, task, util,
 };
 use alloc::{
@@ -20,8 +21,21 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use common::libc::*;
 use core::{arch::naked_asm, slice};
+use libc_rs::*;
+
+// sys_open flags
+const SYS_OPEN_FLAG_NONE: i32 = 0x0;
+const SYS_OPEN_FLAG_CREATE: i32 = 0x1;
+
+// sys_exec flags
+const SYS_EXEC_FLAG_NONE: i32 = 0x0;
+const SYS_EXEC_FLAG_DEBUG: i32 = 0x1;
+
+// sys_socket args
+const SYS_SOCKET_DOMAIN_AF_INET: i32 = 1;
+const SYS_SOCKET_TYPE_SOCK_STREAM: i32 = 1;
+const SYS_SOCKET_TYPE_SOCK_DGRAM: i32 = 2;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u32)]
@@ -132,7 +146,7 @@ extern "sysv64" fn syscall_handler(
         // open syscall
         2 => {
             let filepath = arg0 as *const u8;
-            let flags = arg1 as u32;
+            let flags = arg1 as i32;
             match sys_open(filepath, flags) {
                 Ok(fd) => return fd as i64,
                 Err(err) => {
@@ -168,7 +182,7 @@ extern "sysv64" fn syscall_handler(
         }
         // uname syscall
         6 => {
-            let buf = arg0 as *mut Utsname;
+            let buf = arg0 as *mut utsname;
             if let Err(err) = sys_uname(buf) {
                 kerror!("syscall: uname: {:?}", err);
                 return -1;
@@ -182,7 +196,7 @@ extern "sysv64" fn syscall_handler(
         // stat syscall
         8 => {
             let fd_num = arg0 as i32;
-            let buf = arg1 as *mut Stat;
+            let buf = arg1 as *mut f_stat;
             if let Err(err) = sys_stat(fd_num, buf) {
                 kerror!("syscall: stat: {:?}", err);
                 return -1;
@@ -195,7 +209,7 @@ extern "sysv64" fn syscall_handler(
         // exec syscall
         10 => {
             let args = arg0 as *const u8;
-            let flags = arg1 as u32;
+            let flags = arg1 as i32;
             if let Err(err) = sys_exec(args, flags) {
                 kerror!("syscall: exec: {:?}", err);
                 return -1;
@@ -254,15 +268,18 @@ extern "sysv64" fn syscall_handler(
             let domain = arg0 as i32;
             let type_ = arg1 as i32;
             let protocol = arg2 as i32;
-            if let Err(err) = sys_socket(domain, type_, protocol) {
-                kerror!("syscall: socket: {:?}", err);
-                return -1;
+            match sys_socket(domain, type_, protocol) {
+                Ok(socket_id) => return socket_id.get() as i64,
+                Err(err) => {
+                    kerror!("syscall: socket: {:?}", err);
+                    return -1;
+                }
             }
         }
         // bind syscall
         20 => {
             let sockfd = arg0 as i32;
-            let addr = arg1 as *const Sockaddr;
+            let addr = arg1 as *const sockaddr;
             let addrlen = arg2 as usize;
             if let Err(err) = sys_bind(sockfd, addr, addrlen) {
                 kerror!("syscall: bind: {:?}", err);
@@ -275,7 +292,7 @@ extern "sysv64" fn syscall_handler(
             let buf = arg1 as *const u8;
             let len = arg2 as usize;
             let flags = arg3 as i32;
-            let dest_addr = arg4 as *const Sockaddr;
+            let dest_addr = arg4 as *const sockaddr;
             let addrlen = arg5 as usize;
             if let Err(err) = sys_sendto(sockfd, buf, len, flags, dest_addr, addrlen) {
                 kerror!("syscall: sendto: {:?}", err);
@@ -288,7 +305,7 @@ extern "sysv64" fn syscall_handler(
             let buf = arg1 as *mut u8;
             let len = arg2 as usize;
             let flags = arg3 as i32;
-            let src_addr = arg4 as *const Sockaddr;
+            let src_addr = arg4 as *const sockaddr;
             let addrlen = arg5 as usize;
             if let Err(err) = sys_recvfrom(sockfd, buf, len, flags, src_addr, addrlen) {
                 kerror!("syscall: recvfrom: {:?}", err);
@@ -381,11 +398,11 @@ fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<()> {
     Ok(())
 }
 
-fn sys_open(filepath: *const u8, flags: u32) -> Result<i32> {
+fn sys_open(filepath: *const u8, flags: i32) -> Result<i32> {
     let filepath = unsafe { util::cstring::from_cstring_ptr(filepath) }
         .as_str()
         .into();
-    let create = flags & 0x1 != 0;
+    let create = flags & SYS_OPEN_FLAG_CREATE != 0;
     let fd_num = vfs::open_file(&filepath, create)?;
     task::scheduler::push_fd_num(fd_num)?;
 
@@ -418,7 +435,7 @@ fn sys_sbrk(len: usize) -> Result<*const u8> {
     Ok(virt_addr.as_ptr())
 }
 
-fn sys_uname(buf: *mut Utsname) -> Result<()> {
+fn sys_uname(buf: *mut utsname) -> Result<()> {
     let sysname = env::OS_NAME.as_bytes();
     let nodename = "nodename".as_bytes();
     let release = "release".as_bytes();
@@ -427,12 +444,31 @@ fn sys_uname(buf: *mut Utsname) -> Result<()> {
     let domainname = "domainname".as_bytes();
 
     let utsname_mut = unsafe { &mut *buf };
-    utsname_mut.sysname[..sysname.len()].copy_from_slice(sysname);
-    utsname_mut.nodename[..nodename.len()].copy_from_slice(nodename);
-    utsname_mut.release[..release.len()].copy_from_slice(release);
-    utsname_mut.version[..version.len()].copy_from_slice(version);
-    utsname_mut.machine[..machine.len()].copy_from_slice(machine);
-    utsname_mut.domainname[..domainname.len()].copy_from_slice(domainname);
+
+    let sysname_i8: &[i8] =
+        unsafe { slice::from_raw_parts(sysname.as_ptr() as *const i8, sysname.len()) };
+    utsname_mut.sysname[..sysname.len()].copy_from_slice(sysname_i8);
+
+    let nodename_i8: &[i8] =
+        unsafe { slice::from_raw_parts(nodename.as_ptr() as *const i8, nodename.len()) };
+    utsname_mut.nodename[..nodename.len()].copy_from_slice(nodename_i8);
+
+    let release_i8: &[i8] =
+        unsafe { slice::from_raw_parts(release.as_ptr() as *const i8, release.len()) };
+    utsname_mut.release[..release.len()].copy_from_slice(release_i8);
+
+    let version_i8: &[i8] =
+        unsafe { slice::from_raw_parts(version.as_ptr() as *const i8, version.len()) };
+    utsname_mut.version[..version.len()].copy_from_slice(version_i8);
+
+    let machine_i8: &[i8] =
+        unsafe { slice::from_raw_parts(machine.as_ptr() as *const i8, machine.len()) };
+    utsname_mut.machine[..machine.len()].copy_from_slice(machine_i8);
+
+    let domainname_i8: &[i8] =
+        unsafe { slice::from_raw_parts(domainname.as_ptr() as *const i8, domainname.len()) };
+    utsname_mut.domainname[..domainname.len()].copy_from_slice(domainname_i8);
+
     Ok(())
 }
 
@@ -441,7 +477,7 @@ fn sys_break() {
     x86_64::int3();
 }
 
-fn sys_stat(fd_num: i32, buf: *mut Stat) -> Result<()> {
+fn sys_stat(fd_num: i32, buf: *mut f_stat) -> Result<()> {
     let fd_num = FileDescriptorNumber::new_val(fd_num)?;
     let stat_mut = unsafe { &mut *buf };
 
@@ -459,11 +495,11 @@ fn sys_uptime() -> i64 {
     util::time::global_uptime().as_millis() as i64
 }
 
-fn sys_exec(args: *const u8, flags: u32) -> Result<()> {
+fn sys_exec(args: *const u8, flags: i32) -> Result<()> {
     let args = unsafe { util::cstring::from_cstring_ptr(args) };
     let args: Vec<&str> = args.split(' ').collect();
 
-    let enable_debug = flags & 0x1 != 0;
+    let enable_debug = flags & SYS_EXEC_FLAG_DEBUG != 0;
     fs::exec::exec_elf(&args[0].into(), &args[1..], enable_debug)?;
 
     Ok(())
@@ -652,12 +688,23 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
     Ok(())
 }
 
-fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<()> {
-    Ok(())
+fn sys_socket(domain: i32, type_: i32, _protocol: i32) -> Result<SocketId> {
+    if domain != SYS_SOCKET_DOMAIN_AF_INET {
+        return Err(Error::Failed("Unsupported domain"));
+    }
+
+    let socket_type = match type_ {
+        SYS_SOCKET_TYPE_SOCK_STREAM => SocketType::Stream,
+        SYS_SOCKET_TYPE_SOCK_DGRAM => SocketType::Dgram,
+        _ => return Err(Error::Failed("Unsupported type")),
+    };
+
+    net::insert_new_socket(socket_type)
 }
 
-fn sys_bind(sockfd: i32, addr: *const Sockaddr, addrlen: usize) -> Result<()> {
-    Ok(())
+fn sys_bind(sockfd: i32, addr: *const sockaddr, addrlen: usize) -> Result<()> {
+    let socket_id = SocketId::new_val(sockfd)?;
+    todo!();
 }
 
 fn sys_sendto(
@@ -665,10 +712,10 @@ fn sys_sendto(
     buf: *const u8,
     len: usize,
     flags: i32,
-    dest_addr: *const Sockaddr,
+    dest_addr: *const sockaddr,
     addrlen: usize,
 ) -> Result<()> {
-    Ok(())
+    todo!();
 }
 
 fn sys_recvfrom(
@@ -676,10 +723,10 @@ fn sys_recvfrom(
     buf: *mut u8,
     len: usize,
     flags: i32,
-    src_addr: *const Sockaddr,
+    src_addr: *const sockaddr,
     addrlen: usize,
 ) -> Result<()> {
-    Ok(())
+    todo!();
 }
 
 pub fn enable() {

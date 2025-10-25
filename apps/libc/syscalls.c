@@ -28,7 +28,7 @@ int sys_write(int fd, const void* buf, size_t buf_len) {
     return (int)syscall(SN_WRITE, (uint64_t)fd, (uint64_t)buf, (uint64_t)buf_len, 0, 0, 0);
 }
 
-int sys_open(const char* filepath, uint32_t flags) {
+int sys_open(const char* filepath, int flags) {
     return (int)syscall(SN_OPEN, (uint64_t)filepath, (uint64_t)flags, 0, 0, 0, 0);
 }
 
@@ -61,7 +61,7 @@ uint64_t sys_uptime(void) {
     return syscall(SN_UPTIME, 0, 0, 0, 0, 0, 0);
 }
 
-int sys_exec(const char* args, uint32_t flags) {
+int sys_exec(const char* args, int flags) {
     return (int)syscall(SN_EXEC, (uint64_t)args, (uint64_t)flags, 0, 0, 0, 0);
 }
 

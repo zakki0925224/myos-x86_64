@@ -202,7 +202,13 @@ def _build_apps():
     d = f"./{APPS_DIR}"
     dirs = [f for f in os.listdir(d) if os.path.isdir(os.path.join(d, f))]
     dirs.sort()
-    dirs.remove(APPS_LIBC_DIR)
+
+    if APPS_LIBC_DIR in dirs:
+        pwd_libc = f"{d}/{APPS_LIBC_DIR}"
+        _run_cmd("make clean", dir=pwd_libc)
+        _run_cmd("make", dir=pwd_libc)
+
+        dirs.remove(APPS_LIBC_DIR)
 
     for dir_name in dirs:
         pwd = f"{d}/{dir_name}"
