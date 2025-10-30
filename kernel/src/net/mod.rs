@@ -6,6 +6,7 @@ use crate::{
 };
 use alloc::{collections::btree_map::BTreeMap, string::String, vec::Vec};
 use core::net::Ipv4Addr;
+use libc_rs::*;
 
 pub mod arp;
 pub mod eth;
@@ -58,7 +59,7 @@ impl NetworkManager {
         self.socket_table.insert_new_socket(type_, protocol)
     }
 
-    fn udp_socket_mut(&mut self, port: u16) -> Result<&mut UdpSocket> {
+    fn udp_socket_mut_by_port(&mut self, port: u16) -> Result<&mut UdpSocket> {
         let type_ = SocketType::Dgram;
 
         let socket_id = if let Ok(id) = self.socket_table.socket_id_by_port_and_type(port, type_) {
@@ -73,7 +74,7 @@ impl NetworkManager {
         socket.inner_udp_mut()
     }
 
-    fn tcp_socket_mut(&mut self, port: u16) -> Result<&mut TcpSocket> {
+    fn tcp_socket_mut_by_port(&mut self, port: u16) -> Result<&mut TcpSocket> {
         let type_ = SocketType::Stream;
 
         let socket_id = if let Ok(id) = self.socket_table.socket_id_by_port_and_type(port, type_) {
@@ -86,6 +87,44 @@ impl NetworkManager {
 
         let socket = self.socket_table.socket_mut_by_id(socket_id)?;
         socket.inner_tcp_mut()
+    }
+
+    fn bind_socket_v4(&mut self, socket_id: SocketId, addr: sockaddr_in) -> Result<()> {
+        if addr.sin_family as u32 != SOCKET_DOMAIN_AF_INET {
+            return Err(Error::Failed("Address family not supported"));
+        }
+
+        if addr.sin_addr.s_addr != Ipv4Addr::UNSPECIFIED.into()
+            && addr.sin_addr.s_addr != self.my_ipv4_addr.into()
+        {
+            return Err(Error::Failed("Address not available"));
+        }
+
+        {
+            let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+            if socket.port() != 0 {
+                return Err(Error::Failed("Socket already bound"));
+            }
+        }
+
+        let port_opt = if addr.sin_port == 0 {
+            None
+        } else {
+            Some(addr.sin_port)
+        };
+        self.socket_table.bind_port(socket_id, port_opt)?;
+
+        {
+            let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+            let bound = if addr.sin_addr.s_addr == Ipv4Addr::UNSPECIFIED.into() {
+                None
+            } else {
+                Some(addr.sin_addr.s_addr.into())
+            };
+            socket.addr = bound;
+        }
+
+        Ok(())
     }
 
     fn receive_icmp_packet(&mut self, packet: IcmpPacket) -> Result<Option<IcmpPacket>> {
@@ -110,7 +149,7 @@ impl NetworkManager {
         let src_port = packet.src_port;
         let dst_port = packet.dst_port;
         let seq_num = packet.seq_num;
-        let socket_mut = self.tcp_socket_mut(dst_port)?;
+        let socket_mut = self.tcp_socket_mut_by_port(dst_port)?;
 
         // TODO: Remove after
         if socket_mut.state() == TcpSocketState::Closed {
@@ -220,7 +259,7 @@ impl NetworkManager {
 
     fn receive_udp_packet(&mut self, packet: UdpPacket) -> Result<Option<UdpPacket>> {
         let dst_port = packet.dst_port;
-        let socket_mut = self.udp_socket_mut(dst_port)?;
+        let socket_mut = self.udp_socket_mut_by_port(dst_port)?;
         socket_mut.receive(&packet.data);
         let s = socket_mut.buf_to_string_utf8_lossy();
         kdebug!("net: UDP data: {:?}", s);
@@ -342,4 +381,8 @@ pub fn receive_eth_payload(payload: EthernetPayload) -> Result<Option<EthernetPa
 
 pub fn insert_new_socket(type_: SocketType) -> Result<SocketId> {
     unsafe { NETWORK_MAN.try_lock() }?.insert_new_socket(type_)
+}
+
+pub fn bind_v4(socket_id: SocketId, addr: sockaddr_in) -> Result<()> {
+    unsafe { NETWORK_MAN.try_lock() }?.bind_socket_v4(socket_id, addr)
 }

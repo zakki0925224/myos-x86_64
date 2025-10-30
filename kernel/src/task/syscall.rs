@@ -24,19 +24,6 @@ use alloc::{
 use core::{arch::naked_asm, slice};
 use libc_rs::*;
 
-// sys_open flags
-const SYS_OPEN_FLAG_NONE: i32 = 0x0;
-const SYS_OPEN_FLAG_CREATE: i32 = 0x1;
-
-// sys_exec flags
-const SYS_EXEC_FLAG_NONE: i32 = 0x0;
-const SYS_EXEC_FLAG_DEBUG: i32 = 0x1;
-
-// sys_socket args
-const SYS_SOCKET_DOMAIN_AF_INET: i32 = 1;
-const SYS_SOCKET_TYPE_SOCK_STREAM: i32 = 1;
-const SYS_SOCKET_TYPE_SOCK_DGRAM: i32 = 2;
-
 #[derive(Debug, Clone, Copy)]
 #[repr(u32)]
 enum IomsgCommand {
@@ -402,7 +389,7 @@ fn sys_open(filepath: *const u8, flags: i32) -> Result<i32> {
     let filepath = unsafe { util::cstring::from_cstring_ptr(filepath) }
         .as_str()
         .into();
-    let create = flags & SYS_OPEN_FLAG_CREATE != 0;
+    let create = (flags as u32) & OPEN_FLAG_CREATE != 0;
     let fd_num = vfs::open_file(&filepath, create)?;
     task::scheduler::push_fd_num(fd_num)?;
 
@@ -499,7 +486,7 @@ fn sys_exec(args: *const u8, flags: i32) -> Result<()> {
     let args = unsafe { util::cstring::from_cstring_ptr(args) };
     let args: Vec<&str> = args.split(' ').collect();
 
-    let enable_debug = flags & SYS_EXEC_FLAG_DEBUG != 0;
+    let enable_debug = (flags as u32) & EXEC_FLAG_DEBUG != 0;
     fs::exec::exec_elf(&args[0].into(), &args[1..], enable_debug)?;
 
     Ok(())
@@ -689,13 +676,13 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
 }
 
 fn sys_socket(domain: i32, type_: i32, _protocol: i32) -> Result<SocketId> {
-    if domain != SYS_SOCKET_DOMAIN_AF_INET {
+    if (domain as u32) != SOCKET_DOMAIN_AF_INET {
         return Err(Error::Failed("Unsupported domain"));
     }
 
-    let socket_type = match type_ {
-        SYS_SOCKET_TYPE_SOCK_STREAM => SocketType::Stream,
-        SYS_SOCKET_TYPE_SOCK_DGRAM => SocketType::Dgram,
+    let socket_type = match type_ as u32 {
+        SOCKET_TYPE_SOCK_STREAM => SocketType::Stream,
+        SOCKET_TYPE_SOCK_DGRAM => SocketType::Dgram,
         _ => return Err(Error::Failed("Unsupported type")),
     };
 
@@ -704,7 +691,9 @@ fn sys_socket(domain: i32, type_: i32, _protocol: i32) -> Result<SocketId> {
 
 fn sys_bind(sockfd: i32, addr: *const sockaddr, addrlen: usize) -> Result<()> {
     let socket_id = SocketId::new_val(sockfd)?;
-    todo!();
+    let addr = unsafe { *(addr as *const sockaddr_in) };
+    assert_eq!(size_of::<sockaddr_in>(), addrlen);
+    net::bind_v4(socket_id, addr)
 }
 
 fn sys_sendto(

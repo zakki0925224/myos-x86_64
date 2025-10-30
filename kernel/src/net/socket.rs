@@ -5,6 +5,7 @@ use crate::{
 use alloc::collections::btree_map::BTreeMap;
 use core::{
     fmt,
+    net::Ipv4Addr,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -51,11 +52,16 @@ pub enum SocketType {
 #[derive(Debug)]
 pub struct Socket {
     port: u16,
+    pub addr: Option<Ipv4Addr>,
     inner: SocketInner,
     type_: SocketType,
 }
 
 impl Socket {
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
     pub fn type_(&self) -> SocketType {
         self.type_
     }
@@ -138,7 +144,8 @@ impl SocketTable {
 
         let id = SocketId::new();
         let socket = Socket {
-            port: 0, // unbound
+            port: 0,    // unbound
+            addr: None, // unbound
             inner,
             type_,
         };
