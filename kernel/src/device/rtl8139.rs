@@ -161,6 +161,7 @@ struct Rtl8139Driver {
     io_register: Option<IoRegister>,
     rx_buf: RxBuffer,
     tx_buf: TxBuffer,
+    tx_queue: Vec<EthernetFrame>,
 }
 
 impl Rtl8139Driver {
@@ -171,6 +172,7 @@ impl Rtl8139Driver {
             io_register: None,
             rx_buf: RxBuffer::new(),
             tx_buf: TxBuffer::new(),
+            tx_queue: Vec::new(),
         }
     }
 
@@ -309,6 +311,7 @@ impl DeviceDriverFunction for Rtl8139Driver {
         // clear TOK and ROK
         io_register.write_int_status(0x5);
 
+        // RX
         // TOK
         if status & (1 << 2) != 0 {
             kdebug!("{}: TOK", name);
@@ -324,15 +327,15 @@ impl DeviceDriverFunction for Rtl8139Driver {
 
             if let Some(reply_payload) = net::receive_eth_payload(payload)? {
                 let payload_vec = reply_payload.to_vec();
-                let ether_type = match reply_payload {
-                    EthernetPayload::Arp(_) => EtherType::Arp,
-                    EthernetPayload::Ipv4(_) => EtherType::Ipv4,
+                let eth_type = match reply_payload {
+                    EthernetPayload::Arp(_) => EthernetType::Arp,
+                    EthernetPayload::Ipv4(_) => EthernetType::Ipv4,
                     EthernetPayload::None => return Ok(()),
                 };
                 let reply_eth_frame = EthernetFrame::new_with(
                     eth_frame.src_mac_addr,
                     net::my_mac_addr()?,
-                    ether_type,
+                    eth_type,
                     &payload_vec,
                 );
 
@@ -342,6 +345,11 @@ impl DeviceDriverFunction for Rtl8139Driver {
 
             let io_register = self.io_register()?; // re-borrow
             io_register.write_current_addr_packet_read(new_read_ptr as u16);
+        }
+
+        // TX
+        while let Some(eth_frame) = self.tx_queue.pop() {
+            self.send_packet(eth_frame)?;
         }
 
         Ok(())
@@ -404,4 +412,10 @@ pub fn write(data: &[u8]) -> Result<()> {
 pub fn poll_normal() -> Result<()> {
     let mut driver = unsafe { RTL8139_DRIVER.try_lock() }?;
     driver.poll_normal()
+}
+
+pub fn push_eth_frame_to_tx_queue(eth_frame: EthernetFrame) -> Result<()> {
+    let mut driver = unsafe { RTL8139_DRIVER.try_lock() }?;
+    driver.tx_queue.push(eth_frame);
+    Ok(())
 }

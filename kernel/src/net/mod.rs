@@ -1,4 +1,6 @@
 use crate::{
+    arch::x86_64,
+    device,
     error::{Error, Result},
     kdebug, kinfo, kwarn,
     net::{arp::*, eth::*, icmp::*, ip::*, socket::*, tcp::*, udp::*},
@@ -273,28 +275,48 @@ impl NetworkManager {
         let sender_mac_addr = packet.sender_eth_addr;
         let target_ipv4_addr = packet.target_ipv4_addr;
 
-        match arp_op {
-            ArpOperation::Request => {
-                self.arp_table.insert(sender_ipv4_addr, sender_mac_addr);
+        self.arp_table.insert(sender_ipv4_addr, sender_mac_addr);
 
-                if target_ipv4_addr != self.my_ipv4_addr {
-                    return Ok(None);
-                }
-
-                let reply_packet = ArpPacket::new_with(
-                    ArpOperation::Reply,
-                    self.my_mac_addr()?,
-                    self.my_ipv4_addr,
-                    sender_mac_addr,
-                    sender_ipv4_addr,
-                );
-
-                Ok(Some(reply_packet))
+        if arp_op == ArpOperation::Request {
+            if target_ipv4_addr != self.my_ipv4_addr {
+                return Ok(None);
             }
-            ArpOperation::Reply => {
-                unimplemented!()
-            }
+
+            let reply_packet = ArpPacket::new_with(
+                ArpOperation::Reply,
+                self.my_mac_addr()?,
+                self.my_ipv4_addr,
+                sender_mac_addr,
+                sender_ipv4_addr,
+            );
+
+            return Ok(Some(reply_packet));
         }
+
+        Ok(None)
+    }
+
+    fn send_arp_packet(
+        &mut self,
+        op: ArpOperation,
+        sender_eth_addr: EthernetAddress,
+        sender_ipv4_addr: Ipv4Addr,
+        target_eth_addr: EthernetAddress,
+        target_ipv4_addr: Ipv4Addr,
+    ) -> Result<()> {
+        let packet = ArpPacket::new_with(
+            op,
+            sender_eth_addr,
+            sender_ipv4_addr,
+            target_eth_addr,
+            target_ipv4_addr,
+        );
+
+        self.send_eth_payload(
+            EthernetPayload::Arp(packet),
+            target_eth_addr,
+            EthernetType::Arp,
+        )
     }
 
     fn receive_ipv4_packet(&mut self, packet: Ipv4Packet) -> Result<Option<Ipv4Packet>> {
@@ -364,6 +386,36 @@ impl NetworkManager {
 
         Ok(reply_payload)
     }
+
+    fn send_eth_payload(
+        &mut self,
+        payload: EthernetPayload,
+        dst_mac_addr: EthernetAddress,
+        eth_type: EthernetType,
+    ) -> Result<()> {
+        let payload_vec = payload.to_vec();
+        let src_mac_addr = self.my_mac_addr()?;
+        let eth_frame = EthernetFrame::new_with(dst_mac_addr, src_mac_addr, eth_type, &payload_vec);
+
+        device::rtl8139::push_eth_frame_to_tx_queue(eth_frame)
+    }
+
+    fn resolve_mac_addr(&mut self, ipv4_addr: Ipv4Addr) -> Result<Option<EthernetAddress>> {
+        if let Some(mac) = self.arp_table.get(&ipv4_addr) {
+            Ok(Some(*mac))
+        } else {
+            let eth_addr = EthernetAddress::broadcast();
+            self.send_arp_packet(
+                ArpOperation::Request,
+                self.my_mac_addr()?,
+                self.my_ipv4_addr,
+                eth_addr,
+                ipv4_addr,
+            )?;
+
+            Ok(None)
+        }
+    }
 }
 
 pub fn set_my_mac_addr(mac_addr: EthernetAddress) -> Result<()> {
@@ -377,6 +429,23 @@ pub fn my_mac_addr() -> Result<EthernetAddress> {
 
 pub fn receive_eth_payload(payload: EthernetPayload) -> Result<Option<EthernetPayload>> {
     unsafe { NETWORK_MAN.try_lock() }?.receive_eth_payload(payload)
+}
+
+pub fn resolve_mac_addr(ipv4_addr: Ipv4Addr) -> Result<EthernetAddress> {
+    let eth_addr = x86_64::disabled_int(|| {
+        let mut network_man = unsafe { NETWORK_MAN.try_lock() }?;
+        let addr = network_man.resolve_mac_addr(ipv4_addr)?;
+        Result::Ok(addr)
+    })?;
+    match eth_addr {
+        Some(addr) => Ok(addr),
+        None => loop {
+            match resolve_mac_addr(ipv4_addr) {
+                Ok(addr) => return Ok(addr),
+                _ => x86_64::stihlt(),
+            }
+        },
+    }
 }
 
 pub fn insert_new_socket(type_: SocketType) -> Result<SocketId> {

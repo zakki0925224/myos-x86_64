@@ -5,6 +5,7 @@ use crate::{
 use alloc::vec::Vec;
 use core::{fmt::Debug, net::Ipv4Addr};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArpOperation {
     Request,
     Reply,
@@ -34,7 +35,7 @@ impl TryFrom<[u8; 2]> for ArpOperation {
 #[derive(Debug, Clone, Copy)]
 pub struct ArpPacket {
     hardware_ty: [u8; 2], // must be [0, 1]
-    protocol_ty: EtherType,
+    protocol_ty: EthernetType,
     hardware_len: u8, // must be 6
     protocol_len: u8, // must be 4
     op: [u8; 2],
@@ -53,7 +54,7 @@ impl TryFrom<&[u8]> for ArpPacket {
         }
 
         let hardware_ty = [data[0], data[1]];
-        let protocol_ty = EtherType::from([data[2], data[3]]);
+        let protocol_ty = EthernetType::from([data[2], data[3]]);
         let hardware_len = data[4];
         let protocol_len = data[5];
         let op = [data[6], data[7]];
@@ -88,7 +89,7 @@ impl ArpPacket {
     ) -> Self {
         Self {
             hardware_ty: [0, 1],
-            protocol_ty: EtherType::Ipv4,
+            protocol_ty: EthernetType::Ipv4,
             hardware_len: 6,
             protocol_len: 4,
             op: op.into(),
