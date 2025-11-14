@@ -14,9 +14,6 @@
             "norelro"
         ]
     },
-    "pre-link-args": {
-        "ld.lld": ["-nostdlib"]
-    },
     "panic-strategy": "abort",
     "disable-redzone": true,
     "features": "-mmx,-sse,+soft-float",
