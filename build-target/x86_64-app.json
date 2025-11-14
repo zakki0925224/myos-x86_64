@@ -7,7 +7,15 @@
     "executables": true,
     "linker-flavor": "ld.lld",
     "post-link-args": {
-        "ld.lld": ["--image-base=0xffff800000000000", "--static", "-z norelro"]
+        "ld.lld": [
+            "--image-base=0xffff800000000000",
+            "--static",
+            "-z",
+            "norelro"
+        ]
+    },
+    "pre-link-args": {
+        "ld.lld": ["-nostdlib"]
     },
     "panic-strategy": "abort",
     "disable-redzone": true,

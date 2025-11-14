@@ -7,11 +7,12 @@ LDFLAGS := -z norelro --static --image-base=0xffff800000000000
 LIBC_DIR := ../libc
 LIBC := $(LIBC_DIR)/libc_with_main.a
 
-$(OUT_FILE): $(OBJ_FILES)
+$(OUT_FILE): $(OBJ_FILES) $(LIBC)
 	mkdir -p ../bin
-	make -C $(LIBC_DIR) app
-
 	$(LD) $(OBJ_FILES) $(LIBC) -o $@ $(LDFLAGS)
+
+$(LIBC):
+	$(MAKE) -C $(LIBC_DIR) app
 
 %.o: %.c
 	$(CC) -c $< -o $@ $(CFLAGS)

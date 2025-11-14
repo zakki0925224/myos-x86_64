@@ -12,7 +12,7 @@ THIRD_PARTY_DIR = "third-party"
 QEMU_DIR = "qemu"
 DOOM_DIR = "doom-for-myos"
 INITRAMFS_DIR = "initramfs"
-MNT_DIR_PATH = "/mnt"
+MNT_DIR_PATH = f"./{OUTPUT_DIR}/mnt"
 
 BOOTLOADER_FILE = "bootx64.efi"
 KERNEL_FILE = "kernel.elf"
@@ -83,10 +83,6 @@ def _own_qemu_cmd() -> str:
     return f"./{THIRD_PARTY_DIR}/{QEMU_DIR}/build/{_qemu_cmd()} --display sdl --trace events=./{QEMU_TRACE_FILE}"
 
 
-def _git_submodule_update_cmd(path: str) -> str:
-    return f"git submodule update --init --recursive {path}"
-
-
 def _run_cmd(
     cmd: str,
     dir: str = "./",
@@ -137,7 +133,6 @@ def _build_qemu():
     global is_kernel_test
 
     d = f"./{THIRD_PARTY_DIR}/{QEMU_DIR}"
-    _run_cmd(_git_submodule_update_cmd(d))
 
     if is_kernel_test:
         return
@@ -150,21 +145,6 @@ def _build_qemu():
             f"mkdir -p build && cd build && ../configure --target-list={QEMU_TARGET_ARCH} --enable-trace-backends=log --enable-sdl {extra_cflags} && make -j$(nproc)",
             dir=d,
         )
-
-
-def _build_doom():
-    # download doom1.wad
-    if not os.path.exists(f"./{THIRD_PARTY_DIR}/{DOOM_WAD_FILE}"):
-        _run_cmd(
-            f"wget -P ./{THIRD_PARTY_DIR} https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad"
-        )
-
-    d = f"./{THIRD_PARTY_DIR}/{DOOM_DIR}"
-    _run_cmd(_git_submodule_update_cmd(d))
-    _run_cmd("git checkout master", dir=d)
-    _run_cmd("make -f Makefile.myos", dir=d)
-    _run_cmd(f"cp {d}/doomgeneric ./{APPS_DIR}/bin/doom")
-    _run_cmd(f"cp ./{THIRD_PARTY_DIR}/{DOOM_WAD_FILE} ./{INITRAMFS_DIR}")
 
 
 def _build_bootloader():
@@ -190,6 +170,9 @@ def build():
     global is_kernel_test
 
     _init()
+
+    _run_cmd("git submodule update --init --recursive")
+
     if not is_kernel_test:
         _build_apps()
 
@@ -203,18 +186,16 @@ def _build_apps():
     dirs = [f for f in os.listdir(d) if os.path.isdir(os.path.join(d, f))]
     dirs.sort()
 
+    # build libc first
     if APPS_LIBC_DIR in dirs:
         pwd_libc = f"{d}/{APPS_LIBC_DIR}"
-        _run_cmd("make clean", dir=pwd_libc)
-        _run_cmd("make", dir=pwd_libc)
-
+        _run_cmd("make app", dir=pwd_libc)
         dirs.remove(APPS_LIBC_DIR)
 
+    # build other apps
     for dir_name in dirs:
         pwd = f"{d}/{dir_name}"
-
         if os.path.exists(f"{pwd}/Makefile"):
-            _run_cmd("make clean", dir=pwd)
             _run_cmd("make", dir=pwd)
 
     # copy apps dir to initramfs dir
@@ -222,13 +203,18 @@ def _build_apps():
     _run_cmd(f"mkdir -p ./{INITRAMFS_DIR}/{APPS_DIR}")
     _run_cmd(f"cp -r {d}/bin ./{INITRAMFS_DIR}/{APPS_DIR}/")
 
-    # remove `target` directory
-    _run_cmd(f'find ./{INITRAMFS_DIR} -type d -name "target" | xargs rm -rf')
+    # download doom1.wad and copy to initramfs dir
+    if not os.path.exists(f"./{THIRD_PARTY_DIR}/{DOOM_WAD_FILE}"):
+        _run_cmd(
+            f"wget -P ./{THIRD_PARTY_DIR} https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad"
+        )
+    _run_cmd(f"cp ./{THIRD_PARTY_DIR}/{DOOM_WAD_FILE} ./{INITRAMFS_DIR}")
 
-    _build_doom()
+    _run_cmd(f'find ./{INITRAMFS_DIR} -type d -name "target" | xargs rm -rf')
 
 
 def _make_initramfs():
+    _run_cmd(f"mkdir -p {MNT_DIR_PATH}")
     _run_cmd(
         f"dd if=/dev/zero of=./{OUTPUT_DIR}/{INITRAMFS_IMG_FILE} bs=1M count=64"
     )  # 64MiB
@@ -238,12 +224,14 @@ def _make_initramfs():
     _run_cmd(f"sudo mount -o loop ./{OUTPUT_DIR}/{INITRAMFS_IMG_FILE} {MNT_DIR_PATH}")
     _run_cmd(f"sudo rm -rf {MNT_DIR_PATH}/*")  # clear initramfs
     _run_cmd(f"sudo cp -r ./{INITRAMFS_DIR}/* {MNT_DIR_PATH}/")
-    _run_cmd("sleep 0.5")
+    _run_cmd("sudo sync")
     _run_cmd(f"sudo umount {MNT_DIR_PATH}")
+    _run_cmd(f"rm -r {MNT_DIR_PATH}")
 
 
 def _make_img():
     _make_initramfs()
+    _run_cmd(f"mkdir -p {MNT_DIR_PATH}")
     _run_cmd(f"qemu-img create -f raw ./{OUTPUT_DIR}/{IMG_FILE} 200M")
     _run_cmd(
         f'mkfs.fat -n "MYOS" -F 32 -s 2 ./{OUTPUT_DIR}/{IMG_FILE}'
@@ -258,8 +246,9 @@ def _make_img():
     _run_cmd(
         f"sudo cp ./{OUTPUT_DIR}/{INITRAMFS_IMG_FILE} {MNT_DIR_PATH}/initramfs.img"
     )
-    _run_cmd("sleep 0.5")
+    _run_cmd("sudo sync")
     _run_cmd(f"sudo umount {MNT_DIR_PATH}")
+    _run_cmd(f"rm -r {MNT_DIR_PATH}")
 
 
 def make_iso():

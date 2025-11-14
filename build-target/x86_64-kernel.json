@@ -11,7 +11,8 @@
             "--entry=kernel_entry",
             "--image-base=0x100000",
             "--static",
-            "-z norelro"
+            "-z",
+            "norelro"
         ]
     },
     "panic-strategy": "abort",

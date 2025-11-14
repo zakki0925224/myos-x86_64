@@ -26,6 +26,12 @@ fn main() {
     let out_path = std::path::PathBuf::from(out_dir);
 
     let libc_path = PathBuf::from("../libc");
+
+    println!(
+        "cargo:rerun-if-changed={}",
+        libc_path.join("Makefile").display()
+    );
+
     let headers = find_headers_recursively(libc_path.clone());
     if headers.is_empty() {
         Command::new("make")
@@ -37,13 +43,14 @@ fn main() {
 
     if !is_for_kernel {
         println!("cargo:rustc-link-search=../libc");
-        println!("cargo:rustc-link-lib=c");
+        println!("cargo:rustc-link-lib=static=c_with_main");
     }
 
     let headers = find_headers_recursively(libc_path);
     let mut builder = bindgen::Builder::default();
 
     for header in headers {
+        println!("cargo:rerun-if-changed={}", header.display());
         builder = builder.header(header.to_str().unwrap());
     }
 

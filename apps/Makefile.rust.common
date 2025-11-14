@@ -1,0 +1,25 @@
+OUT_FILE := ../bin/$(FILE_NAME)
+TARGET := x86_64-app
+LIBC_DIR := ../libc
+LIBC_A := $(LIBC_DIR)/libc_with_main.a
+
+RUST_FILES := $(shell find src -type f -name "*.rs") Cargo.toml Cargo.lock
+ifneq ($(wildcard build.rs),)
+	RUST_FILES += build.rs
+endif
+
+all: $(OUT_FILE)
+
+$(OUT_FILE): $(RUST_FILES) $(LIBC_A)
+	cargo build --release
+	mkdir -p ../bin
+	cp target/$(TARGET)/release/$(FILE_NAME) $(OUT_FILE)
+
+$(LIBC_A):
+	$(MAKE) -C $(LIBC_DIR) app
+
+clean:
+	cargo clean
+	rm -f $(OUT_FILE)
+
+.PHONY: clean all

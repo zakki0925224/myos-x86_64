@@ -12,9 +12,11 @@ $(LIB_FILE): $(OBJ_FILES)
 	ar rcs $@ $^
 	nm $@
 
-app: $(OBJ_FILES) $(MAIN_OBJ)
-	ar rcs $(LIB_WITH_MAIN) $^
-	nm $(LIB_WITH_MAIN)
+$(LIB_WITH_MAIN): $(OBJ_FILES) $(MAIN_OBJ)
+	ar rcs $@ $^
+	nm $@
+
+app: $(LIB_WITH_MAIN)
 
 %.o: %.c
 	$(CC) -c $< -o $@ $(CFLAGS)
@@ -24,4 +26,4 @@ clean:
 
 all: $(LIB_FILE)
 
-.PHONY: clean all
+.PHONY: clean all app
