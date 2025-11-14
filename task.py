@@ -25,8 +25,6 @@ QEMU_TRACE_FILE = "qemu_trace"
 DOOM_WAD_FILE = "doom1.wad"
 INITRAMFS_IMG_FILE = "initramfs.img"
 
-GIT_CHECKOUT_TO_LATEST_TAG = "git fetch --tags && latestTag=$(git describe --tags `git rev-list --tags --max-count=1`) && git checkout $latestTag && git gc"
-
 NETDEV_TAP = "tap0"
 NETDEV_BR = "br0"
 NETDEV_IP = "192.168.100.1/24"
@@ -137,8 +135,41 @@ def _build_qemu():
     if is_kernel_test:
         return
 
+    # always fetch tags to check for updates
+    _run_cmd("git fetch --tags", dir=d)
+
+    # get the latest tag
+    latest_tag_cmd = "git describe --tags $(git rev-list --tags --max-count=1)"
+    latest_tag_result = subprocess.run(
+        latest_tag_cmd, shell=True, cwd=d, capture_output=True, text=True
+    )
+    latest_tag = latest_tag_result.stdout.strip()
+
+    # get current checked out tag/commit
+    current_tag_cmd = "git describe --tags --exact-match 2>/dev/null || echo 'none'"
+    current_tag_result = subprocess.run(
+        current_tag_cmd, shell=True, cwd=d, capture_output=True, text=True
+    )
+    current_tag = current_tag_result.stdout.strip()
+
+    needs_build = False
+
+    # check if QEMU binary exists
     if not os.path.exists(f"{d}/build/{QEMU_ARCH}"):
-        # run_cmd(f"{GIT_CHECKOUT_TO_LATEST_TAG}", dir=d)
+        needs_build = True
+        print(f"QEMU binary not found, building {latest_tag}...")
+    # check if current tag is different from latest tag
+    elif current_tag != latest_tag:
+        needs_build = True
+        print(f"QEMU update available: {current_tag} -> {latest_tag}")
+        _run_cmd("rm -rf build", dir=d)
+    else:
+        print(f"QEMU is up to date: {current_tag}")
+
+    if needs_build:
+        _run_cmd(f"git checkout {latest_tag}", dir=d)
+        _run_cmd("git gc", dir=d)
+
         # extra_cflags = '--extra-cflags="-DDEBUG_RTL8139"'
         extra_cflags = ""
         _run_cmd(
@@ -171,7 +202,23 @@ def build():
 
     _init()
 
-    _run_cmd("git submodule update --init --recursive")
+    # update submodules
+    _run_cmd("git submodule init")
+    result = subprocess.run(
+        "git config --file .gitmodules --get-regexp path",
+        shell=True,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        for line in result.stdout.strip().split("\n"):
+            if line:
+                submodule_path = line.split()[-1]
+                # skip QEMU submodule
+                if QEMU_DIR not in submodule_path:
+                    _run_cmd(
+                        f"git submodule update --init --recursive {submodule_path}"
+                    )
 
     if not is_kernel_test:
         _build_apps()
@@ -278,8 +325,8 @@ def run():
 
     build()
     _make_img()
-    # cmd = _qemu_cmd() if is_kernel_test else _own_qemu_cmd()
-    cmd = _qemu_cmd()
+    cmd = _qemu_cmd() if is_kernel_test else _own_qemu_cmd()
+    # cmd = _qemu_cmd()
 
     _run_cmd(cmd, ignore_error=not is_kernel_test, check_qemu_exit_code=is_kernel_test)
 
