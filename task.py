@@ -135,6 +135,11 @@ def _build_qemu():
     if is_kernel_test:
         return
 
+    # check if QEMU directory exists, if not, clone it
+    if not os.path.exists(f"{d}/.git"):
+        print(f"QEMU submodule not found, initializing...")
+        _run_cmd(f"git submodule update --init --recursive {THIRD_PARTY_DIR}/{QEMU_DIR}")
+
     # always fetch tags to check for updates
     _run_cmd("git fetch --tags", dir=d)
 
@@ -202,23 +207,8 @@ def build():
 
     _init()
 
-    # update submodules
-    _run_cmd("git submodule init")
-    result = subprocess.run(
-        "git config --file .gitmodules --get-regexp path",
-        shell=True,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0:
-        for line in result.stdout.strip().split("\n"):
-            if line:
-                submodule_path = line.split()[-1]
-                # skip QEMU submodule
-                if QEMU_DIR not in submodule_path:
-                    _run_cmd(
-                        f"git submodule update --init --recursive {submodule_path}"
-                    )
+    # update submodules (except QEMU, which is handled in _build_qemu())
+    _run_cmd(f"git submodule update --init --recursive -- ':!{THIRD_PARTY_DIR}/{QEMU_DIR}'")
 
     if not is_kernel_test:
         _build_apps()

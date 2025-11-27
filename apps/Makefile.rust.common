@@ -3,7 +3,7 @@ TARGET := x86_64-app
 LIBC_DIR := ../libc
 LIBC_A := $(LIBC_DIR)/libc_with_main.a
 
-RUST_FILES := $(shell find src -type f -name "*.rs") Cargo.toml Cargo.lock
+RUST_FILES := $(shell find src -type f -name "*.rs") Cargo.toml
 ifneq ($(wildcard build.rs),)
 	RUST_FILES += build.rs
 endif
