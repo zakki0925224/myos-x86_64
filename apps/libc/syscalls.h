@@ -51,6 +51,7 @@
 #define SOCKET_DOMAIN_AF_INET 1
 #define SOCKET_TYPE_SOCK_DGRAM 1
 #define SOCKET_TYPE_SOCK_STREAM 2
+#define SOCKET_PROTO_UDP 17
 
 extern int sys_read(int fd, void* buf, size_t buf_len);
 extern int sys_write(int fd, const void* buf, size_t buf_len);

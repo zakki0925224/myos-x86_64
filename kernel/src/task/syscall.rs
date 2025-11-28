@@ -21,7 +21,7 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use core::{arch::naked_asm, slice};
+use core::{arch::naked_asm, net::Ipv4Addr, slice};
 use libc_rs::*;
 
 #[derive(Debug, Clone, Copy)]
@@ -281,9 +281,13 @@ extern "sysv64" fn syscall_handler(
             let flags = arg3 as i32;
             let dest_addr = arg4 as *const sockaddr;
             let addrlen = arg5 as usize;
-            if let Err(err) = sys_sendto(sockfd, buf, len, flags, dest_addr, addrlen) {
-                kerror!("syscall: sendto: {:?}", err);
-                return -1;
+
+            match sys_sendto(sockfd, buf, len, flags, dest_addr, addrlen) {
+                Ok(send_len) => return send_len as i64,
+                Err(err) => {
+                    kerror!("syscall: sendto: {:?}", err);
+                    return -1;
+                }
             }
         }
         // recvfrom syscall
@@ -294,9 +298,13 @@ extern "sysv64" fn syscall_handler(
             let flags = arg3 as i32;
             let src_addr = arg4 as *const sockaddr;
             let addrlen = arg5 as usize;
-            if let Err(err) = sys_recvfrom(sockfd, buf, len, flags, src_addr, addrlen) {
-                kerror!("syscall: recvfrom: {:?}", err);
-                return -1;
+
+            match sys_recvfrom(sockfd, buf, len, flags, src_addr, addrlen) {
+                Ok(read_len) => return read_len as i64,
+                Err(err) => {
+                    kerror!("syscall: recvfrom: {:?}", err);
+                    return -1;
+                }
             }
         }
         num => {
@@ -686,14 +694,36 @@ fn sys_socket(domain: i32, type_: i32, _protocol: i32) -> Result<SocketId> {
         _ => return Err(Error::Failed("Unsupported type")),
     };
 
-    net::insert_new_socket(socket_type)
+    net::create_new_socket(socket_type)
 }
 
 fn sys_bind(sockfd: i32, addr: *const sockaddr, addrlen: usize) -> Result<()> {
     let socket_id = SocketId::new_val(sockfd)?;
     let addr = unsafe { *(addr as *const sockaddr_in) };
     assert_eq!(size_of::<sockaddr_in>(), addrlen);
-    net::bind_v4(socket_id, addr)
+
+    if addr.sin_family as u32 != SOCKET_DOMAIN_AF_INET {
+        return Err(Error::Failed("Address family not supported"));
+    }
+
+    let s_addr = addr.sin_addr.s_addr;
+    if s_addr != Ipv4Addr::UNSPECIFIED.into() && s_addr != net::my_ipv4_addr()?.into() {
+        return Err(Error::Failed("Address not available"));
+    }
+
+    let bound_addr = if s_addr == Ipv4Addr::UNSPECIFIED.into() {
+        None
+    } else {
+        Some(s_addr.into())
+    };
+
+    let port = if addr.sin_port == 0 {
+        None
+    } else {
+        Some(addr.sin_port)
+    };
+
+    net::bind_socket_v4(socket_id, bound_addr, port)
 }
 
 fn sys_sendto(
@@ -703,8 +733,17 @@ fn sys_sendto(
     flags: i32,
     dest_addr: *const sockaddr,
     addrlen: usize,
-) -> Result<()> {
-    todo!();
+) -> Result<usize> {
+    let socket_id = SocketId::new_val(sockfd)?;
+    let addr = unsafe { *(dest_addr as *const sockaddr_in) };
+    assert_eq!(size_of::<sockaddr_in>(), addrlen);
+
+    let dst_addr = addr.sin_addr.s_addr.into();
+    let dst_port = addr.sin_port;
+    let data = unsafe { slice::from_raw_parts(buf, len) };
+
+    net::sendto_udp_v4(socket_id, dst_addr, dst_port, data)?;
+    Ok(data.len())
 }
 
 fn sys_recvfrom(
@@ -714,8 +753,11 @@ fn sys_recvfrom(
     flags: i32,
     src_addr: *const sockaddr,
     addrlen: usize,
-) -> Result<()> {
-    todo!();
+) -> Result<usize> {
+    let socket_id = SocketId::new_val(sockfd)?;
+    let buf_mut = unsafe { slice::from_raw_parts_mut(buf, len) };
+    let read_len = net::recvfrom_udp_v4(socket_id, buf_mut)?;
+    Ok(read_len)
 }
 
 pub fn enable() {

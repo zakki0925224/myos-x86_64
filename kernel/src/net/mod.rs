@@ -8,7 +8,6 @@ use crate::{
 };
 use alloc::{collections::btree_map::BTreeMap, string::String, vec::Vec};
 use core::net::Ipv4Addr;
-use libc_rs::*;
 
 pub mod arp;
 pub mod eth;
@@ -52,13 +51,16 @@ impl NetworkManager {
             .ok_or(Error::Failed("MAC address is not set"))
     }
 
-    fn insert_new_socket(&mut self, type_: SocketType) -> Result<SocketId> {
+    fn create_new_socket(&mut self, type_: SocketType) -> Result<SocketId> {
         let protocol = match type_ {
             SocketType::Stream => Protocol::Tcp,
-            SocketType::Dgram => Protocol::Tcp,
+            SocketType::Dgram => Protocol::Udp,
         };
 
-        self.socket_table.insert_new_socket(type_, protocol)
+        let socket_id = self.socket_table.insert_new_socket(type_, protocol)?;
+        kinfo!("net: Created new socket at {} ({:?})", socket_id, protocol);
+
+        Ok(socket_id)
     }
 
     fn udp_socket_mut_by_port(&mut self, port: u16) -> Result<&mut UdpSocket> {
@@ -91,17 +93,12 @@ impl NetworkManager {
         socket.inner_tcp_mut()
     }
 
-    fn bind_socket_v4(&mut self, socket_id: SocketId, addr: sockaddr_in) -> Result<()> {
-        if addr.sin_family as u32 != SOCKET_DOMAIN_AF_INET {
-            return Err(Error::Failed("Address family not supported"));
-        }
-
-        if addr.sin_addr.s_addr != Ipv4Addr::UNSPECIFIED.into()
-            && addr.sin_addr.s_addr != self.my_ipv4_addr.into()
-        {
-            return Err(Error::Failed("Address not available"));
-        }
-
+    fn bind_socket_v4(
+        &mut self,
+        socket_id: SocketId,
+        bound_addr: Option<Ipv4Addr>,
+        port: Option<u16>,
+    ) -> Result<()> {
         {
             let socket = self.socket_table.socket_mut_by_id(socket_id)?;
             if socket.port() != 0 {
@@ -109,24 +106,40 @@ impl NetworkManager {
             }
         }
 
-        let port_opt = if addr.sin_port == 0 {
-            None
-        } else {
-            Some(addr.sin_port)
-        };
-        self.socket_table.bind_port(socket_id, port_opt)?;
+        self.socket_table.bind_port(socket_id, port)?;
+        kinfo!(
+            "net: Bound socket {} to address: {:?}, port: {:?}",
+            socket_id,
+            bound_addr,
+            port
+        );
 
         {
             let socket = self.socket_table.socket_mut_by_id(socket_id)?;
-            let bound = if addr.sin_addr.s_addr == Ipv4Addr::UNSPECIFIED.into() {
-                None
-            } else {
-                Some(addr.sin_addr.s_addr.into())
-            };
-            socket.addr = bound;
+            socket.addr = bound_addr;
         }
 
         Ok(())
+    }
+
+    fn sendto_udp_v4(
+        &mut self,
+        socket_id: SocketId,
+        dst_addr: Ipv4Addr,
+        dst_port: u16,
+        data: &[u8],
+    ) -> Result<()> {
+        let socket = self.socket_table.socket_by_id(socket_id)?;
+        let src_port = socket.port();
+
+        self.send_udp_packet(src_port, dst_port, dst_addr, data)
+    }
+
+    fn recvfrom_udp_v4(&mut self, socket_id: SocketId, buf: &mut [u8]) -> Result<usize> {
+        let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+        let udp_socket = socket.inner_udp_mut()?;
+        let read_len = udp_socket.read_buf(buf);
+        Ok(read_len)
     }
 
     fn receive_icmp_packet(&mut self, packet: IcmpPacket) -> Result<Option<IcmpPacket>> {
@@ -296,29 +309,6 @@ impl NetworkManager {
         Ok(None)
     }
 
-    fn send_arp_packet(
-        &mut self,
-        op: ArpOperation,
-        sender_eth_addr: EthernetAddress,
-        sender_ipv4_addr: Ipv4Addr,
-        target_eth_addr: EthernetAddress,
-        target_ipv4_addr: Ipv4Addr,
-    ) -> Result<()> {
-        let packet = ArpPacket::new_with(
-            op,
-            sender_eth_addr,
-            sender_ipv4_addr,
-            target_eth_addr,
-            target_ipv4_addr,
-        );
-
-        self.send_eth_payload(
-            EthernetPayload::Arp(packet),
-            target_eth_addr,
-            EthernetType::Arp,
-        )
-    }
-
     fn receive_ipv4_packet(&mut self, packet: Ipv4Packet) -> Result<Option<Ipv4Packet>> {
         packet.validate()?;
 
@@ -387,6 +377,61 @@ impl NetworkManager {
         Ok(reply_payload)
     }
 
+    fn send_arp_packet(
+        &mut self,
+        op: ArpOperation,
+        sender_eth_addr: EthernetAddress,
+        sender_ipv4_addr: Ipv4Addr,
+        target_eth_addr: EthernetAddress,
+        target_ipv4_addr: Ipv4Addr,
+    ) -> Result<()> {
+        let packet = ArpPacket::new_with(
+            op,
+            sender_eth_addr,
+            sender_ipv4_addr,
+            target_eth_addr,
+            target_ipv4_addr,
+        );
+
+        self.send_eth_payload(
+            EthernetPayload::Arp(packet),
+            target_eth_addr,
+            EthernetType::Arp,
+        )
+    }
+
+    fn send_udp_packet(
+        &mut self,
+        src_port: u16,
+        dst_port: u16,
+        dst_addr: Ipv4Addr,
+        data: &[u8],
+    ) -> Result<()> {
+        let mut udp_packet = UdpPacket::new_with(src_port, dst_port, data);
+        udp_packet.calc_checksum_with_ipv4(self.my_ipv4_addr, dst_addr);
+
+        let ipv4_packet = Ipv4Packet::new_with(
+            0x45, // version 4 + IHL 5
+            0,
+            0,
+            0,
+            Protocol::Udp,
+            self.my_ipv4_addr,
+            dst_addr,
+            Ipv4Payload::Udp(udp_packet),
+        );
+
+        let dst_mac_addr = self
+            .resolve_mac_addr(dst_addr)?
+            .ok_or(Error::Failed("Failed to resolve MAC address"))?;
+
+        self.send_eth_payload(
+            EthernetPayload::Ipv4(ipv4_packet),
+            dst_mac_addr,
+            EthernetType::Ipv4,
+        )
+    }
+
     fn send_eth_payload(
         &mut self,
         payload: EthernetPayload,
@@ -427,6 +472,11 @@ pub fn my_mac_addr() -> Result<EthernetAddress> {
     unsafe { NETWORK_MAN.try_lock() }?.my_mac_addr()
 }
 
+pub fn my_ipv4_addr() -> Result<Ipv4Addr> {
+    let addr = unsafe { NETWORK_MAN.try_lock() }?.my_ipv4_addr;
+    Ok(addr)
+}
+
 pub fn receive_eth_payload(payload: EthernetPayload) -> Result<Option<EthernetPayload>> {
     unsafe { NETWORK_MAN.try_lock() }?.receive_eth_payload(payload)
 }
@@ -448,10 +498,27 @@ pub fn resolve_mac_addr(ipv4_addr: Ipv4Addr) -> Result<EthernetAddress> {
     }
 }
 
-pub fn insert_new_socket(type_: SocketType) -> Result<SocketId> {
-    unsafe { NETWORK_MAN.try_lock() }?.insert_new_socket(type_)
+pub fn create_new_socket(type_: SocketType) -> Result<SocketId> {
+    unsafe { NETWORK_MAN.try_lock() }?.create_new_socket(type_)
 }
 
-pub fn bind_v4(socket_id: SocketId, addr: sockaddr_in) -> Result<()> {
-    unsafe { NETWORK_MAN.try_lock() }?.bind_socket_v4(socket_id, addr)
+pub fn bind_socket_v4(
+    socket_id: SocketId,
+    bound_addr: Option<Ipv4Addr>,
+    port: Option<u16>,
+) -> Result<()> {
+    unsafe { NETWORK_MAN.try_lock() }?.bind_socket_v4(socket_id, bound_addr, port)
+}
+
+pub fn sendto_udp_v4(
+    socket_id: SocketId,
+    dst_addr: Ipv4Addr,
+    dst_port: u16,
+    data: &[u8],
+) -> Result<()> {
+    unsafe { NETWORK_MAN.try_lock() }?.sendto_udp_v4(socket_id, dst_addr, dst_port, data)
+}
+
+pub fn recvfrom_udp_v4(socket_id: SocketId, buf: &mut [u8]) -> Result<usize> {
+    unsafe { NETWORK_MAN.try_lock() }?.recvfrom_udp_v4(socket_id, buf)
 }

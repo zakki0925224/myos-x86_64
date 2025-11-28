@@ -108,6 +108,12 @@ impl SocketTable {
         }
     }
 
+    pub fn socket_by_id(&self, id: SocketId) -> Result<&Socket> {
+        self.table
+            .get(&id)
+            .ok_or(Error::Failed("Invalid socket ID"))
+    }
+
     pub fn socket_mut_by_id(&mut self, id: SocketId) -> Result<&mut Socket> {
         self.table
             .get_mut(&id)
