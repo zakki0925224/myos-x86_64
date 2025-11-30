@@ -31,10 +31,6 @@ impl UdpSocket {
         }
         read_len
     }
-
-    pub fn buf_len(&self) -> usize {
-        self.buf.len()
-    }
 }
 
 #[derive(Debug, Clone)]

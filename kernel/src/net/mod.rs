@@ -410,7 +410,7 @@ impl NetworkManager {
         let mut udp_packet = UdpPacket::new_with(src_port, dst_port, data);
         udp_packet.calc_checksum_with_ipv4(self.my_ipv4_addr, dst_addr);
 
-        let ipv4_packet = Ipv4Packet::new_with(
+        let mut ipv4_packet = Ipv4Packet::new_with(
             0x45, // version 4 + IHL 5
             0,
             0,
@@ -420,6 +420,7 @@ impl NetworkManager {
             dst_addr,
             Ipv4Payload::Udp(udp_packet),
         );
+        ipv4_packet.calc_checksum();
 
         let dst_mac_addr = self
             .resolve_mac_addr(dst_addr)?

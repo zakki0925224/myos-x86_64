@@ -198,7 +198,9 @@ impl Rtl8139Driver {
         let packet_len = boxed_eth_frame.len();
 
         io_register.write_tx_start_addr(boxed_eth_frame.as_ptr() as u32, tx_packet_ptr);
-        io_register.write_tx_status(packet_len as u32, tx_packet_ptr);
+        // bit 13: own bit (0 = sned packet)
+        let tx_status = packet_len as u32 & 0x1fff;
+        io_register.write_tx_status(tx_status, tx_packet_ptr);
         self.tx_buf.push(boxed_eth_frame);
 
         Ok(())
