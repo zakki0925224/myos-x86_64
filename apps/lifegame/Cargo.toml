@@ -1,0 +1,8 @@
+[package]
+name = "lifegame"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+embedded-graphics = "0.8.1"
+libc-rs = { path = "../libc-rs" }

@@ -41,8 +41,11 @@ fn main() {
             .expect("Failed to run make");
     }
 
+    let libc_abs_path = libc_path
+        .canonicalize()
+        .expect("Failed to get absolute path");
+    println!("cargo:rustc-link-search={}", libc_abs_path.display());
     if !is_for_kernel {
-        println!("cargo:rustc-link-search=../libc");
         println!("cargo:rustc-link-lib=static=c_with_main");
     }
 
