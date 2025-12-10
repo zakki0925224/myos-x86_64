@@ -11,7 +11,7 @@ use crate::{
     },
     util,
 };
-use alloc::{string::ToString, vec::Vec};
+use alloc::vec::Vec;
 use common::elf::{self, Elf64};
 use core::{
     fmt,
@@ -224,7 +224,7 @@ impl Task {
         if let Some(args) = args {
             let mut c_args = Vec::new();
             for arg in args {
-                c_args.extend(util::cstring::into_cstring_bytes_with_nul(arg.to_string()));
+                c_args.extend(util::cstring::into_cstring_bytes_with_nul(arg));
             }
 
             let mut c_args_offset = (args.len() + 2) * 8;

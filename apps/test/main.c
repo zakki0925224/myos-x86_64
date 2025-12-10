@@ -22,7 +22,7 @@ int test_udp() {
     }
 
     // test data
-    const char* test_msg = "Hello from myOS UDP socket!";
+    const char* test_msg = "Hello from myos UDP socket!";
 
     struct sockaddr_in dest_addr;
     memset(&dest_addr, 0, sizeof(dest_addr));

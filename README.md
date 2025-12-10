@@ -40,7 +40,7 @@ This is a replacement project for the previous **[myos](https://github.com/Zakki
     -   [x] IPv4
         -   [x] ICMP
         -   [ ] TCP
-        -   [x] UDP (receive only)
+        -   [x] UDP
 -   [x] Async runtime
     -   [x] Simple priority-based executor
 -   [x] Simple window manager

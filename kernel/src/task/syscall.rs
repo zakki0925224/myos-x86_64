@@ -332,7 +332,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
                     x86_64::stihlt();
                 }
 
-                let c_s = util::cstring::into_cstring_bytes_with_nul(input_s.unwrap());
+                let c_s = util::cstring::into_cstring_bytes_with_nul(&input_s.unwrap());
 
                 if buf_len < c_s.len() {
                     return Err(Error::Failed("buffer is too small"));
@@ -502,7 +502,7 @@ fn sys_exec(args: *const u8, flags: i32) -> Result<()> {
 
 fn sys_getcwd(buf: *mut u8, buf_len: usize) -> Result<()> {
     let cwd = vfs::cwd_path()?;
-    let cwd_s = util::cstring::into_cstring_bytes_with_nul(cwd.to_string());
+    let cwd_s = util::cstring::into_cstring_bytes_with_nul(cwd.as_str());
 
     if buf_len < cwd_s.len() {
         return Err(Error::Failed("Buffer is too small"));
@@ -538,7 +538,7 @@ fn sys_getenames(path: *const u8, buf: *mut u8, buf_len: usize) -> Result<()> {
     let entry_names = fs::vfs::entry_names(&path)?;
     let entry_names_s: Vec<u8> = entry_names
         .iter()
-        .map(|n| util::cstring::into_cstring_bytes_with_nul(n.clone()))
+        .map(|n| util::cstring::into_cstring_bytes_with_nul(n))
         .flatten()
         .collect();
 

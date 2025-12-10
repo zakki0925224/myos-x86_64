@@ -29,6 +29,7 @@ pub fn from_slice(s: &[u8]) -> String {
     String::from_utf8_lossy(s_slice).to_string()
 }
 
-pub fn into_cstring_bytes_with_nul(s: String) -> Vec<u8> {
+pub fn into_cstring_bytes_with_nul(s: &str) -> Vec<u8> {
+    assert!(!s.contains('\0'));
     CString::new(s).unwrap().into_bytes_with_nul()
 }

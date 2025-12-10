@@ -36,7 +36,7 @@ impl Path {
     }
 
     pub fn root() -> Self {
-        Self::new(Self::ROOT.to_string())
+        Self(Self::ROOT.to_string())
     }
 
     pub fn normalize(&self) -> Self {
@@ -135,6 +135,10 @@ impl Path {
         }
 
         self.clone()
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
     }
 }
 

@@ -12,8 +12,6 @@ static mut BMM: Mutex<BitmapMemoryManager> = Mutex::new(BitmapMemoryManager::new
 pub struct MemoryFrameInfo {
     pub frame_start_phys_addr: PhysicalAddress,
     pub frame_size: usize, // must be 4096B align
-    pub frame_index: usize,
-    pub is_allocated: bool,
 }
 
 impl MemoryFrameInfo {
@@ -63,6 +61,10 @@ impl MemoryFrameInfo {
         }
 
         Ok(())
+    }
+
+    pub fn frame_index(&self) -> usize {
+        self.frame_start_phys_addr.get() as usize / PAGE_SIZE
     }
 }
 
@@ -244,12 +246,10 @@ impl BitmapMemoryManager {
     }
 
     fn get_mem_frame(&self, frame_index: usize) -> Option<MemoryFrameInfo> {
-        if let Ok(bitmap) = self.bitmap(self.bitmap_offset(frame_index)) {
+        if self.bitmap(self.bitmap_offset(frame_index)).is_ok() {
             return Some(MemoryFrameInfo {
                 frame_start_phys_addr: ((frame_index * PAGE_SIZE) as u64).into(),
                 frame_size: PAGE_SIZE,
-                frame_index,
-                is_allocated: bitmap.get(self.bitmap_pos(frame_index)).unwrap(),
             });
         }
 
@@ -284,8 +284,6 @@ impl BitmapMemoryManager {
         let mem_frame_info = MemoryFrameInfo {
             frame_start_phys_addr: ((found_mem_frame_index * PAGE_SIZE) as u64).into(),
             frame_size: PAGE_SIZE,
-            frame_index: found_mem_frame_index,
-            is_allocated: true,
         };
 
         Ok(mem_frame_info)
@@ -353,8 +351,6 @@ impl BitmapMemoryManager {
         let mem_frame_info = MemoryFrameInfo {
             frame_start_phys_addr: ((start_mem_frame_index * PAGE_SIZE) as u64).into(),
             frame_size: PAGE_SIZE * len,
-            frame_index: start_mem_frame_index,
-            is_allocated: true,
         };
 
         Ok(mem_frame_info)
@@ -371,7 +367,7 @@ impl BitmapMemoryManager {
 
     fn dealloc_mem_frame(&mut self, mem_frame_info: MemoryFrameInfo) -> Result<()> {
         let frame_size = mem_frame_info.frame_size;
-        let frame_index = mem_frame_info.frame_index;
+        let frame_index = mem_frame_info.frame_index();
 
         for i in frame_index..frame_index + (frame_size / PAGE_SIZE) {
             self.dealloc_frame(i)?;
