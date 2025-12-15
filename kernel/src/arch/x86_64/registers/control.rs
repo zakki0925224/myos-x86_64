@@ -97,6 +97,8 @@ impl Register<u64> for Cr3 {
     }
 
     fn write(&self) {
+        assert_eq!(self.raw() & 0xfff, 0, "CR3 must be 4KB aligned");
+
         unsafe {
             asm!("mov cr3, {}", in(reg) self.0, options(nomem, nostack));
         }

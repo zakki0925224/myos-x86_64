@@ -44,7 +44,9 @@ pub extern "sysv64" fn kernel_entry(boot_info: &BootInfo) -> ! {
 }
 
 pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
-    device::panic_screen::probe_and_attach(boot_info.graphic_info).unwrap();
+    let graphic_info = boot_info.graphic_info;
+
+    device::panic_screen::probe_and_attach(graphic_info.clone()).unwrap();
 
     // attach uart driver
     // do not use .unwrap() here!!

@@ -53,6 +53,8 @@ impl core::fmt::Debug for PageTableEntry {
 }
 
 impl PageTableEntry {
+    const ADDR_MASK: u64 = 0x0000_007f_ffff_f000;
+
     pub fn set_p(&mut self, value: bool) {
         self.0 = (self.0 & !0x1) | (value as u64);
     }
@@ -119,11 +121,11 @@ impl PageTableEntry {
     }
 
     pub fn set_addr(&mut self, addr: u64) {
-        self.0 = (self.0 & 0xfff) | (addr & !0xfff);
+        self.0 = (self.0 & !Self::ADDR_MASK) | (addr & Self::ADDR_MASK);
     }
 
     pub fn addr(&self) -> u64 {
-        self.0 & !0xfff
+        self.0 & Self::ADDR_MASK
     }
 
     pub fn exec_disable(&self) -> bool {
@@ -176,6 +178,7 @@ pub struct MappingInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageManagerError {
+    PageNotMappedError,
     VirtualAddressNotMappedError(VirtualAddress),
     VirtualAddressNotAllowedToMapError(VirtualAddress),
     VirtualAddressNotAlignedByPageSizeError(VirtualAddress),
@@ -183,15 +186,17 @@ pub enum PageManagerError {
 }
 
 #[derive(Debug)]
-pub struct PageManager;
+pub struct PageManager {
+    is_mapped: bool,
+}
 
 impl PageManager {
     pub const fn new() -> Self {
-        Self
+        Self { is_mapped: false }
     }
 
     pub unsafe fn calc_virt_addr(&self, phys_addr: PhysicalAddress) -> Result<VirtualAddress> {
-        let pml4_table = self.pml4_table();
+        let pml4_table = self.pml4_table()?;
         for pml4_i in 0..PAGE_TABLE_ENTRY_LEN {
             let pml4_entry = &pml4_table.entries[pml4_i];
             if !pml4_entry.p() {
@@ -280,7 +285,7 @@ impl PageManager {
         let pml1e_index = virt_addr.get_pml1_entry_index();
         let page_offset = virt_addr.get_page_offset();
 
-        let pml4_table = self.pml4_table();
+        let pml4_table = self.pml4_table()?;
         let entry = &pml4_table.entries[pml4e_index];
 
         if !entry.p() {
@@ -317,7 +322,7 @@ impl PageManager {
     }
 
     pub unsafe fn create_new_page_table(
-        &self,
+        &mut self,
         start: VirtualAddress,
         end: VirtualAddress,
         phys_addr: PhysicalAddress,
@@ -326,9 +331,13 @@ impl PageManager {
         write_through_level: PageWriteThroughLevel,
     ) -> Result<()> {
         let pml4_table_mem_frame_info = bitmap::alloc_mem_frame(1)?;
+        let pml4_phys_addr = pml4_table_mem_frame_info.frame_start_phys_addr;
         self.mem_clear(&pml4_table_mem_frame_info)?;
-        let pml4_virt_addr =
-            self.calc_virt_addr(pml4_table_mem_frame_info.frame_start_phys_addr)?;
+        let pml4_virt_addr: VirtualAddress = if self.is_mapped {
+            self.calc_virt_addr(pml4_phys_addr)?
+        } else {
+            pml4_phys_addr.get().into()
+        };
         let pml4_page_table = &mut *pml4_virt_addr.as_ptr_mut::<PageTable>();
 
         let total_mem_size = bitmap::get_total_mem_size()?;
@@ -344,16 +353,18 @@ impl PageManager {
             )?;
         }
 
+        self.verify_page_table(pml4_page_table, pml4_phys_addr);
+
         let mut cr3 = self.cr3();
-        cr3.set_raw(pml4_virt_addr.get());
+        cr3.set_raw(pml4_phys_addr.get());
         cr3.write();
+        self.is_mapped = true;
 
         Ok(())
     }
 
     pub unsafe fn update_mapping(&self, new_mapping_info: &MappingInfo) -> Result<()> {
-        let pml4_virt_addr = VirtualAddress::new(self.cr3().raw());
-        let pml4_page_table = &mut *pml4_virt_addr.as_ptr_mut::<PageTable>();
+        let pml4_table = self.pml4_table()?;
 
         let MappingInfo {
             start,
@@ -371,7 +382,7 @@ impl PageManager {
             self.set_map(
                 virt_addr,
                 phys_addr.offset(i - start.get() as usize),
-                pml4_page_table,
+                pml4_table,
                 rw,
                 us,
                 pwt,
@@ -396,7 +407,7 @@ impl PageManager {
         let pml2e_index = virt_addr.get_pml2_entry_index();
         let pml1e_index = virt_addr.get_pml1_entry_index();
 
-        let pml4_table = self.pml4_table();
+        let pml4_table = self.pml4_table()?;
         let entry = &pml4_table.entries[pml4e_index];
 
         if !entry.p() {
@@ -426,9 +437,37 @@ impl PageManager {
         Cr3::read()
     }
 
-    unsafe fn pml4_table(&self) -> &mut PageTable {
+    unsafe fn pml4_table(&self) -> Result<&mut PageTable> {
+        if !self.is_mapped {
+            return Err(PageManagerError::PageNotMappedError.into());
+        }
+
         let ptr = self.cr3().raw() as *mut PageTable;
-        &mut *ptr
+        Ok(&mut *ptr)
+    }
+
+    unsafe fn verify_page_table(&self, pml4_table: &PageTable, pml4_phys_addr: PhysicalAddress) {
+        // alignment check
+        if pml4_phys_addr.get() & 0xFFF != 0 {
+            panic!("PML4 not 4KB aligned: 0x{:x}", pml4_phys_addr.get());
+        }
+
+        // count valid entries
+        let mut valid_entries = 0;
+        for i in 0..PAGE_TABLE_ENTRY_LEN {
+            if pml4_table.entries[i].p() {
+                valid_entries += 1;
+                let entry = &pml4_table.entries[i];
+
+                if entry.addr() & 0xFFF != 0 {
+                    panic!("PML4[{}] entry not aligned: 0x{:x}", i, entry.addr());
+                }
+            }
+        }
+
+        if valid_entries == 0 {
+            panic!("No valid PML4 entries found");
+        }
     }
 
     // unsupported 2MB / 1GB pages
@@ -462,9 +501,8 @@ impl PageManager {
         if !entry.p() {
             let mem_info = bitmap::alloc_mem_frame(1)?;
             self.mem_clear(&mem_info)?;
-            let virt_addr = self.calc_virt_addr(mem_info.frame_start_phys_addr)?;
             entry.set_entry(
-                virt_addr.get(),
+                mem_info.frame_start_phys_addr.get(),
                 rw,
                 mode,
                 write_through_level,
@@ -486,9 +524,8 @@ impl PageManager {
         if !entry.p() {
             let mem_info = bitmap::alloc_mem_frame(1)?;
             self.mem_clear(&mem_info)?;
-            let virt_addr = self.calc_virt_addr(mem_info.frame_start_phys_addr)?;
             entry.set_entry(
-                virt_addr.get(),
+                mem_info.frame_start_phys_addr.get(),
                 rw,
                 mode,
                 write_through_level,
@@ -510,9 +547,8 @@ impl PageManager {
         if !entry.p() {
             let mem_info = bitmap::alloc_mem_frame(1)?;
             self.mem_clear(&mem_info)?;
-            let virt_addr = self.calc_virt_addr(mem_info.frame_start_phys_addr)?;
             entry.set_entry(
-                virt_addr.get(),
+                mem_info.frame_start_phys_addr.get(),
                 rw,
                 mode,
                 write_through_level,
@@ -541,16 +577,17 @@ impl PageManager {
         Ok(())
     }
 
-    // use this function instead of mem::mem_clear()
-    unsafe fn mem_clear(&self, mem_frame_info: &MemoryFrameInfo) -> Result<()> {
-        let frame_size = mem_frame_info.frame_size;
-        let start_virt_addr = self.calc_virt_addr(mem_frame_info.frame_start_phys_addr)?;
+    // use this function instead of mem::bitmap::mem_clear()
+    unsafe fn mem_clear(&self, mem_info: &MemoryFrameInfo) -> Result<()> {
+        let frame_size = mem_info.frame_size;
+        let start_virt_addr: VirtualAddress = if self.is_mapped {
+            self.calc_virt_addr(mem_info.frame_start_phys_addr)?
+        } else {
+            mem_info.frame_start_phys_addr.get().into()
+        };
 
-        // TODO: replace to other methods
-        for offset in (0..frame_size).step_by(8) {
-            let ref_value = start_virt_addr.offset(offset).as_ptr_mut() as *mut u64;
-            *ref_value = 0;
-        }
+        let ptr: *mut u8 = start_virt_addr.as_ptr_mut();
+        ptr.write_bytes(0, frame_size);
 
         Ok(())
     }

@@ -265,3 +265,29 @@ fn jump_to_entry(entry_base_addr: u64, bi: &BootInfo) {
         unsafe { mem::transmute(entry_base_addr) };
     entry_point(bi);
 }
+
+fn _fill_screen(r: u8, g: u8, b: u8) {
+    let gop_handle = boot::get_handle_for_protocol::<GraphicsOutput>().unwrap();
+    let mut gop = boot::open_protocol_exclusive::<GraphicsOutput>(gop_handle).unwrap();
+
+    let mode_info = gop.current_mode_info();
+    let (w, h) = mode_info.resolution();
+    let stride = mode_info.stride();
+    let pixel_format = mode_info.pixel_format();
+
+    let mut framebuf = gop.frame_buffer();
+    let framebuf_slice =
+        unsafe { core::slice::from_raw_parts_mut(framebuf.as_mut_ptr() as *mut u32, h * stride) };
+
+    let pixel = match pixel_format {
+        PixelFormat::Rgb => ((b as u32) << 16) | ((g as u32) << 8) | (r as u32),
+        PixelFormat::Bgr => ((r as u32) << 16) | ((g as u32) << 8) | (b as u32),
+        _ => panic!("Unsupported pixel format"),
+    };
+
+    for y in 0..h {
+        for x in 0..w {
+            framebuf_slice[y * stride + x] = pixel;
+        }
+    }
+}

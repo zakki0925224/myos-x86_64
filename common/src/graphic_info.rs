@@ -26,3 +26,24 @@ pub struct GraphicInfo {
     pub framebuf_addr: u64,
     pub framebuf_size: usize,
 }
+
+impl GraphicInfo {
+    pub fn fill_screen(&self, r: u8, g: u8, b: u8) {
+        let (w, h) = self.resolution;
+        let framebuf_slice = unsafe {
+            core::slice::from_raw_parts_mut(self.framebuf_addr as *mut u32, h * self.stride)
+        };
+
+        let pixel = match self.format {
+            PixelFormat::Rgb => ((b as u32) << 16) | ((g as u32) << 8) | (r as u32),
+            PixelFormat::Bgr => ((r as u32) << 16) | ((g as u32) << 8) | (b as u32),
+            _ => panic!("Unsupported pixel format"),
+        };
+
+        for y in 0..h {
+            for x in 0..w {
+                framebuf_slice[y * self.stride + x] = pixel;
+            }
+        }
+    }
+}
