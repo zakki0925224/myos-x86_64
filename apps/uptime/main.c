@@ -7,7 +7,7 @@
 #define MS_IN_A_MINUTE (60 * 1000)
 #define MS_IN_A_SECOND 1000
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
     uint64_t uptime_ms = sys_uptime();
     uint64_t days = uptime_ms / MS_IN_A_DAY;
     uint64_t hours = (uptime_ms % MS_IN_A_DAY) / MS_IN_A_HOUR;

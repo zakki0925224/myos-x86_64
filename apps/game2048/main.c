@@ -159,7 +159,7 @@ void update(int turn, int board[SIZE][SIZE]) {
     }
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
     int turn = 1;
     int board[SIZE][SIZE] = {
         {0, 2, 0, 0},

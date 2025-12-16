@@ -43,7 +43,7 @@ typedef struct {
     size_t image_height;
     uint8_t pixel_format;
     char _reserved1[7];
-    const void *framebuf;
+    const void* framebuf;
 } __attribute__((aligned(8))) iomsg_create_component_image;
 
 #endif

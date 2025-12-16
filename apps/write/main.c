@@ -2,12 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
     if (argc < 3) {
         return 0;
     }
 
-    FILE *file = fopen(argv[1], "w");
+    FILE* file = fopen(argv[1], "w");
     if (file == NULL) {
         printf("write: failed to open the file\n");
         return -1;

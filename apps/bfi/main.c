@@ -8,7 +8,7 @@
 static uint8_t mem[MEM_LEN] = {0};
 static int stack[STACK_LEN] = {0};
 
-int exec_bf(const char *bf_code) {
+int exec_bf(const char* bf_code) {
     int code_len = strlen(bf_code);
     char str[2];
     // instruction pointer
@@ -128,8 +128,8 @@ int exec_bf(const char *bf_code) {
     return 0;
 }
 
-int main(int argc, char const *argv[]) {
-    const char *bf_code = "++ ++ ++ ++[ > ++ ++[ > ++ > ++ + > ++ + > + < < < < -] > + > + >->> +[ < ] < -] >>.> -- -.++ ++ ++ +..++ +.>>.<-.<.++ +.-- -- --.-- -- -- --.>> +.>++.";
+int main(int argc, char const* argv[]) {
+    const char* bf_code = "++ ++ ++ ++[ > ++ ++[ > ++ > ++ + > ++ + > + < < < < -] > + > + >->> +[ < ] < -] >>.> -- -.++ ++ ++ +..++ +.>>.<-.<.++ +.-- -- --.-- -- -- --.>> +.>++.";
 
     if (argc > 1) {
         bf_code = argv[1];

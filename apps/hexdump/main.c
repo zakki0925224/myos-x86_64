@@ -1,12 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
     if (argc < 2) {
         return 0;
     }
 
-    FILE *file = fopen(argv[1], "r");
+    FILE* file = fopen(argv[1], "r");
     if (file == NULL) {
         printf("hexdump: failed to open the file\n");
         return -1;
@@ -14,7 +14,7 @@ int main(int argc, char *argv[]) {
 
     size_t file_size = file->stat->size;
 
-    char *f_buf = (char *)malloc(file_size);
+    char* f_buf = (char*)malloc(file_size);
     if (f_buf == NULL) {
         printf("hexdump: failed to allocate memory\n");
         fclose(file);

@@ -3,7 +3,7 @@
 #include "ctype.h"
 #include "stdlib.h"
 
-int strcmp(const char *s1, const char *s2) {
+int strcmp(const char* s1, const char* s2) {
     while (*s1 != '\0' && *s2 != '\0' && *s1 == *s2) {
         s1++;
         s2++;
@@ -11,7 +11,7 @@ int strcmp(const char *s1, const char *s2) {
     return *s1 - *s2;
 }
 
-size_t strlen(const char *str) {
+size_t strlen(const char* str) {
     size_t res = 0;
     while (*str++) {
         res++;
@@ -19,7 +19,7 @@ size_t strlen(const char *str) {
     return res;
 }
 
-int split(char *str, const char regex, char **buf, size_t buflen) {
+int split(char* str, const char regex, char** buf, size_t buflen) {
     int s_len = strlen(str);
     int len = 1;
     int i;
@@ -41,7 +41,7 @@ int split(char *str, const char regex, char **buf, size_t buflen) {
     return len;
 }
 
-char *concatenate(const char *strs[], int len, const char *delimiter) {
+char* concatenate(const char* strs[], int len, const char* delimiter) {
     int total_len = 0;
     int delimiter_len = strlen(delimiter);
     int i, j, k = 0;
@@ -53,7 +53,7 @@ char *concatenate(const char *strs[], int len, const char *delimiter) {
         }
     }
 
-    char *str = (char *)malloc(total_len + 1);
+    char* str = (char*)malloc(total_len + 1);
     if (str == NULL) {
         return NULL;
     }
@@ -74,7 +74,7 @@ char *concatenate(const char *strs[], int len, const char *delimiter) {
     return str;
 }
 
-void replace(char *src, const char target, const char replace) {
+void replace(char* src, const char target, const char replace) {
     int i = 0;
     int str_len = strlen(src);
 
@@ -91,9 +91,9 @@ int is_ascii(const char c) {
     return c >= 0 && c <= 127;
 }
 
-void *memcpy(void *dest, const void *src, size_t len) {
-    char *d = (char *)dest;
-    const char *s = (char *)src;
+void* memcpy(void* dest, const void* src, size_t len) {
+    char* d = (char*)dest;
+    const char* s = (char*)src;
 
     while (len--)
         *d++ = *s++;
@@ -101,8 +101,8 @@ void *memcpy(void *dest, const void *src, size_t len) {
     return dest;
 }
 
-void *memset(void *dest, int val, size_t len) {
-    unsigned char *ptr = (unsigned char *)dest;
+void* memset(void* dest, int val, size_t len) {
+    unsigned char* ptr = (unsigned char*)dest;
 
     while (len-- > 0)
         *ptr++ = val;
@@ -110,16 +110,16 @@ void *memset(void *dest, int val, size_t len) {
     return dest;
 }
 
-void *memmove(void *dest, const void *src, size_t len) {
-    char *d = (char *)dest;
-    const char *s = (char *)src;
+void* memmove(void* dest, const void* src, size_t len) {
+    char* d = (char*)dest;
+    const char* s = (char*)src;
 
     if (d < s) {
         while (len--)
             *d++ = *s++;
     } else {
-        char *lasts = (char *)(s + (len - 1));
-        char *lastd = (char *)(d + (len - 1));
+        char* lasts = (char*)(s + (len - 1));
+        char* lastd = (char*)(d + (len - 1));
 
         while (len--)
             *lastd-- = *lasts--;
@@ -128,7 +128,7 @@ void *memmove(void *dest, const void *src, size_t len) {
     return dest;
 }
 
-int strcasecmp(const char *s1, const char *s2) {
+int strcasecmp(const char* s1, const char* s2) {
     int d = 0;
 
     for (;;) {
@@ -142,7 +142,7 @@ int strcasecmp(const char *s1, const char *s2) {
     return d;
 }
 
-int strncasecmp(const char *s1, const char *s2, size_t n) {
+int strncasecmp(const char* s1, const char* s2, size_t n) {
     int d = 0;
 
     for (; n != 0; n--) {
@@ -156,21 +156,21 @@ int strncasecmp(const char *s1, const char *s2, size_t n) {
     return d;
 }
 
-char *strchr(const char *s1, int i) {
-    const unsigned char *s = (const unsigned char *)s1;
+char* strchr(const char* s1, int i) {
+    const unsigned char* s = (const unsigned char*)s1;
     unsigned char c = (unsigned char)i;
 
     while (*s && *s != c)
         s++;
 
     if (*s == c)
-        return (char *)s;
+        return (char*)s;
 
     return NULL;
 }
 
-char *strrchr(const char *s, int i) {
-    const char *last = NULL;
+char* strrchr(const char* s, int i) {
+    const char* last = NULL;
 
     if (i) {
         while ((s = strchr(s, i))) {
@@ -181,10 +181,10 @@ char *strrchr(const char *s, int i) {
         last = strchr(s, i);
     }
 
-    return (char *)last;
+    return (char*)last;
 }
 
-int strncmp(const char *s1, const char *s2, size_t n) {
+int strncmp(const char* s1, const char* s2, size_t n) {
     if (n == 0)
         return 0;
 
@@ -196,15 +196,15 @@ int strncmp(const char *s1, const char *s2, size_t n) {
         s2++;
     }
 
-    return (*(unsigned char *)s1 - *(unsigned char *)s2);
+    return (*(unsigned char*)s1 - *(unsigned char*)s2);
 }
 
-char *strncpy(char *dst, const char *src, size_t n) {
+char* strncpy(char* dst, const char* src, size_t n) {
     if (n == 0)
         return dst;
 
-    char *d = dst;
-    const char *s = src;
+    char* d = dst;
+    const char* s = src;
 
     do {
         if ((*d++ = *s++) == 0) {
@@ -218,9 +218,9 @@ char *strncpy(char *dst, const char *src, size_t n) {
     return dst;
 }
 
-char *strdup(const char *s) {
+char* strdup(const char* s) {
     size_t len = strlen(s) + 1;
-    char *mem = (char *)malloc(len);
+    char* mem = (char*)malloc(len);
 
     if (mem == NULL)
         return NULL;
@@ -229,12 +229,12 @@ char *strdup(const char *s) {
     return mem;
 }
 
-char *strstr(const char *s1, const char *s2) {
+char* strstr(const char* s1, const char* s2) {
     size_t i;
     int c = s2[0];
 
     if (c == 0)
-        return (char *)s1;
+        return (char*)s1;
 
     for (; s1[0] != '\0'; s1++) {
         if (s1[0] != c)
@@ -246,7 +246,7 @@ char *strstr(const char *s1, const char *s2) {
         }
 
         if (s2[i] == '\0')
-            return (char *)s1;
+            return (char*)s1;
     }
 
     return NULL;

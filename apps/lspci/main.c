@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int main(int argc, char *argv[]) {
-    FILE *file = fopen("/dev/pci-bus", "r");
+int main(int argc, char* argv[]) {
+    FILE* file = fopen("/dev/pci-bus", "r");
 
     if (file == NULL) {
         printf("lspci: failed to open the file\n");
@@ -11,7 +11,7 @@ int main(int argc, char *argv[]) {
 
     size_t file_size = file->stat->size;
 
-    char *f_buf = (char *)malloc(file_size + 1);
+    char* f_buf = (char*)malloc(file_size + 1);
     if (f_buf == NULL) {
         printf("lspci: failed to allocate memory\n");
         fclose(file);

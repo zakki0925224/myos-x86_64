@@ -3,6 +3,6 @@
 
 #include <stdint.h>
 
-extern int mkdir(const char *path, __mode_t mode);
+extern int mkdir(const char* path, __mode_t mode);
 
 #endif

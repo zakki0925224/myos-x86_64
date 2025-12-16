@@ -8,7 +8,7 @@
 #define BUF_SIZE 1000
 static char BUF[BUF_SIZE];
 
-int write_buf(char *buf, int buf_len, int write_len, char c) {
+int write_buf(char* buf, int buf_len, int write_len, char c) {
     if (write_len >= buf_len)
         return -1;
 
@@ -16,7 +16,7 @@ int write_buf(char *buf, int buf_len, int write_len, char c) {
     return write_len;
 }
 
-int _printf(char *buf, int buf_len, const char *fmt, va_list ap) {
+int _printf(char* buf, int buf_len, const char* fmt, va_list ap) {
     int ret = 0;
     int str_len = strlen(fmt);
     int str_i = 0;
@@ -142,7 +142,7 @@ int _printf(char *buf, int buf_len, const char *fmt, va_list ap) {
             }
 
             case 's': {
-                const char *va_s = va_arg(ap, char *);
+                const char* va_s = va_arg(ap, char*);
                 if (va_s == NULL) {
                     ret = -1;
                     break;
@@ -168,7 +168,7 @@ int _printf(char *buf, int buf_len, const char *fmt, va_list ap) {
     return ret;
 }
 
-int printf(const char *fmt, ...) {
+int printf(const char* fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
     int ret = _printf(BUF, BUF_SIZE, fmt, ap);
@@ -185,7 +185,7 @@ int printf(const char *fmt, ...) {
     return ret;
 }
 
-int vsnprintf(char *buf, size_t bufsize, const char *format, va_list arg) {
+int vsnprintf(char* buf, size_t bufsize, const char* format, va_list arg) {
     int ret = _printf(buf, bufsize, format, arg);
 
     if (ret != -1) {
@@ -195,7 +195,7 @@ int vsnprintf(char *buf, size_t bufsize, const char *format, va_list arg) {
     return ret;
 }
 
-int snprintf(char *buf, size_t size, const char *format, ...) {
+int snprintf(char* buf, size_t size, const char* format, ...) {
     va_list ap;
     va_start(ap, format);
     int ret = _printf(buf, size, format, ap);

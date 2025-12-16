@@ -4,8 +4,8 @@
 #include <syscalls.h>
 #include <utsname.h>
 
-int main(int argc, const char *argv[]) {
-    utsname *buf = (utsname *)malloc(sizeof(utsname));
+int main(int argc, const char* argv[]) {
+    utsname* buf = (utsname*)malloc(sizeof(utsname));
     if (buf == NULL) {
         return -1;
     }

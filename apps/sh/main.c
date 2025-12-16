@@ -7,12 +7,12 @@
 #define BUF_LEN 128
 
 static char buf[BUF_LEN] = {0};
-static char *splitted_buf[BUF_LEN];
+static char* splitted_buf[BUF_LEN];
 static char cwd_path[BUF_LEN] = {0};
 static char envpath[BUF_LEN] = {0};
 static char filepath_buf[BUF_LEN] = {0};
 
-void exec_cmd(char *cmd) {
+void exec_cmd(char* cmd) {
     int cmdargs_len = split(cmd, ' ', splitted_buf, BUF_LEN);
 
     if (cmdargs_len < 1) {
@@ -47,9 +47,9 @@ void exec_cmd(char *cmd) {
             return;
         }
 
-        char *args = splitted_buf[1];
+        char* args = splitted_buf[1];
         if (cmdargs_len > 2) {
-            args = concatenate((const char **)(splitted_buf + 1), cmdargs_len - 1, " ");
+            args = concatenate((const char**)(splitted_buf + 1), cmdargs_len - 1, " ");
 
             if (args == NULL) {
                 printf("sh: exec: failed to concatenate arguments\n");
@@ -62,7 +62,7 @@ void exec_cmd(char *cmd) {
             return;
         }
     } else if (strcmp(splitted_buf[0], "window") == 0) {
-        component_descriptor *cdesc = create_component_window("test window", 200, 50, 300, 200);
+        component_descriptor* cdesc = create_component_window("test window", 200, 50, 300, 200);
         if (cdesc == NULL) {
             printf("sh: window: failed to create window\n");
             return;
@@ -75,9 +75,9 @@ void exec_cmd(char *cmd) {
     else if (strlen(envpath) > 0) {
         snprintf(filepath_buf, sizeof(filepath_buf), "%s/%s", envpath, splitted_buf[0]);
         splitted_buf[0] = filepath_buf;
-        char *args = splitted_buf[0];
+        char* args = splitted_buf[0];
         if (cmdargs_len > 1) {
-            args = concatenate((const char **)splitted_buf, cmdargs_len, " ");
+            args = concatenate((const char**)splitted_buf, cmdargs_len, " ");
 
             if (args == NULL) {
                 printf("sh: exec: failed to concatenate arguments\n");
@@ -96,7 +96,7 @@ void exec_cmd(char *cmd) {
     }
 }
 
-int main(int argc, char const *argv[]) {
+int main(int argc, char const* argv[]) {
     int getcwd_ret;
 
     if (argc > 1) {
