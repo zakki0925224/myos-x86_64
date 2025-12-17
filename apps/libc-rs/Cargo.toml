@@ -13,4 +13,4 @@ bindgen = "0.72.0"
 
 [features]
 default = []
-for-kernel-stubs = []
+kernel = []

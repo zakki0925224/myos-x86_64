@@ -3,40 +3,40 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 #[macro_use]
 extern crate alloc;
 
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 use alloc::{ffi::CString, vec::Vec};
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 use core::{
     fmt::{self, Write},
     panic::PanicInfo,
     str::FromStr,
 };
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 use linked_list_allocator::LockedHeap;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 // result/error
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum LibcError {
     FopenFailed,
     FreadFailed,
 }
 
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 pub type Result<T> = core::result::Result<T, LibcError>;
 
 // heap
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 #[doc(hidden)]
 pub fn _init_heap() {
     let heap_size = 1024 * 1024;
@@ -47,7 +47,7 @@ pub fn _init_heap() {
 }
 
 // panic
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("{:?}", info.message());
@@ -59,7 +59,7 @@ fn panic(info: &PanicInfo) -> ! {
 }
 
 // parse args macro
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 #[doc(hidden)]
 pub unsafe fn _parse_args(argc: usize, argv: *const *const u8) -> Vec<&'static str> {
     let mut args = Vec::new();
@@ -81,7 +81,7 @@ pub unsafe fn _parse_args(argc: usize, argv: *const *const u8) -> Vec<&'static s
     args
 }
 
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 #[macro_export]
 macro_rules! parse_args {
     () => {{
@@ -101,10 +101,10 @@ macro_rules! parse_args {
 }
 
 // print macros
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 struct Writer;
 
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         unsafe {
@@ -115,19 +115,19 @@ impl fmt::Write for Writer {
     }
 }
 
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     Writer.write_fmt(args).unwrap();
 }
 
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => ($crate::_print(format_args!($($arg)*)));
 }
 
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 #[macro_export]
 macro_rules! println {
     () => ($crate::print!("\n"));
@@ -135,13 +135,13 @@ macro_rules! println {
 }
 
 // file
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 #[repr(C)]
 pub struct File {
     ptr: *mut FILE,
 }
 
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 impl Drop for File {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
@@ -152,7 +152,7 @@ impl Drop for File {
     }
 }
 
-#[cfg(not(feature = "for-kernel-stubs"))]
+#[cfg(not(feature = "kernel"))]
 impl File {
     fn call_fopen(path: &str, mode: char) -> Result<Self> {
         let path_cstr = CString::from_str(path).unwrap();
