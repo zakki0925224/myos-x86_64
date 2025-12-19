@@ -8,7 +8,6 @@ third-party/OVMF_VARS.fd
 third-party/doom1.wad
 initramfs/apps
 initramfs/doom1.wad
-Cargo.lock
 
 *.elf
 *.o
