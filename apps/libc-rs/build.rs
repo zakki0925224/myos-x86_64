@@ -20,7 +20,7 @@ fn find_headers_recursively(dir: PathBuf) -> Vec<PathBuf> {
 }
 
 fn main() {
-    let is_for_kernel = std::env::var("CARGO_FEATURE_FOR_KERNEL_STUBS").is_ok();
+    let is_for_kernel = std::env::var("CARGO_FEATURE_KERNEL").is_ok();
 
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let out_path = std::path::PathBuf::from(out_dir);
