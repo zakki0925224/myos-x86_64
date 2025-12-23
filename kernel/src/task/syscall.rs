@@ -27,19 +27,18 @@ use libc_rs::*;
 #[derive(Debug, Clone, Copy)]
 #[repr(u32)]
 enum IomsgCommand {
-    RemoveComponent = 0x80000000,
-    CreateComponentWindow = 0x80000001,
-    CreateComponentImage = 0x80000002,
+    RemoveComponent = IOMSG_CMD_REMOVE_COMPONENT,
+    CreateComponentWindow = IOMSG_CMD_CREATE_COMPONENT_WINDOW,
+    CreateComponentImage = IOMSG_CMD_CREATE_COMPONENT_IMAGE,
 }
 
-#[derive(Debug, Clone, Copy)]
-#[repr(C, align(8))]
-struct IomsgHeader {
-    cmd_id: u32,
-    payload_size: u32,
+trait IomsgHeaderExt {
+    fn new(cmd: IomsgCommand, payload_size: u32) -> Self;
+    fn is_valid(&self) -> bool;
+    fn cmd(&self) -> Result<IomsgCommand>;
 }
 
-impl IomsgHeader {
+impl IomsgHeaderExt for iomsg_header {
     fn new(cmd: IomsgCommand, payload_size: u32) -> Self {
         Self {
             cmd_id: cmd as u32,
@@ -53,9 +52,9 @@ impl IomsgHeader {
 
     fn cmd(&self) -> Result<IomsgCommand> {
         match self.cmd_id {
-            0x80000000 => Ok(IomsgCommand::RemoveComponent),
-            0x80000001 => Ok(IomsgCommand::CreateComponentWindow),
-            0x80000002 => Ok(IomsgCommand::CreateComponentImage),
+            IOMSG_CMD_REMOVE_COMPONENT => Ok(IomsgCommand::RemoveComponent),
+            IOMSG_CMD_CREATE_COMPONENT_WINDOW => Ok(IomsgCommand::CreateComponentWindow),
+            IOMSG_CMD_CREATE_COMPONENT_IMAGE => Ok(IomsgCommand::CreateComponentImage),
             _ => Err(Error::Failed("Invalid command ID")),
         }
     }
@@ -555,8 +554,8 @@ fn sys_getenames(path: *const u8, buf: *mut u8, buf_len: usize) -> Result<()> {
 
 fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) -> Result<()> {
     let mut offset = 0;
-    let header: &IomsgHeader = unsafe { &*(msgbuf as *const IomsgHeader) };
-    offset += size_of::<IomsgHeader>();
+    let header: &iomsg_header = unsafe { &*(msgbuf as *const iomsg_header) };
+    offset += size_of::<iomsg_header>();
     kdebug!("{:?}", header);
 
     match header.cmd()? {
@@ -564,7 +563,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             let layer_id: i32 = unsafe { *(msgbuf.offset(offset as isize) as *const i32) };
             offset += size_of::<i32>();
 
-            if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
+            if (offset - size_of::<iomsg_header>()) != header.payload_size as usize {
                 return Err(Error::Failed("Invalid payload size for RemoveComponent"));
             }
 
@@ -577,13 +576,13 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             task::scheduler::remove_layer_id(layer_id)?;
 
             // reply
-            let reply_header = IomsgHeader::new(IomsgCommand::RemoveComponent, 0);
-            if replymsgbuf_len < size_of::<IomsgHeader>() {
+            let reply_header = iomsg_header::new(IomsgCommand::RemoveComponent, 0);
+            if replymsgbuf_len < size_of::<iomsg_header>() {
                 return Err(Error::Failed("Reply buffer is too small"));
             }
 
             unsafe {
-                let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
+                let reply_header_ptr = replymsgbuf as *mut iomsg_header;
                 reply_header_ptr.write(reply_header);
             }
         }
@@ -603,7 +602,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             let title = unsafe { util::cstring::from_cstring_ptr(title_ptr) };
             offset += title.len() + 1; // null terminator
 
-            if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
+            if (offset - size_of::<iomsg_header>()) != header.payload_size as usize {
                 return Err(Error::Failed(
                     "Invalid payload size for CreateComponentWindow",
                 ));
@@ -614,16 +613,17 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
 
             // reply
             let reply_header =
-                IomsgHeader::new(IomsgCommand::CreateComponentWindow, size_of::<u64>() as u32);
-            if replymsgbuf_len < size_of::<IomsgHeader>() + reply_header.payload_size as usize {
+                iomsg_header::new(IomsgCommand::CreateComponentWindow, size_of::<u64>() as u32);
+            if replymsgbuf_len < size_of::<iomsg_header>() + reply_header.payload_size as usize {
                 return Err(Error::Failed("Reply buffer is too small"));
             }
 
             unsafe {
-                let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
+                let reply_header_ptr = replymsgbuf as *mut iomsg_header;
                 reply_header_ptr.write(reply_header);
                 let reply_wd = layer_id.get() as u64;
-                (replymsgbuf.offset(size_of::<IomsgHeader>() as isize) as *mut u64).write(reply_wd);
+                (replymsgbuf.offset(size_of::<iomsg_header>() as isize) as *mut u64)
+                    .write(reply_wd);
             }
         }
         IomsgCommand::CreateComponentImage => {
@@ -641,7 +641,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
                 unsafe { *(msgbuf.offset(offset as isize) as *const usize) } as *const u8;
             offset += size_of::<usize>();
 
-            if (offset - size_of::<IomsgHeader>()) != header.payload_size as usize {
+            if (offset - size_of::<iomsg_header>()) != header.payload_size as usize {
                 return Err(Error::Failed(
                     "Invalid payload size for CreateComponentImage",
                 ));
@@ -666,15 +666,15 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
 
             // reply
             let reply_header =
-                IomsgHeader::new(IomsgCommand::CreateComponentImage, size_of::<i32>() as u32);
-            if replymsgbuf_len < size_of::<IomsgHeader>() + reply_header.payload_size as usize {
+                iomsg_header::new(IomsgCommand::CreateComponentImage, size_of::<i32>() as u32);
+            if replymsgbuf_len < size_of::<iomsg_header>() + reply_header.payload_size as usize {
                 return Err(Error::Failed("Reply buffer is too small"));
             }
 
             unsafe {
-                let reply_header_ptr = replymsgbuf as *mut IomsgHeader;
+                let reply_header_ptr = replymsgbuf as *mut iomsg_header;
                 reply_header_ptr.write(reply_header);
-                (replymsgbuf.offset(size_of::<IomsgHeader>() as isize) as *mut i32)
+                (replymsgbuf.offset(size_of::<iomsg_header>() as isize) as *mut i32)
                     .write(new_layer_id.get() as i32);
             }
         }
