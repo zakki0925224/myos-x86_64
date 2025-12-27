@@ -1,3 +1,4 @@
+use crate::arch::x86_64::registers::{Register, Rflags};
 use core::arch::asm;
 
 pub mod acpi;
@@ -22,9 +23,14 @@ pub fn stihlt() {
 }
 
 pub fn disabled_int<F: FnMut() -> R, R>(mut func: F) -> R {
+    let rflags = Rflags::read();
     unsafe { asm!("cli", options(nomem, nostack)) };
     let func_res = func();
-    unsafe { asm!("sti", options(nomem, nostack)) };
+
+    if rflags.if_() {
+        unsafe { asm!("sti", options(nomem, nostack)) };
+    }
+
     func_res
 }
 

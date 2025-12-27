@@ -69,9 +69,7 @@ pub trait Draw {
             let pixel_ptr = buf_ptr.add(y * res_w + x);
 
             // write the first line
-            for i in 0..w {
-                pixel_ptr.add(i).write(code);
-            }
+            core::slice::from_raw_parts_mut(pixel_ptr, w).fill(code);
 
             // copy the first line
             for i in 1..h {

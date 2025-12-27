@@ -1,13 +1,6 @@
 use super::{uart, DeviceDriverFunction, DeviceDriverInfo};
-use crate::{
-    error::{Error, Result},
-    fs::vfs,
-    graphics::frame_buf_console,
-    kinfo,
-    sync::mutex::Mutex,
-    util::lifo::Lifo,
-};
-use alloc::{boxed::Box, string::String, vec::Vec};
+use crate::{error::Result, fs::vfs, graphics::frame_buf_console, kinfo, sync::mutex::Mutex};
+use alloc::{string::String, vec::Vec};
 use core::fmt::{self, Write};
 
 const IO_BUF_LEN: usize = 512;
@@ -21,19 +14,44 @@ pub enum BufferType {
     ErrorOutput,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum TtyError {
-    IoBufferError {
-        buf_type: BufferType,
-        err: Box<Error>,
-    },
+struct Buffer<const N: usize> {
+    buf: [char; N],
+    len: usize,
+}
+
+impl<const N: usize> Buffer<N> {
+    const fn default() -> Self {
+        Self {
+            buf: ['\0'; N],
+            len: 0,
+        }
+    }
+
+    fn push(&mut self, c: char) {
+        // reset buffer
+        if self.len == N {
+            self.len = 0;
+        }
+
+        self.buf[self.len] = c;
+        self.len += 1;
+    }
+
+    fn pop(&mut self) -> Option<char> {
+        if self.len > 0 {
+            self.len -= 1;
+            Some(self.buf[self.len])
+        } else {
+            None
+        }
+    }
 }
 
 struct Tty {
     device_driver_info: DeviceDriverInfo,
-    input_buf: Lifo<char, IO_BUF_LEN>,
-    output_buf: Lifo<char, IO_BUF_LEN>,
-    err_output_buf: Lifo<char, IO_BUF_LEN>,
+    input_buf: Buffer<IO_BUF_LEN>,
+    output_buf: Buffer<IO_BUF_LEN>,
+    err_output_buf: Buffer<IO_BUF_LEN>,
     use_serial_port: bool,
     is_ready_get_line: bool,
 }
@@ -42,27 +60,11 @@ impl Tty {
     const fn new(use_serial_port: bool) -> Self {
         Self {
             device_driver_info: DeviceDriverInfo::new("tty"),
-            input_buf: Lifo::new('\0'),
-            output_buf: Lifo::new('\0'),
-            err_output_buf: Lifo::new('\0'),
+            input_buf: Buffer::default(),
+            output_buf: Buffer::default(),
+            err_output_buf: Buffer::default(),
             use_serial_port,
             is_ready_get_line: false,
-        }
-    }
-
-    fn is_full(&self, buf_type: BufferType) -> bool {
-        match buf_type {
-            BufferType::Input => self.input_buf.is_full(),
-            BufferType::Output => self.output_buf.is_full(),
-            BufferType::ErrorOutput => self.err_output_buf.is_full(),
-        }
-    }
-
-    fn reset_buf(&mut self, buf_type: BufferType) {
-        match buf_type {
-            BufferType::Input => self.input_buf.reset(),
-            BufferType::Output => self.output_buf.reset(),
-            BufferType::ErrorOutput => self.err_output_buf.reset(),
         }
     }
 
@@ -77,10 +79,10 @@ impl Tty {
 
         match c {
             '\x08' /* backspace */ | '\x7f' /* delete */ => {
-                buf.pop()?;
+                let _ = buf.pop();
             }
             _ => {
-                buf.push(c).map_err(|err| TtyError::IoBufferError { buf_type, err: Box::new(err) })?;
+                buf.push(c);
             }
         }
 
@@ -113,7 +115,7 @@ impl Tty {
         let mut s = String::new();
 
         loop {
-            if let Ok(c) = buf.pop() {
+            if let Some(c) = buf.pop() {
                 s.push(c);
             } else {
                 break;
@@ -131,8 +133,8 @@ impl Tty {
         };
 
         match buf.pop() {
-            Ok(c) => c,
-            Err(_) => '\0', // null
+            Some(c) => c,
+            None => '\0', // null
         }
     }
 }
@@ -141,10 +143,6 @@ impl fmt::Write for Tty {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         let buf_type = BufferType::Output;
         for c in s.chars() {
-            if self.is_full(buf_type) {
-                self.reset_buf(buf_type);
-            }
-
             self.write(c, buf_type).map_err(|_| fmt::Error)?;
         }
 
@@ -265,10 +263,6 @@ pub fn input(c: char) -> Result<()> {
     }
 
     let mut tty = unsafe { TTY.try_lock() }?;
-    if tty.is_full(BufferType::Input) {
-        tty.reset_buf(BufferType::Input);
-    }
-
     tty.write(c, BufferType::Input)?;
 
     if c == '\n' {

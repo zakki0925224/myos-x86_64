@@ -1,3 +1,6 @@
+use super::Register;
+use core::arch::asm;
+
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct Rflags(u64);
@@ -29,6 +32,32 @@ impl core::fmt::Debug for Rflags {
             .field("VIP", &self.vip())
             .field("ID", &self.id())
             .finish()
+    }
+}
+
+impl Register<u64> for Rflags {
+    fn read() -> Self {
+        let mut value: u64;
+        unsafe {
+            asm!("pushfq; pop {}", out(reg) value, options(nomem, nostack));
+        }
+        Self::from(value)
+    }
+
+    fn write(&self) {
+        let value = self.0;
+        unsafe {
+            asm!("push {}", in(reg) value, options(nomem, nostack));
+            asm!("popfq", options(nomem, nostack));
+        }
+    }
+
+    fn raw(&self) -> u64 {
+        self.0
+    }
+
+    fn set_raw(&mut self, value: u64) {
+        self.0 = value;
     }
 }
 

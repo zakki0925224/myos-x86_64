@@ -75,10 +75,10 @@ impl<T: Sized> IoBox<T> {
             MaybeUninit::<T>::zeroed().assume_init()
         }));
 
-        let me = Self { inner };
+        let this = Self { inner };
 
         // disable cache
-        let start: VirtualAddress = (me.as_ref() as *const T as u64).into();
+        let start: VirtualAddress = (this.as_ref() as *const T as u64).into();
         paging::update_mapping(&MappingInfo {
             start,
             end: start.offset(size_of::<T>().div_ceil(PAGE_SIZE)),
@@ -90,7 +90,7 @@ impl<T: Sized> IoBox<T> {
         })
         .unwrap();
 
-        me
+        this
     }
 
     pub unsafe fn get_unchecked_mut(&mut self) -> &mut T {

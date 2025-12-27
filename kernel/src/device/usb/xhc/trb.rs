@@ -209,8 +209,7 @@ impl TrbRing {
     }
 
     pub fn write_current(&mut self, trb: GenericTrbEntry) -> Result<()> {
-        self.write(self.index, trb);
-        Ok(())
+        self.write(self.index, trb)
     }
 
     pub fn current_ptr(&self) -> *const GenericTrbEntry {

@@ -1,12 +1,12 @@
 use crate::{
     arch::x86_64::acpi::AcpiError,
-    device::{tty::TtyError, usb::xhc::XhcDriverError},
+    device::usb::xhc::XhcDriverError,
     fs::vfs::VirtualFileSystemError,
     graphics::{
         draw::DrawError, multi_layer::LayerError, simple_window_manager::SimpleWindowManagerError,
     },
     mem::{allocator::AllocationError, bitmap::BitmapMemoryManagerError, paging::PageManagerError},
-    util::{fifo::FifoError, lifo::LifoError},
+    util::fifo::FifoError,
 };
 use common::elf::Elf64Error;
 
@@ -18,7 +18,6 @@ pub enum Error {
     BitmapMemoryManagerError(BitmapMemoryManagerError),
     PageManagerError(PageManagerError),
     FifoError(FifoError),
-    LifoError(LifoError),
     IndexOutOfBoundsError(usize),
     VirtualFileSystemError(VirtualFileSystemError),
     Elf64Error(Elf64Error),
@@ -26,7 +25,6 @@ pub enum Error {
     AcpiError(AcpiError),
     AllocationError(AllocationError),
     DrawError(DrawError),
-    TtyError(TtyError),
     XhcDriverError(XhcDriverError),
 }
 
@@ -57,12 +55,6 @@ impl From<PageManagerError> for Error {
 impl From<FifoError> for Error {
     fn from(err: FifoError) -> Self {
         Self::FifoError(err)
-    }
-}
-
-impl From<LifoError> for Error {
-    fn from(err: LifoError) -> Self {
-        Self::LifoError(err)
     }
 }
 
@@ -99,12 +91,6 @@ impl From<AllocationError> for Error {
 impl From<DrawError> for Error {
     fn from(err: DrawError) -> Self {
         Self::DrawError(err)
-    }
-}
-
-impl From<TtyError> for Error {
-    fn from(err: TtyError) -> Self {
-        Self::TtyError(err)
     }
 }
 

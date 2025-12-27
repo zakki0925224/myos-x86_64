@@ -1,17 +1,20 @@
 use crate::{
     arch::x86_64,
     device::{DeviceDriverFunction, DeviceDriverInfo},
-    error::Result,
+    error::{Error, Result},
     fs::vfs,
-    kinfo, util,
+    kinfo,
+    sync::mutex::Mutex,
+    util,
 };
 use alloc::vec::Vec;
 use core::time::Duration;
 
-static mut SPEAKER_DRIVER: SpeakerDriver = SpeakerDriver::new();
+static mut SPEAKER_DRIVER: Mutex<SpeakerDriver> = Mutex::new(SpeakerDriver::new());
 
 struct SpeakerDriver {
     device_driver_info: DeviceDriverInfo,
+    current_freq: u32,
 }
 
 // https://wiki.osdev.org/PC_Speaker
@@ -26,26 +29,43 @@ impl SpeakerDriver {
     const fn new() -> Self {
         Self {
             device_driver_info: DeviceDriverInfo::new("speaker"),
+            current_freq: 0,
         }
     }
 
-    fn play(&self, freq: u32) {
+    fn play(&mut self, freq: u32) {
+        if freq == 0 {
+            self.stop();
+            return;
+        }
+
+        if self.current_freq == freq {
+            return;
+        }
+
         let div = (Self::PIT_BASE_FREQ / freq) as u16;
 
         x86_64::out8(
             Self::PORT_PIT_CTRL,
             Self::TIMER2_SELECT | Self::WRITE_WORD | Self::MODE_SQUARE_WAVE,
         );
-        x86_64::out8(Self::PORT_TIMER2_CTRL, div as u8);
-
+        x86_64::out8(Self::PORT_TIMER2_CTRL, (div & 0xFF) as u8);
         x86_64::out8(Self::PORT_TIMER2_CTRL, (div >> 8) as u8);
-        x86_64::out8(Self::PORT_TIMER2_CTRL, div as u8);
 
-        x86_64::out8(0x61, x86_64::in8(0x61) | 3);
+        let status = x86_64::in8(0x61);
+        if status & 3 != 3 {
+            x86_64::out8(0x61, status | 3);
+        }
+
+        self.current_freq = freq;
     }
 
-    fn stop(&self) {
+    fn stop(&mut self) {
+        if self.current_freq == 0 {
+            return;
+        }
         x86_64::out8(0x61, x86_64::in8(0x61) & !3);
+        self.current_freq = 0;
     }
 }
 
@@ -84,64 +104,63 @@ impl DeviceDriverFunction for SpeakerDriver {
     }
 
     fn open(&mut self) -> Result<()> {
-        unimplemented!()
+        Ok(())
     }
 
     fn close(&mut self) -> Result<()> {
-        unimplemented!()
+        Ok(())
     }
 
     fn read(&mut self) -> Result<Vec<u8>> {
-        unimplemented!()
+        Ok(Vec::new())
     }
 
-    fn write(&mut self, _data: &[u8]) -> Result<()> {
-        unimplemented!()
+    fn write(&mut self, data: &[u8]) -> Result<()> {
+        let s = str::from_utf8(data).map_err(|_| Error::Failed("Failed to parse string"))?;
+        let freq: u32 = s
+            .trim()
+            .parse()
+            .map_err(|_| Error::Failed("Failed to parse u32 number"))?;
+        self.play(freq);
+
+        Ok(())
     }
 }
 
 pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
-    unsafe { SPEAKER_DRIVER.get_device_driver_info() }
+    unsafe { SPEAKER_DRIVER.try_lock() }?.get_device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    unsafe {
-        SPEAKER_DRIVER.probe()?;
-        SPEAKER_DRIVER.attach(())?;
-        kinfo!("{}: Attached!", get_device_driver_info()?.name);
-    }
+    let mut driver = unsafe { SPEAKER_DRIVER.try_lock() }?;
+    driver.probe()?;
+    driver.attach(())?;
+    kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
 
     Ok(())
 }
 
 pub fn open() -> Result<()> {
-    unsafe { SPEAKER_DRIVER.open() }
+    unsafe { SPEAKER_DRIVER.try_lock() }?.open()
 }
 
 pub fn close() -> Result<()> {
-    unsafe { SPEAKER_DRIVER.close() }
+    unsafe { SPEAKER_DRIVER.try_lock() }?.close()
 }
 
 pub fn read() -> Result<Vec<u8>> {
-    unsafe { SPEAKER_DRIVER.read() }
+    unsafe { SPEAKER_DRIVER.try_lock() }?.read()
 }
 
 pub fn write(data: &[u8]) -> Result<()> {
-    unsafe { SPEAKER_DRIVER.write(data) }
+    unsafe { SPEAKER_DRIVER.try_lock() }?.write(data)
 }
 
-pub fn play(freq: u32, duration: Duration) {
-    unsafe {
-        SPEAKER_DRIVER.play(freq);
-        util::time::sleep(duration);
-        SPEAKER_DRIVER.stop();
-    }
-}
+pub fn play(freq: u32, duration: Duration) -> Result<()> {
+    let mut driver = unsafe { SPEAKER_DRIVER.try_lock() }?;
+    driver.play(freq);
+    util::time::sleep(duration);
+    driver.stop();
 
-pub async fn play_async(freq: u32, duration: Duration) {
-    unsafe {
-        SPEAKER_DRIVER.play(freq);
-        util::time::sleep_async(duration).await;
-        SPEAKER_DRIVER.stop();
-    }
+    Ok(())
 }
