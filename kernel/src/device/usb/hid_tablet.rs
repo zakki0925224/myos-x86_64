@@ -34,10 +34,11 @@ impl UsbDeviceDriverFunction for UsbHidTabletDriver {
         };
         let slot = xhci_info.slot;
         let interface_descs = xhci_info.interface_descs();
-        let target_interface_desc = *interface_descs
-            .iter()
-            .find(|d| d.triple() == (3, 0, 0))
-            .ok_or(Error::Failed("No target interface descriptor found"))?;
+        let target_interface_desc =
+            *interface_descs
+                .iter()
+                .find(|d| d.triple() == (3, 0, 0))
+                .ok_or::<Error>("No target interface descriptor found".into())?;
         self.interface_num = target_interface_desc.interface_num;
 
         // request HID report
@@ -49,7 +50,7 @@ impl UsbDeviceDriverFunction for UsbHidTabletDriver {
         self.report_size_in_byte = if let Some(last_item) = self.input_report_items.last() {
             (last_item.bit_offset + last_item.bit_size + 7) / 8
         } else {
-            return Err(Error::Failed("Report size is zero"));
+            return Err("Report size is zero".into());
         };
         self.prev_report = vec![0u8; self.report_size_in_byte];
         self.res = frame_buf::resolution()?;
@@ -67,27 +68,27 @@ impl UsbDeviceDriverFunction for UsbHidTabletDriver {
             .input_report_items
             .iter()
             .find(|item| item.usage == UsbHidUsage::Button(1))
-            .ok_or(Error::Failed("Button(1) not found"))?;
+            .ok_or::<Error>("Button(1) not found".into())?;
         let desc_button_r = self
             .input_report_items
             .iter()
             .find(|item| item.usage == UsbHidUsage::Button(2))
-            .ok_or(Error::Failed("Button(2) not found"))?;
+            .ok_or::<Error>("Button(2) not found".into())?;
         let desc_button_c = self
             .input_report_items
             .iter()
             .find(|item| item.usage == UsbHidUsage::Button(3))
-            .ok_or(Error::Failed("Button(3) not found"))?;
+            .ok_or::<Error>("Button(3) not found".into())?;
         let desc_abs_x = self
             .input_report_items
             .iter()
             .find(|item| item.usage == UsbHidUsage::X && item.is_absolute)
-            .ok_or(Error::Failed("Absolute X not found"))?;
+            .ok_or::<Error>("Absolute X not found".into())?;
         let desc_abs_y = self
             .input_report_items
             .iter()
             .find(|item| item.usage == UsbHidUsage::Y && item.is_absolute)
-            .ok_or(Error::Failed("Absolute Y not found"))?;
+            .ok_or::<Error>("Absolute Y not found".into())?;
 
         let report =
             device::usb::xhc::request(|xhc| xhc.hid_report(slot, xhci_info.ctrl_ep_ring_mut()))?;

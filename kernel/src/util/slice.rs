@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::Result;
 use core::slice;
 
 pub unsafe trait Sliceable: Sized + Clone + Copy {
@@ -8,7 +8,7 @@ pub unsafe trait Sliceable: Sized + Clone + Copy {
 
     fn copy_from_slice(data: &[u8]) -> Result<Self> {
         if size_of::<Self>() > data.len() {
-            Err(Error::Failed("data is too short"))
+            Err("data is too short".into())
         } else {
             Ok(unsafe { *(data.as_ptr() as *const Self) })
         }

@@ -27,7 +27,7 @@ impl TryFrom<[u8; 2]> for ArpOperation {
         match value {
             [0, 1] => Ok(ArpOperation::Request),
             [0, 2] => Ok(ArpOperation::Reply),
-            _ => Err(Error::Failed("Invalid ARP operation")),
+            _ => Err("Invalid ARP operation".into()),
         }
     }
 }
@@ -50,7 +50,7 @@ impl TryFrom<&[u8]> for ArpPacket {
 
     fn try_from(data: &[u8]) -> Result<Self> {
         if data.len() < 28 {
-            return Err(Error::Failed("Invalid data length"));
+            return Err("Invalid data length".into());
         }
 
         let hardware_ty = [data[0], data[1]];

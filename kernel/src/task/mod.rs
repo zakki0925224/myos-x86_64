@@ -1,7 +1,7 @@
 use crate::{
     arch::x86_64::context::{Context, ContextMode},
     debug::dwarf::Dwarf,
-    error::{Error, Result},
+    error::Result,
     fs::vfs::{self, *},
     graphics::{multi_layer::LayerId, simple_window_manager},
     kdebug,
@@ -149,11 +149,11 @@ impl Task {
             let header = elf64.header();
 
             if header.elf_type() != elf::Type::Executable {
-                return Err(Error::Failed("The file is not an executable file"));
+                return Err("The file is not an executable file".into());
             }
 
             if header.machine() != elf::Machine::X8664 {
-                return Err(Error::Failed("Unsupported ISA"));
+                return Err("Unsupported ISA".into());
             }
 
             for program_header in elf64.program_headers() {

@@ -167,7 +167,7 @@ impl UsbHidReportInputItem {
     ) -> Result<i64> {
         let value = self
             .value_from_report(report)
-            .ok_or(Error::Failed("Value was empty"))?;
+            .ok_or::<Error>("Value was empty".into())?;
         util::range::map_value_range_inclusive(
             (self.logical_min as i64)..=(self.logical_max as i64),
             to_range,

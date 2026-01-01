@@ -47,8 +47,7 @@ impl NetworkManager {
     }
 
     fn my_mac_addr(&self) -> Result<EthernetAddress> {
-        self.my_mac_addr
-            .ok_or(Error::Failed("MAC address is not set"))
+        self.my_mac_addr.ok_or("MAC address is not set".into())
     }
 
     fn create_new_socket(&mut self, type_: SocketType) -> Result<SocketId> {
@@ -102,7 +101,7 @@ impl NetworkManager {
         {
             let socket = self.socket_table.socket_mut_by_id(socket_id)?;
             if socket.port() != 0 {
-                return Err(Error::Failed("Socket already bound"));
+                return Err("Socket already bound".into());
             }
         }
 
@@ -424,7 +423,7 @@ impl NetworkManager {
 
         let dst_mac_addr = self
             .resolve_mac_addr(dst_addr)?
-            .ok_or(Error::Failed("Failed to resolve MAC address"))?;
+            .ok_or::<Error>("Failed to resolve MAC address".into())?;
 
         self.send_eth_payload(
             EthernetPayload::Ipv4(ipv4_packet),

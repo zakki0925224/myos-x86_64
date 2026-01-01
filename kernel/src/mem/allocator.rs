@@ -95,18 +95,18 @@ impl HoleList {
 
     fn alloc_first_fit(&mut self, layout: Layout) -> Result<(NonNull<u8>, Layout)> {
         let aligned_layout = Self::align_layout(layout)?;
-        let mut cursor = self.cursor().ok_or(Error::Failed("No cursor"))?;
+        let mut cursor = self.cursor().ok_or::<Error>("No cursor".into())?;
 
         loop {
             match cursor.split_current(aligned_layout) {
                 Ok((ptr, _len)) => {
                     return Ok((
-                        NonNull::new(ptr).ok_or(Error::Failed("Pointer is null"))?,
+                        NonNull::new(ptr).ok_or::<Error>("Pointer is null".into())?,
                         aligned_layout,
                     ));
                 }
                 Err(curs) => {
-                    cursor = curs.next().ok_or(Error::Failed("No next cursor"))?;
+                    cursor = curs.next().ok_or::<Error>("No next cursor".into())?;
                 }
             }
         }
@@ -306,7 +306,7 @@ impl Cursor {
                 let node_u8 = node_u8 as *const u8;
                 assert!(node_u8.wrapping_add(node_size) <= next.as_ptr().cast::<u8>());
             } else {
-                return Err(Error::Failed("Invalid node"));
+                return Err("Invalid node".into());
             }
         }
 
@@ -505,7 +505,7 @@ fn dealloc(list: &mut HoleList, addr: *mut u8, size: usize) -> Result<()> {
         Ok(cursor) => (cursor, 1),
         Err(mut curosr) => {
             while let Err(_) = curosr.try_insert_after(hole) {
-                curosr = curosr.next().ok_or(Error::Failed("No next cursor"))?;
+                curosr = curosr.next().ok_or::<Error>("No next cursor".into())?;
             }
             (curosr, 2)
         }

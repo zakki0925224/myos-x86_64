@@ -4,7 +4,7 @@ use crate::{
         IoPortAddress,
     },
     device::{DeviceDriverFunction, DeviceDriverInfo},
-    error::{Error, Result},
+    error::Result,
     fs::vfs,
     kinfo,
     sync::mutex::Mutex,
@@ -188,7 +188,7 @@ impl DeviceDriverFunction for Ps2MouseDriver {
 
     fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
         if !self.device_driver_info.attached {
-            return Err(Error::Failed("Device driver is not attached"));
+            return Err("Device driver is not attached".into());
         }
 
         self.get_event()
@@ -196,7 +196,7 @@ impl DeviceDriverFunction for Ps2MouseDriver {
 
     fn poll_int(&mut self) -> Result<Self::PollInterruptOutput> {
         if !self.device_driver_info.attached {
-            return Err(Error::Failed("Device driver is not attached"));
+            return Err("Device driver is not attached".into());
         }
 
         let data = PS2_DATA_REG_ADDR.in8();

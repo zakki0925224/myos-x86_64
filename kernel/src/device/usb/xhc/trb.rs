@@ -93,9 +93,9 @@ impl GenericTrbEntry {
 
     pub fn cmd_result_ok(&self) -> Result<()> {
         if self.trb_type() != TrbType::CommandCompletionEvent as u32 {
-            Err(Error::Failed("Not a command completion event TRB"))
+            Err("Not a command completion event TRB".into())
         } else if self.completion_code() != 1 {
-            Err(Error::Failed("Command completion code was not success"))
+            Err("Command completion code was not success".into())
         } else {
             Ok(())
         }
@@ -103,9 +103,9 @@ impl GenericTrbEntry {
 
     pub fn transfer_result_ok(&self) -> Result<()> {
         if self.trb_type() != TrbType::TransferEvent as u32 {
-            Err(Error::Failed("Not a transfer event TRB"))
+            Err("Not a transfer event TRB".into())
         } else if self.completion_code() != 1 && self.completion_code() != 13 {
-            Err(Error::Failed("Transfer completion code was not success"))
+            Err("Transfer completion code was not success".into())
         } else {
             Ok(())
         }
@@ -187,7 +187,7 @@ impl TrbRing {
 
     pub fn advance_index_notoggle(&mut self, cycle_ours: bool) -> Result<()> {
         if self.current().cycle_state() != cycle_ours {
-            return Err(Error::Failed("Invalid cycle state"));
+            return Err("Invalid cycle state".into());
         }
 
         self.index = (self.index + 1) % self.trb.len();
@@ -196,7 +196,7 @@ impl TrbRing {
 
     pub fn advance_index(&mut self, new_cycle: bool) -> Result<()> {
         if self.current().cycle_state() == new_cycle {
-            return Err(Error::Failed("Invalid cycle state"));
+            return Err("Invalid cycle state".into());
         }
 
         self.trb[self.index].set_cycle_state(new_cycle);

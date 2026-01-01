@@ -31,7 +31,7 @@ impl TryFrom<u8> for UnitType {
             0x05 => Ok(Self::SplitCompile),
             0x06 => Ok(Self::SplitType),
             0x80..=0xff => Ok(Self::User(value)),
-            _ => Err(Error::Failed("Invalid UnitType value")),
+            _ => Err("Invalid UnitType value".into()),
         }
     }
 }
@@ -70,29 +70,27 @@ impl TryFrom<&[u8]> for DebugInfo {
 
     fn try_from(value: &[u8]) -> Result<Self> {
         if value.len() < 4 {
-            return Err(Error::Failed("Invalid DebugInfo length (unit_length)"));
+            return Err("Invalid DebugInfo length (unit_length)".into());
         }
 
         let unit_length = u32::from_le_bytes([value[0], value[1], value[2], value[3]]);
 
         if unit_length == 0xffff_ffff {
-            return Err(Error::Failed("64-bit DWARF format is not supported"));
+            return Err("64-bit DWARF format is not supported".into());
         }
 
         let total_unit_size = 4 + unit_length as usize;
         if value.len() < total_unit_size {
-            return Err(Error::Failed(
-                "DebugInfo data section out of bounds (unit_length mismatch)",
-            ));
+            return Err("DebugInfo data section out of bounds (unit_length mismatch)".into());
         }
 
         if value.len() < 12 {
-            return Err(Error::Failed("Invalid DebugInfo length (header minimum)"));
+            return Err("Invalid DebugInfo length (header minimum)".into());
         }
 
         let version = u16::from_le_bytes([value[4], value[5]]);
         if version != 5 {
-            return Err(Error::Failed("Unsupported DWARF version"));
+            return Err("Unsupported DWARF version".into());
         }
 
         let unit_type = value[6].try_into()?;
@@ -156,9 +154,7 @@ impl TryFrom<&[u8]> for DebugInfo {
         };
 
         if offset > total_unit_size {
-            return Err(Error::Failed(
-                "Calculated data offset exceeds total unit size",
-            ));
+            return Err("Calculated data offset exceeds total unit size".into());
         }
         let data = value[offset..total_unit_size].to_vec();
 
@@ -330,7 +326,7 @@ impl TryFrom<u64> for AbbrevTag {
             0x4a => Ok(Self::SkeletonUnit),
             0x4b => Ok(Self::ImmutableType),
             0x4090..=0xffff => Ok(Self::User(value)),
-            _ => Err(Error::Failed("Invalid AbbrevTag value")),
+            _ => Err("Invalid AbbrevTag value".into()),
         }
     }
 }
@@ -585,7 +581,7 @@ impl TryFrom<u64> for AbbrevAttribute {
             0x8b => Ok(Self::Defaulted),
             0x8c => Ok(Self::LoclistsBase),
             0x2000..=0x3fff => Ok(Self::User(value)),
-            _ => Err(Error::Failed("Invalid AbbrevAttribute value")),
+            _ => Err("Invalid AbbrevAttribute value".into()),
         }
     }
 }
@@ -686,7 +682,7 @@ impl TryFrom<u64> for AbbrevForm {
             0x2a => Ok(Self::Addrx2),
             0x2b => Ok(Self::Addrx3),
             0x2c => Ok(Self::Addrx4),
-            _ => Err(Error::Failed("Invalid AbbrevForm value")),
+            _ => Err("Invalid AbbrevForm value".into()),
         }
     }
 }
@@ -746,7 +742,7 @@ impl TryFrom<u64> for LineNumberHeaderEntry {
             0x04 => Ok(Self::Size),
             0x05 => Ok(Self::Md5),
             0x06..=0xffff => Ok(Self::User(value)),
-            _ => Err(Error::Failed("Invalid LineNumberHeaderEntry value")),
+            _ => Err("Invalid LineNumberHeaderEntry value".into()),
         }
     }
 }
@@ -819,25 +815,23 @@ impl core::fmt::Debug for DebugLine {
 impl DebugLine {
     pub fn try_from(value: &[u8], debug_line_str_slice: &[u8]) -> Result<Self> {
         if value.len() < 4 {
-            return Err(Error::Failed("Invalid DebugLine length (unit_length)"));
+            return Err("Invalid DebugLine length (unit_length)".into());
         }
 
         let unit_length = u32::from_le_bytes([value[0], value[1], value[2], value[3]]);
 
         if unit_length == 0xffff_ffff {
-            return Err(Error::Failed("64-bit DWARF format is not supported"));
+            return Err("64-bit DWARF format is not supported".into());
         }
 
         let total_unit_size = 4 + unit_length as usize;
         if value.len() < total_unit_size {
-            return Err(Error::Failed(
-                "DebugLine data section out of bounds (unit_length mismatch)",
-            ));
+            return Err("DebugLine data section out of bounds (unit_length mismatch)".into());
         }
 
         let version = u16::from_le_bytes([value[4], value[5]]);
         if version != 5 {
-            return Err(Error::Failed("Unsupported DWARF version"));
+            return Err("Unsupported DWARF version".into());
         }
 
         let address_size = value[6];
@@ -1010,7 +1004,7 @@ fn parse_debug_abbrev(
         let has_children = match debug_abbrev_slice[offset] {
             0 => false,
             1 => true,
-            _ => return Err(Error::Failed("Invalid has_children value")),
+            _ => return Err("Invalid has_children value".into()),
         };
         offset += 1;
 
@@ -1086,7 +1080,7 @@ fn parse_die(
 
         let abbrev = debug_abbrevs
             .get_mut(&code)
-            .ok_or(Error::Failed("Failed to find abbrev"))?;
+            .ok_or::<Error>("Failed to find abbrev".into())?;
 
         for (_, form) in &mut abbrev.attributes {
             match form {
@@ -1327,41 +1321,41 @@ impl Dwarf {
 pub fn parse(elf64: &Elf64) -> Result<Dwarf> {
     let debug_info_sh = elf64
         .section_header_by_name(".debug_info")
-        .ok_or(Error::Failed("Failed to find .debug_info section"))?;
+        .ok_or::<Error>("Failed to find .debug_info section".into())?;
 
     let debug_info_slice = elf64
         .data_by_section_header(debug_info_sh)
-        .ok_or(Error::Failed("Failed to get .debug_info section data"))?;
+        .ok_or::<Error>("Failed to get .debug_info section data".into())?;
 
     let debug_abbrev_sh = elf64
         .section_header_by_name(".debug_abbrev")
-        .ok_or(Error::Failed("Failed to find .debug_abbrev section"))?;
+        .ok_or::<Error>("Failed to find .debug_abbrev section".into())?;
 
     let debug_abbrev_slice = elf64
         .data_by_section_header(debug_abbrev_sh)
-        .ok_or(Error::Failed("Failed to get .debug_abbrev section data"))?;
+        .ok_or::<Error>("Failed to get .debug_abbrev section data".into())?;
 
     let debug_str_sh = elf64
         .section_header_by_name(".debug_str")
-        .ok_or(Error::Failed("Failed to find .debug_str section"))?;
+        .ok_or::<Error>("Failed to find .debug_str section".into())?;
 
     let debug_str_slice = elf64
         .data_by_section_header(debug_str_sh)
-        .ok_or(Error::Failed("Failed to get .debug_str section data"))?;
+        .ok_or::<Error>("Failed to get .debug_str section data".into())?;
 
     let debug_line_str_sh = elf64
         .section_header_by_name(".debug_line_str")
-        .ok_or(Error::Failed("Failed to find .debug_line_str section"))?;
+        .ok_or::<Error>("Failed to find .debug_line_str section".into())?;
 
     let debug_line_str_slice = elf64
         .data_by_section_header(debug_line_str_sh)
-        .ok_or(Error::Failed("Failed to get .debug_line_str section data"))?;
+        .ok_or::<Error>("Failed to get .debug_line_str section data".into())?;
 
     let debug_addr_sh = elf64.section_header_by_name(".debug_addr");
     let debug_addr_slice = if let Some(debug_addr_sh) = debug_addr_sh {
         let slice = elf64
             .data_by_section_header(debug_addr_sh)
-            .ok_or(Error::Failed("Failed to get .debug_addr section data"))?;
+            .ok_or::<Error>("Failed to get .debug_addr section data".into())?;
         Some(slice)
     } else {
         None
@@ -1386,10 +1380,10 @@ pub fn parse(elf64: &Elf64) -> Result<Dwarf> {
     // parse debug line
     let debug_line_sh = elf64
         .section_header_by_name(".debug_line")
-        .ok_or(Error::Failed("Failed to find .debug_line section"))?;
+        .ok_or::<Error>("Failed to find .debug_line section".into())?;
     let debug_line_slice = elf64
         .data_by_section_header(debug_line_sh)
-        .ok_or(Error::Failed("Failed to get .debug_line section data"))?;
+        .ok_or::<Error>("Failed to get .debug_line section data".into())?;
 
     let debug_lines = parse_debug_line(debug_line_slice, debug_line_str_slice)?;
 

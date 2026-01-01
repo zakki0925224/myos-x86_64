@@ -1,6 +1,6 @@
 use crate::{
     arch::{x86_64::registers::*, IoPortAddress, PhysicalAddress},
-    error::{Error, Result},
+    error::Result,
     mem::paging::{self, *},
 };
 use alloc::vec::Vec;
@@ -465,7 +465,7 @@ pub fn read_conf_space(bus: usize, device: usize, func: usize, byte_offset: usiz
         || func >= PCI_DEVICE_FUNC_LEN
         || byte_offset % 4 != 0
     {
-        return Err(Error::Failed("Invalid args"));
+        return Err("Invalid args".into());
     }
 
     let addr = 0x80000000
@@ -490,7 +490,7 @@ pub fn write_conf_space(
         || func >= PCI_DEVICE_FUNC_LEN
         || byte_offset % 4 != 0
     {
-        return Err(Error::Failed("Invalid args"));
+        return Err("Invalid args".into());
     }
 
     let addr = 0x80000000

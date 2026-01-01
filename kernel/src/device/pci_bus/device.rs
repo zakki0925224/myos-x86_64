@@ -91,7 +91,7 @@ impl PciDeviceFunction for PciDevice {
             | ConfigurationSpaceHeaderType::MultiFunction => {
                 ConfigurationSpaceNonBridgeField::read(bus, device, func)
             }
-            _ => Err(Error::Failed("Invalid configuration space header type")),
+            _ => Err("Invalid configuration space header type".into()),
         }
     }
 
@@ -104,7 +104,7 @@ impl PciDeviceFunction for PciDevice {
             ConfigurationSpaceHeaderType::PciToPciBridge => {
                 ConfigurationSpacePciToPciBridgeField::read(bus, device, func)
             }
-            _ => Err(Error::Failed("Invalid configuration space header type")),
+            _ => Err("Invalid configuration space header type".into()),
         }
     }
 
@@ -117,7 +117,7 @@ impl PciDeviceFunction for PciDevice {
             ConfigurationSpaceHeaderType::PciToCardBusBridge => {
                 ConfigurationSpacePciToCardBusField::read(bus, device, func)
             }
-            _ => Err(Error::Failed("Invalid configuration space header type")),
+            _ => Err("Invalid configuration space header type".into()),
         }
     }
 
@@ -183,7 +183,7 @@ impl PciDeviceFunction for PciDevice {
     ) -> Result<()> {
         let caps_ptr = self
             .read_caps_ptr()
-            .ok_or(Error::Failed("Failed to read MSI capability fields"))?;
+            .ok_or::<Error>("Failed to read MSI capability fields".into())?;
 
         let mut cap = MsiCapabilityField::default();
         let mut caps_ptr = caps_ptr as usize;
@@ -191,7 +191,7 @@ impl PciDeviceFunction for PciDevice {
         let caps_list_len = caps_list.len();
 
         if caps_list_len == 0 {
-            return Err(Error::Failed("MSI capability fields was not found"));
+            return Err("MSI capability fields was not found".into());
         }
 
         for (i, field) in caps_list.iter().enumerate() {
@@ -203,7 +203,7 @@ impl PciDeviceFunction for PciDevice {
             caps_ptr = field.next_ptr as usize;
 
             if i == caps_list_len - 1 {
-                return Err(Error::Failed("MSI capability fields was not found"));
+                return Err("MSI capability fields was not found".into());
             }
         }
 

@@ -4,7 +4,7 @@ use crate::{
         IoPortAddress,
     },
     debug, device,
-    error::{Error, Result},
+    error::Result,
     kerror, kinfo,
     mem::paging,
     sync::mutex::Mutex,
@@ -225,12 +225,12 @@ impl InterruptDescriptorTable {
         allow_in_user_mode: bool,
     ) -> Result<()> {
         if vec_num >= IDT_LEN {
-            return Err(Error::Failed("Invalid interrupt vector number"));
+            return Err("Invalid interrupt vector number".into());
         }
 
         let desc = &mut self.entries[vec_num];
         if !desc.is_null() {
-            return Err(Error::Failed("Interrupt handler already set"));
+            return Err("Interrupt handler already set".into());
         }
         desc.set_handler(handler, gate_type, allow_in_user_mode);
 
@@ -250,7 +250,7 @@ impl InterruptDescriptorTable {
             }
         }
 
-        Err(Error::Failed("No available interrupt vector"))
+        Err("No available interrupt vector".into())
     }
 
     fn load(&self) {

@@ -1,7 +1,7 @@
 use crate::{
     arch::x86_64,
     device::{DeviceDriverFunction, DeviceDriverInfo},
-    error::{Error, Result},
+    error::Result,
     fs::vfs,
     kinfo,
     sync::mutex::Mutex,
@@ -116,11 +116,8 @@ impl DeviceDriverFunction for SpeakerDriver {
     }
 
     fn write(&mut self, data: &[u8]) -> Result<()> {
-        let s = str::from_utf8(data).map_err(|_| Error::Failed("Failed to parse string"))?;
-        let freq: u32 = s
-            .trim()
-            .parse()
-            .map_err(|_| Error::Failed("Failed to parse u32 number"))?;
+        let s = str::from_utf8(data).map_err(|_| "Failed to parse string")?;
+        let freq: u32 = s.trim().parse().map_err(|_| "Failed to parse u32 number")?;
         self.play(freq);
 
         Ok(())

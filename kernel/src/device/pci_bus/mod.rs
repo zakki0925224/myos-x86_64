@@ -1,10 +1,5 @@
 use super::{DeviceDriverFunction, DeviceDriverInfo};
-use crate::{
-    error::{Error, Result},
-    fs::vfs,
-    kdebug, kinfo,
-    sync::mutex::Mutex,
-};
+use crate::{error::Result, fs::vfs, kdebug, kinfo, sync::mutex::Mutex};
 use alloc::{string::String, vec::Vec};
 use conf_space::*;
 use device::{PciDevice, PciDeviceFunction};
@@ -68,7 +63,7 @@ impl PciBusDriver {
         self.pci_devices
             .iter()
             .find(|d| d.bdf() == (bus, device, func))
-            .ok_or(Error::Failed("PCI device not found"))
+            .ok_or("PCI device not found".into())
     }
 
     fn find_device_mut(
@@ -80,7 +75,7 @@ impl PciBusDriver {
         self.pci_devices
             .iter_mut()
             .find(|d| d.bdf() == (bus, device, func))
-            .ok_or(Error::Failed("PCI device not found"))
+            .ok_or("PCI device not found".into())
     }
 
     fn find_devices_by_class_mut(
@@ -106,7 +101,7 @@ impl PciBusDriver {
                 let conf_space_header = d.read_conf_space_header().unwrap();
                 conf_space_header.vendor_id == vendor_id && conf_space_header.device_id == device_id
             })
-            .ok_or(Error::Failed("PCI device not found"))
+            .ok_or("PCI device not found".into())
     }
 }
 

@@ -96,7 +96,7 @@ impl TaskScheduler {
         let exit_status = self
             .user_exit_status
             .take()
-            .ok_or(Error::Failed("User exit status not found"))?;
+            .ok_or::<Error>("User exit status not found".into())?;
 
         Ok(exit_status)
     }

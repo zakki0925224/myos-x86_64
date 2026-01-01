@@ -28,7 +28,7 @@ impl UsbDeviceDriverFunction for UsbHidKeyboardDriver {
         // set config
         let config_desc = xhci_info
             .last_config_desc()
-            .ok_or(Error::Failed("No configuration descriptor found"))?;
+            .ok_or::<Error>("No configuration descriptor found".into())?;
         let config_value = config_desc.config_value();
         device::usb::xhc::request(|xhc| {
             xhc.set_config(slot, xhci_info.ctrl_ep_ring_mut(), config_value)
@@ -36,10 +36,11 @@ impl UsbDeviceDriverFunction for UsbHidKeyboardDriver {
 
         // set interface
         let interface_descs = xhci_info.interface_descs();
-        let target_interface_desc = *interface_descs
-            .iter()
-            .find(|d| d.triple() == (3, 1, 1))
-            .ok_or(Error::Failed("No target interface descriptor found"))?;
+        let target_interface_desc =
+            *interface_descs
+                .iter()
+                .find(|d| d.triple() == (3, 1, 1))
+                .ok_or::<Error>("No target interface descriptor found".into())?;
         let interface_num = target_interface_desc.interface_num;
         let alt_setting = target_interface_desc.alt_setting;
         device::usb::xhc::request(|xhc| {

@@ -44,7 +44,7 @@ impl TryFrom<&[u8]> for IcmpPacket {
 
     fn try_from(value: &[u8]) -> Result<Self> {
         if value.len() < 8 {
-            return Err(Error::Failed("Invalid data length"));
+            return Err("Invalid data length".into());
         }
 
         let ty = value[0].into();

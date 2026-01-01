@@ -45,7 +45,7 @@ impl FileDescriptorNumber {
 
     pub fn new_val(value: i32) -> Result<Self> {
         if value < 0 {
-            return Err(Error::Failed("Invalid file descriptor number"));
+            return Err("Invalid file descriptor number".into());
         }
 
         Ok(Self(value as usize))
@@ -114,19 +114,19 @@ impl FileInfo {
 
     fn check_integrity(&self) -> Result<()> {
         if self.ty != VfsFileType::Directory && !self.children.is_empty() {
-            return Err(Error::Failed("File must be a directory"));
+            return Err("File must be a directory".into());
         }
 
         if self.fs.is_some() && self.ty != VfsFileType::Directory {
-            return Err(Error::Failed("File system mountpoint must be a directory"));
+            return Err("File system mountpoint must be a directory".into());
         }
 
         if self.name.is_empty() {
-            return Err(Error::Failed("File name must not be empty"));
+            return Err("File name must not be empty".into());
         }
 
         if ["", Path::CURRENT_DIR, Path::PARENT_DIR].contains(&self.name.as_str()) {
-            return Err(Error::Failed("File name is invalid"));
+            return Err("File name is invalid".into());
         }
 
         Ok(())

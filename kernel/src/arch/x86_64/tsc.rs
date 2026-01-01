@@ -1,6 +1,6 @@
 use crate::{
     arch::x86_64::{self, acpi, cpu},
-    error::{Error, Result},
+    error::Result,
     kdebug,
 };
 
@@ -11,7 +11,7 @@ fn is_available() -> bool {
 
 fn calc_freq() -> Result<u64> {
     if !is_available() {
-        return Err(Error::Failed("TSC not available"));
+        return Err("TSC not available".into());
     }
 
     let start = x86_64::rdtsc();

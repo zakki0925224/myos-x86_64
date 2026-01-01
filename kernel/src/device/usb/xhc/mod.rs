@@ -4,6 +4,7 @@ use crate::{
         pci_bus::conf_space::BaseAddress,
         usb::{
             hid_keyboard::UsbHidKeyboardDriver,
+            hid_tablet::UsbHidTabletDriver,
             usb_bus::*,
             xhc::{context::*, desc::*, register::*, trb::*},
         },
@@ -704,6 +705,7 @@ impl XhcDriver {
             ctrl_ep_ring: Box::new(ctrl_ep_ring),
         };
 
+        // detect keyboard
         if xhci_attach_info
             .interface_descs()
             .iter()
@@ -722,14 +724,16 @@ impl XhcDriver {
                 product,
                 slot
             );
-        } else if xhci_attach_info
+        }
+        // detect tablet
+        else if xhci_attach_info
             .interface_descs()
             .iter()
             .find(|d| d.triple() == (3, 0, 0))
             .is_some()
         {
             let attach_info = UsbDeviceAttachInfo::new_xhci(xhci_attach_info);
-            let driver = device::usb::hid_tablet::UsbHidTabletDriver::new();
+            let driver = UsbHidTabletDriver::new();
             let usb_driver_name = driver.name;
             let usb_device = UsbDevice::new(attach_info, Box::new(driver));
             device::usb::usb_bus::attach_usb_device(usb_device)?;
@@ -854,7 +858,7 @@ impl DeviceDriverFunction for XhcDriver {
 
     fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
         if self.pci_device_bdf.is_none() {
-            return Err(Error::Failed("Device driver is not probed"));
+            return Err("Device driver is not probed".into());
         }
 
         let driver_name = self.device_driver_info.name;
@@ -924,7 +928,7 @@ impl DeviceDriverFunction for XhcDriver {
 
     fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
         if !self.device_driver_info.attached {
-            return Err(Error::Failed("Device driver is not attached"));
+            return Err("Device driver is not attached".into());
         }
 
         let driver_name = self.device_driver_info.name;

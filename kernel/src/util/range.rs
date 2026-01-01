@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::Result;
 use core::ops::RangeInclusive;
 
 pub fn map_value_range_inclusive(
@@ -7,7 +7,7 @@ pub fn map_value_range_inclusive(
     value: i64,
 ) -> Result<i64> {
     if !from.contains(&value) {
-        return Err(Error::Failed("Value out of range"));
+        return Err("Value out of range".into());
     }
 
     let from_left = (value - *from.start()) as i128;
@@ -20,9 +20,7 @@ pub fn map_value_range_inclusive(
         let to_left = from_left * to_width / from_width;
         to_left
             .try_into()
-            .or(Err(Error::Failed(
-                "Failed to convert to_left to the result type",
-            )))
+            .or(Err("Failed to convert to_left to the result type".into()))
             .map(|to_left: i64| to.start() + to_left)
     }
 }

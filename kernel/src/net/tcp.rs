@@ -62,7 +62,7 @@ impl TcpSocket {
     // server mode
     pub fn start_passive(&mut self, src_port: u16) -> Result<()> {
         if self.state != TcpSocketState::Closed {
-            return Err(Error::Failed("Invalid state"));
+            return Err("Invalid state".into());
         }
 
         self.state = TcpSocketState::Listen;
@@ -76,7 +76,7 @@ impl TcpSocket {
     // client mode
     pub fn start_active(&mut self, dst_ipv4_addr: Ipv4Addr, dst_port: u16) -> Result<()> {
         if self.state != TcpSocketState::Closed {
-            return Err(Error::Failed("Invalid state"));
+            return Err("Invalid state".into());
         }
 
         self.state = TcpSocketState::SynSent;
@@ -90,7 +90,7 @@ impl TcpSocket {
 
     pub fn receive_syn(&mut self, remote_seq: u32) -> Result<u32> {
         if self.state != TcpSocketState::Listen {
-            return Err(Error::Failed("Invalid state"));
+            return Err("Invalid state".into());
         }
 
         self.state = TcpSocketState::SynReceived;
@@ -102,7 +102,7 @@ impl TcpSocket {
 
     pub fn receive_ack(&mut self) -> Result<()> {
         if self.state != TcpSocketState::SynReceived && self.state != TcpSocketState::Established {
-            return Err(Error::Failed("Invalid state"));
+            return Err("Invalid state".into());
         }
 
         self.state = TcpSocketState::Established;
@@ -111,7 +111,7 @@ impl TcpSocket {
 
     pub fn receive_fin(&mut self) -> Result<()> {
         if self.state != TcpSocketState::Established {
-            return Err(Error::Failed("Invalid state"));
+            return Err("Invalid state".into());
         }
 
         self.state = TcpSocketState::CloseWait;
@@ -121,7 +121,7 @@ impl TcpSocket {
 
     pub fn receive_data(&mut self, data: &[u8], seq_num: u32) -> Result<()> {
         if self.state != TcpSocketState::Established {
-            return Err(Error::Failed("Invalid state"));
+            return Err("Invalid state".into());
         }
 
         if seq_num != self.next_recv_seq {
@@ -160,7 +160,7 @@ impl TryFrom<&[u8]> for TcpPacket {
 
     fn try_from(value: &[u8]) -> Result<Self> {
         if value.len() < 20 {
-            return Err(Error::Failed("Invalid data length"));
+            return Err("Invalid data length".into());
         }
 
         let src_port = u16::from_be_bytes([value[0], value[1]]);
@@ -174,11 +174,11 @@ impl TryFrom<&[u8]> for TcpPacket {
 
         let data_offset_words = (flags >> 12) as usize;
         if data_offset_words < 5 {
-            return Err(Error::Failed("Invalid TCP data offset"));
+            return Err("Invalid TCP data offset".into());
         }
         let header_len = data_offset_words * 4;
         if value.len() < header_len {
-            return Err(Error::Failed("Packet shorter than header length"));
+            return Err("Packet shorter than header length".into());
         }
 
         let options_and_data = value[20..].to_vec();

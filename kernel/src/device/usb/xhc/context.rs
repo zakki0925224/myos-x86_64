@@ -1,8 +1,4 @@
-use crate::{
-    device::usb::xhc::register::UsbMode,
-    error::{Error, Result},
-    sync::volatile::Volatile,
-};
+use crate::{device::usb::xhc::register::UsbMode, error::Result, sync::volatile::Volatile};
 use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,7 +57,7 @@ impl EndpointContext {
             self.data[1] |= error_count << 1;
             Ok(())
         } else {
-            Err(Error::Failed("Invalid error count"))
+            Err("Invalid error count".into())
         }
     }
 
@@ -77,7 +73,7 @@ impl EndpointContext {
             self.data[1] |= raw_ep_type << 3;
             Ok(())
         } else {
-            Err(Error::Failed("Invalid endpoint type"))
+            Err("Invalid endpoint type".into())
         }
     }
 }
@@ -97,7 +93,7 @@ impl DeviceContext {
             self.slot_context[0] |= mode.psi() << 20;
             Ok(())
         } else {
-            Err(Error::Failed("Psi out of range"))
+            Err("Psi out of range".into())
         }
     }
 
@@ -107,7 +103,7 @@ impl DeviceContext {
             self.slot_context[0] |= (dci as u32) << 27;
             Ok(())
         } else {
-            Err(Error::Failed("DCI out of range"))
+            Err("DCI out of range".into())
         }
     }
 
@@ -117,7 +113,7 @@ impl DeviceContext {
             self.slot_context[1] |= (port as u32) << 16;
             Ok(())
         } else {
-            Err(Error::Failed("Port number out of range"))
+            Err("Port number out of range".into())
         }
     }
 }
@@ -144,7 +140,7 @@ impl InputControlContext {
             self.add_context_bitmap |= 1 << ici;
             Ok(())
         } else {
-            Err(Error::Failed("ICI out of range"))
+            Err("ICI out of range".into())
         }
     }
 }
