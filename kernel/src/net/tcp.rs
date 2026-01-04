@@ -1,4 +1,7 @@
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    kdebug,
+};
 use alloc::vec::Vec;
 use core::net::Ipv4Addr;
 
@@ -45,8 +48,28 @@ impl TcpSocket {
         self.state
     }
 
+    pub fn dst_ipv4_addr(&self) -> Option<Ipv4Addr> {
+        self.dst_ipv4_addr
+    }
+
+    pub fn set_dst_ipv4_addr(&mut self, addr: Ipv4Addr) {
+        self.dst_ipv4_addr = Some(addr);
+    }
+
+    pub fn dst_port(&self) -> Option<u16> {
+        self.dst_port
+    }
+
+    pub fn set_dst_port(&mut self, port: u16) {
+        self.dst_port = Some(port);
+    }
+
     pub fn seq_num(&self) -> u32 {
         self.seq_num
+    }
+
+    pub fn add_seq_num(&mut self, n: u32) {
+        self.seq_num = self.seq_num.wrapping_add(n);
     }
 
     pub fn next_recv_seq(&self) -> u32 {
@@ -100,6 +123,17 @@ impl TcpSocket {
         Ok(isn)
     }
 
+    pub fn receive_syn_ack(&mut self, remote_seq: u32) -> Result<()> {
+        if self.state != TcpSocketState::SynSent {
+            return Err("Invalid state".into());
+        }
+
+        self.state = TcpSocketState::Established;
+        self.next_recv_seq = remote_seq.wrapping_add(1);
+        self.seq_num = self.seq_num.wrapping_add(1);
+        Ok(())
+    }
+
     pub fn receive_ack(&mut self) -> Result<()> {
         if self.state != TcpSocketState::SynReceived && self.state != TcpSocketState::Established {
             return Err("Invalid state".into());
@@ -125,7 +159,11 @@ impl TcpSocket {
         }
 
         if seq_num != self.next_recv_seq {
-            // Out of order packet, ignore for now
+            kdebug!(
+                "net: TCP out of order packet: seq_num={}, expected={}",
+                seq_num,
+                self.next_recv_seq
+            );
             return Ok(());
         }
 
@@ -152,7 +190,8 @@ pub struct TcpPacket {
     pub window_size: u16,
     pub checksum: u16,
     urgent_ptr: u16,
-    pub options_and_data: Vec<u8>,
+    pub options: Vec<u8>,
+    pub data: Vec<u8>,
 }
 
 impl TryFrom<&[u8]> for TcpPacket {
@@ -181,7 +220,8 @@ impl TryFrom<&[u8]> for TcpPacket {
             return Err("Packet shorter than header length".into());
         }
 
-        let options_and_data = value[20..].to_vec();
+        let options = value[20..header_len].to_vec();
+        let data = value[header_len..].to_vec();
 
         Ok(Self {
             src_port,
@@ -192,7 +232,8 @@ impl TryFrom<&[u8]> for TcpPacket {
             window_size,
             checksum,
             urgent_ptr,
-            options_and_data,
+            options,
+            data,
         })
     }
 }
@@ -216,13 +257,14 @@ impl TcpPacket {
         flags_without_header_len: u16,
         window_size: u16,
         urgent_ptr: u16,
-        mut options_and_data: Vec<u8>,
+        mut options: Vec<u8>,
+        data: Vec<u8>,
     ) -> Self {
-        let header_len = ((20 + options_and_data.len() + 3) / 4) as u16;
+        let header_len = ((20 + options.len() + 3) / 4) as u16;
         let flags = header_len << 12 | flags_without_header_len & 0x0fff;
 
         // resize options
-        options_and_data.resize((header_len as usize * 4 - 20) as usize, 0);
+        options.resize((header_len as usize * 4 - 20) as usize, 0);
 
         Self {
             src_port,
@@ -233,7 +275,8 @@ impl TcpPacket {
             window_size,
             checksum: 0,
             urgent_ptr,
-            options_and_data,
+            options,
+            data,
         }
     }
 
@@ -379,7 +422,8 @@ impl TcpPacket {
         vec.extend_from_slice(&self.window_size.to_be_bytes());
         vec.extend_from_slice(&self.checksum.to_be_bytes());
         vec.extend_from_slice(&self.urgent_ptr.to_be_bytes());
-        vec.extend_from_slice(&self.options_and_data);
+        vec.extend_from_slice(&self.options);
+        vec.extend_from_slice(&self.data);
         vec
     }
 }

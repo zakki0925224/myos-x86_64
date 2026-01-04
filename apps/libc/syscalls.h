@@ -33,6 +33,11 @@
 #define SN_BIND 20
 #define SN_SENDTO 21
 #define SN_RECVFROM 22
+#define SN_SEND 23
+#define SN_RECV 24
+#define SN_CONNECT 25
+#define SN_LISTEN 26
+#define SN_ACCEPT 27
 
 // defined file descriptor numbers
 #define FDN_STDIN 0
@@ -73,5 +78,10 @@ extern int sys_socket(int domain, int type, int protocol);
 extern int sys_bind(int sockfd, const struct sockaddr* addr, size_t addrlen);
 extern int sys_sendto(int sockfd, const void* buf, size_t len, int flags, const struct sockaddr* dest_addr, size_t addrlen);
 extern int sys_recvfrom(int sockfd, void* buf, size_t len, int flags, struct sockaddr* src_addr, size_t addrlen);
+extern int sys_send(int sockfd, const void* buf, size_t len, int flags);
+extern int sys_recv(int sockfd, void* buf, size_t len, int flags);
+extern int sys_connect(int sockfd, const struct sockaddr* addr, size_t addrlen);
+extern int sys_listen(int sockfd, int backlog);
+extern int sys_accept(int sockfd, struct sockaddr* addr, size_t* addrlen);
 
 #endif

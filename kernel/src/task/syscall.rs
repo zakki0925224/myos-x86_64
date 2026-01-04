@@ -108,9 +108,8 @@ extern "sysv64" fn syscall_handler(
     //     args
     // );
 
-    match syscall_num {
-        // read syscall
-        0 => {
+    match syscall_num as u32 {
+        SN_READ => {
             let fd_num = arg0 as i32;
             let buf = arg1 as *mut u8;
             let buf_len = arg2 as usize;
@@ -119,8 +118,7 @@ extern "sysv64" fn syscall_handler(
                 return -1;
             }
         }
-        // write syscall
-        1 => {
+        SN_WRITE => {
             let fd_num = arg0 as i32;
             let buf = arg1 as *const u8;
             let buf_len = arg2 as usize;
@@ -129,8 +127,7 @@ extern "sysv64" fn syscall_handler(
                 return -1;
             }
         }
-        // open syscall
-        2 => {
+        SN_OPEN => {
             let filepath = arg0 as *const u8;
             let flags = arg1 as i32;
             match sys_open(filepath, flags) {
@@ -141,22 +138,19 @@ extern "sysv64" fn syscall_handler(
                 }
             }
         }
-        // close syscall
-        3 => {
+        SN_CLOSE => {
             let fd_num = arg0 as i32;
             if let Err(err) = sys_close(fd_num) {
                 kerror!("syscall: close: {:?}", err);
                 return -1;
             }
         }
-        // exit syscall
-        4 => {
+        SN_EXIT => {
             let status = arg0 as i32;
             sys_exit(status);
             unreachable!();
         }
-        // sbrk syscall
-        5 => {
+        SN_SBRK => {
             let len = arg0 as usize;
             match sys_sbrk(len) {
                 Ok(ptr) => return ptr as i64,
@@ -166,21 +160,18 @@ extern "sysv64" fn syscall_handler(
                 }
             }
         }
-        // uname syscall
-        6 => {
+        SN_UNAME => {
             let buf = arg0 as *mut utsname;
             if let Err(err) = sys_uname(buf) {
                 kerror!("syscall: uname: {:?}", err);
                 return -1;
             }
         }
-        // break syscall
-        7 => {
+        SN_BREAK => {
             sys_break();
             unreachable!();
         }
-        // stat syscall
-        8 => {
+        SN_STAT => {
             let fd_num = arg0 as i32;
             let buf = arg1 as *mut f_stat;
             if let Err(err) = sys_stat(fd_num, buf) {
@@ -188,12 +179,10 @@ extern "sysv64" fn syscall_handler(
                 return -1;
             }
         }
-        // uptime syscall
-        9 => {
+        SN_UPTIME => {
             return sys_uptime();
         }
-        // exec syscall
-        10 => {
+        SN_EXEC => {
             let args = arg0 as *const u8;
             let flags = arg1 as i32;
             if let Err(err) = sys_exec(args, flags) {
@@ -201,8 +190,7 @@ extern "sysv64" fn syscall_handler(
                 return -1;
             }
         }
-        // getcwd syscall
-        11 => {
+        SN_GETCWD => {
             let buf = arg0 as *mut u8;
             let buf_len = arg1 as usize;
             if let Err(err) = sys_getcwd(buf, buf_len) {
@@ -210,16 +198,14 @@ extern "sysv64" fn syscall_handler(
                 return -1;
             }
         }
-        // chdir syscall
-        12 => {
+        SN_CHDIR => {
             let path = arg0 as *const u8;
             if let Err(err) = sys_chdir(path) {
                 kerror!("syscall: chdir: {:?}", err);
                 return -1;
             }
         }
-        // sbrksz syscall
-        15 => {
+        SN_SBRKSZ => {
             let target = arg0 as *const u8;
             match sys_sbrksz(target) {
                 Ok(size) => return size as i64,
@@ -229,8 +215,7 @@ extern "sysv64" fn syscall_handler(
                 }
             };
         }
-        // getenames syscall
-        17 => {
+        SN_GETENAMES => {
             let path = arg0 as *const u8;
             let buf = arg1 as *mut u8;
             let buf_len = arg2 as usize;
@@ -239,8 +224,7 @@ extern "sysv64" fn syscall_handler(
                 return -1;
             }
         }
-        // iomsg syscall
-        18 => {
+        SN_IOMSG => {
             let msgbuf = arg0 as *const u8;
             let replymsgbuf = arg1 as *mut u8;
             let replymsgbuf_len = arg2 as usize;
@@ -249,8 +233,7 @@ extern "sysv64" fn syscall_handler(
                 return -1;
             }
         }
-        // socket syscall
-        19 => {
+        SN_SOCKET => {
             let domain = arg0 as i32;
             let type_ = arg1 as i32;
             let protocol = arg2 as i32;
@@ -262,8 +245,7 @@ extern "sysv64" fn syscall_handler(
                 }
             }
         }
-        // bind syscall
-        20 => {
+        SN_BIND => {
             let sockfd = arg0 as i32;
             let addr = arg1 as *const sockaddr;
             let addrlen = arg2 as usize;
@@ -272,8 +254,7 @@ extern "sysv64" fn syscall_handler(
                 return -1;
             }
         }
-        // sendto syscall
-        21 => {
+        SN_SENDTO => {
             let sockfd = arg0 as i32;
             let buf = arg1 as *const u8;
             let len = arg2 as usize;
@@ -289,8 +270,7 @@ extern "sysv64" fn syscall_handler(
                 }
             }
         }
-        // recvfrom syscall
-        22 => {
+        SN_RECVFROM => {
             let sockfd = arg0 as i32;
             let buf = arg1 as *mut u8;
             let len = arg2 as usize;
@@ -302,6 +282,66 @@ extern "sysv64" fn syscall_handler(
                 Ok(read_len) => return read_len as i64,
                 Err(err) => {
                     kerror!("syscall: recvfrom: {:?}", err);
+                    return -1;
+                }
+            }
+        }
+        SN_SEND => {
+            let sockfd = arg0 as i32;
+            let buf = arg1 as *const u8;
+            let len = arg2 as usize;
+            let flags = arg3 as i32;
+
+            match sys_sendto(sockfd, buf, len, flags, core::ptr::null(), 0) {
+                Ok(send_len) => return send_len as i64,
+                Err(err) => {
+                    kerror!("syscall: send: {:?}", err);
+                    return -1;
+                }
+            }
+        }
+        SN_RECV => {
+            let sockfd = arg0 as i32;
+            let buf = arg1 as *mut u8;
+            let len = arg2 as usize;
+            let flags = arg3 as i32;
+
+            match sys_recvfrom(sockfd, buf, len, flags, core::ptr::null(), 0) {
+                Ok(read_len) => return read_len as i64,
+                Err(err) => {
+                    kerror!("syscall: recv: {:?}", err);
+                    return -1;
+                }
+            }
+        }
+        SN_CONNECT => {
+            let sockfd = arg0 as i32;
+            let addr = arg1 as *const sockaddr;
+            let addrlen = arg2 as usize;
+
+            if let Err(err) = sys_connect(sockfd, addr, addrlen) {
+                kerror!("syscall: connect: {:?}", err);
+                return -1;
+            }
+        }
+        SN_LISTEN => {
+            let sockfd = arg0 as i32;
+            let backlog = arg1 as i32;
+
+            if let Err(err) = sys_listen(sockfd, backlog) {
+                kerror!("syscall: listen: {:?}", err);
+                return -1;
+            }
+        }
+        SN_ACCEPT => {
+            let sockfd = arg0 as i32;
+            let addr = arg1 as *const sockaddr;
+            let addrlen = arg2 as *const i32;
+
+            match sys_accept(sockfd, addr, addrlen) {
+                Ok(socket_id) => return socket_id.get() as i64,
+                Err(err) => {
+                    kerror!("syscall: accept: {:?}", err);
                     return -1;
                 }
             }
@@ -404,11 +444,20 @@ fn sys_open(filepath: *const u8, flags: i32) -> Result<i32> {
 }
 
 fn sys_close(fd_num: i32) -> Result<()> {
-    let fd_num = FileDescriptorNumber::new_val(fd_num)?;
-    vfs::close_file(fd_num)?;
-    task::scheduler::remove_fd_num(fd_num)?;
+    if let Ok(fd) = FileDescriptorNumber::new_val(fd_num) {
+        if vfs::close_file(fd).is_ok() {
+            task::scheduler::remove_fd_num(fd)?;
+            return Ok(());
+        }
+    }
 
-    Ok(())
+    if let Ok(socket_id) = SocketId::new_val(fd_num) {
+        if net::close_socket(socket_id).is_ok() {
+            return Ok(());
+        }
+    }
+
+    Err("Invalid file descriptor".into())
 }
 
 fn sys_exit(status: i32) {
@@ -731,12 +780,20 @@ fn sys_sendto(
     addrlen: usize,
 ) -> Result<usize> {
     let socket_id = SocketId::new_val(sockfd)?;
+    let data = unsafe { slice::from_raw_parts(buf, len) };
+
+    if dest_addr.is_null() {
+        // TCP
+        net::send_tcp_data(socket_id, data)?;
+        return Ok(data.len());
+    }
+
+    // UDP
     let addr = unsafe { *(dest_addr as *const sockaddr_in) };
     assert_eq!(size_of::<sockaddr_in>(), addrlen);
 
     let dst_addr = addr.sin_addr.s_addr.into();
     let dst_port = addr.sin_port;
-    let data = unsafe { slice::from_raw_parts(buf, len) };
 
     net::sendto_udp_v4(socket_id, dst_addr, dst_port, data)?;
     Ok(data.len())
@@ -752,8 +809,56 @@ fn sys_recvfrom(
 ) -> Result<usize> {
     let socket_id = SocketId::new_val(sockfd)?;
     let buf_mut = unsafe { slice::from_raw_parts_mut(buf, len) };
+
+    if src_addr.is_null() {
+        // TCP
+        let read_len = net::recv_tcp_data(socket_id, buf_mut)?;
+        return Ok(read_len);
+    }
+
+    // UDP
     let read_len = net::recvfrom_udp_v4(socket_id, buf_mut)?;
     Ok(read_len)
+}
+
+fn sys_connect(sockfd: i32, addr: *const sockaddr, addrlen: usize) -> Result<()> {
+    let socket_id = SocketId::new_val(sockfd)?;
+
+    let addr = unsafe { *(addr as *const sockaddr_in) };
+    assert_eq!(size_of::<sockaddr_in>(), addrlen);
+
+    if addr.sin_family as u32 != SOCKET_DOMAIN_AF_INET {
+        return Err("Address family not supported".into());
+    }
+
+    let dst_addr = addr.sin_addr.s_addr.into();
+    let dst_port = addr.sin_port;
+    net::connect_tcp_v4(socket_id, dst_addr, dst_port)?;
+    net::send_tcp_syn(socket_id)?;
+
+    while !net::is_tcp_established(socket_id)? {
+        x86_64::stihlt();
+    }
+
+    Ok(())
+}
+
+fn sys_listen(sockfd: i32, backlog: i32) -> Result<()> {
+    let socket_id = SocketId::new_val(sockfd)?;
+    net::listen_tcp_v4(socket_id)
+}
+
+fn sys_accept(sockfd: i32, addr: *const sockaddr, addrlen: *const i32) -> Result<SocketId> {
+    let socket_id = SocketId::new_val(sockfd)?;
+
+    loop {
+        match net::accept_tcp_v4(socket_id) {
+            Ok(client_socket_id) => return Ok(client_socket_id),
+            Err(_) => {
+                x86_64::stihlt();
+            }
+        }
+    }
 }
 
 pub fn enable() {

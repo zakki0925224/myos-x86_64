@@ -100,3 +100,23 @@ int sys_sendto(int sockfd, const void* buf, size_t len, int flags, const struct 
 int sys_recvfrom(int sockfd, void* buf, size_t len, int flags, struct sockaddr* src_addr, size_t addrlen) {
     return (int)syscall(SN_RECVFROM, (uint64_t)sockfd, (uint64_t)buf, (uint64_t)len, (uint64_t)flags, (uint64_t)src_addr, (uint64_t)addrlen);
 }
+
+int sys_send(int sockfd, const void* buf, size_t len, int flags) {
+    return (int)syscall(SN_SEND, (uint64_t)sockfd, (uint64_t)buf, (uint64_t)len, (uint64_t)flags, 0, 0);
+}
+
+int sys_recv(int sockfd, void* buf, size_t len, int flags) {
+    return (int)syscall(SN_RECV, (uint64_t)sockfd, (uint64_t)buf, (uint64_t)len, (uint64_t)flags, 0, 0);
+}
+
+int sys_connect(int sockfd, const struct sockaddr* addr, size_t addrlen) {
+    return (int)syscall(SN_CONNECT, (uint64_t)sockfd, (uint64_t)addr, (uint64_t)addrlen, 0, 0, 0);
+}
+
+int sys_listen(int sockfd, int backlog) {
+    return (int)syscall(SN_LISTEN, (uint64_t)sockfd, (uint64_t)backlog, 0, 0, 0, 0);
+}
+
+int sys_accept(int sockfd, struct sockaddr* addr, size_t* addrlen) {
+    return (int)syscall(SN_ACCEPT, (uint64_t)sockfd, (uint64_t)addr, (uint64_t)addrlen, 0, 0, 0);
+}

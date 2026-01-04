@@ -1,5 +1,6 @@
 use crate::{
     error::{Error, Result},
+    kdebug,
     net::{arp::ArpPacket, ip::Ipv4Packet},
 };
 use alloc::vec::Vec;
@@ -184,7 +185,10 @@ impl EthernetFrame {
             EthernetType::Ipv4 => {
                 EthernetPayload::Ipv4(Ipv4Packet::try_from(self.payload.as_slice())?)
             }
-            _ => EthernetPayload::None,
+            _ => {
+                kdebug!("net: Unsupported Ethernet type: {:?}", self.eth_type);
+                EthernetPayload::None
+            }
         };
         Ok(payload)
     }

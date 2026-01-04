@@ -9,7 +9,8 @@ use crate::{
 };
 use alloc::{boxed::Box, vec::Vec};
 
-const RX_BUF_SIZE: usize = 8192;
+const RX_BUF_LEN: usize = 8192;
+const RX_BUF_SIZE: usize = RX_BUF_LEN + 16 + 1536;
 
 static mut RTL8139_DRIVER: Mutex<Rtl8139Driver> = Mutex::new(Rtl8139Driver::new());
 
@@ -115,11 +116,18 @@ impl RxBuffer {
         }
 
         // 4 bytes aligned
-        self.packet_ptr = ((self.packet_ptr + rtl8139_len as usize + 4 + 3) & !3) % RX_BUF_SIZE;
+        self.packet_ptr = ((self.packet_ptr + rtl8139_len as usize + 4 + 3) & !3) % RX_BUF_LEN;
 
         let frame = &packet[4..rtl8139_len as usize];
         let eth_frame = EthernetFrame::try_from(frame)?;
-        Ok((eth_frame, self.packet_ptr - 0x10))
+
+        let capr = if self.packet_ptr >= 0x10 {
+            self.packet_ptr - 0x10
+        } else {
+            RX_BUF_LEN - (0x10 - self.packet_ptr)
+        };
+
+        Ok((eth_frame, capr))
     }
 }
 
@@ -277,7 +285,7 @@ impl DeviceDriverFunction for Rtl8139Driver {
             io_register.write_int_mask(0x5); // TOK, ROK
 
             // configure RX buffer
-            io_register.write_rx_conf(0xf | (1 << 7)); // AB+AM+APM+AAP, WRAP
+            io_register.write_rx_conf(0xf); // AB+AM+APM+AAP
 
             // enable rx/tx
             io_register.write_cmd(0x0c); // TE, RE
@@ -322,31 +330,40 @@ impl DeviceDriverFunction for Rtl8139Driver {
         // ROK
         if status & 1 != 0 {
             kdebug!("{}: ROK", name);
-            let (eth_frame, new_read_ptr) = self.receive_packet()?;
+            loop {
+                let cmd = self.io_register()?.read_cmd();
+                if cmd & 1 != 0 {
+                    break;
+                }
 
-            // debug!("{}: Received packet: {:?}", name, eth_frame);
-            let payload = eth_frame.payload()?;
+                let (eth_frame, new_read_ptr) = self.receive_packet()?;
+                let payload = eth_frame.payload()?;
 
-            if let Some(reply_payload) = net::receive_eth_payload(payload)? {
-                let payload_vec = reply_payload.to_vec();
-                let eth_type = match reply_payload {
-                    EthernetPayload::Arp(_) => EthernetType::Arp,
-                    EthernetPayload::Ipv4(_) => EthernetType::Ipv4,
-                    EthernetPayload::None => return Ok(()),
-                };
-                let reply_eth_frame = EthernetFrame::new_with(
-                    eth_frame.src_mac_addr,
-                    net::my_mac_addr()?,
-                    eth_type,
-                    &payload_vec,
-                );
+                if let Some(reply_payload) = net::receive_eth_payload(payload)? {
+                    match reply_payload {
+                        EthernetPayload::None => {}
+                        _ => {
+                            let payload_vec = reply_payload.to_vec();
+                            let eth_type = match reply_payload {
+                                EthernetPayload::Arp(_) => EthernetType::Arp,
+                                EthernetPayload::Ipv4(_) => EthernetType::Ipv4,
+                                EthernetPayload::None => unreachable!(),
+                            };
+                            let reply_eth_frame = EthernetFrame::new_with(
+                                eth_frame.src_mac_addr,
+                                net::my_mac_addr()?,
+                                eth_type,
+                                &payload_vec,
+                            );
 
-                // debug!("{}: Send packet: {:?}", name, reply_eth_frame);
-                self.send_packet(reply_eth_frame)?;
+                            self.send_packet(reply_eth_frame)?;
+                        }
+                    }
+                }
+
+                let io_register = self.io_register()?; // re-borrow
+                io_register.write_current_addr_packet_read(new_read_ptr as u16);
             }
-
-            let io_register = self.io_register()?; // re-borrow
-            io_register.write_current_addr_packet_read(new_read_ptr as u16);
         }
 
         // TX

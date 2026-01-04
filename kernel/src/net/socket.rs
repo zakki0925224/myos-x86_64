@@ -1,6 +1,10 @@
 use crate::{
     error::{Error, Result},
-    net::{ip::Protocol, tcp::TcpSocket, udp::UdpSocket},
+    net::{
+        ip::Protocol,
+        tcp::{TcpSocket, TcpSocketState},
+        udp::UdpSocket,
+    },
 };
 use alloc::collections::btree_map::BTreeMap;
 use core::{
@@ -20,7 +24,7 @@ impl fmt::Display for SocketId {
 
 impl SocketId {
     pub fn new() -> Self {
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        static NEXT: AtomicUsize = AtomicUsize::new(4096);
         Self(NEXT.fetch_add(1, Ordering::Relaxed))
     }
 
@@ -60,6 +64,10 @@ pub struct Socket {
 impl Socket {
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    pub fn set_port(&mut self, port: u16) {
+        self.port = port;
     }
 
     pub fn type_(&self) -> SocketType {
@@ -114,6 +122,26 @@ impl SocketTable {
 
     pub fn socket_mut_by_id(&mut self, id: SocketId) -> Result<&mut Socket> {
         self.table.get_mut(&id).ok_or("Invalid socket ID".into())
+    }
+
+    pub fn remove_socket(&mut self, id: SocketId) -> Result<()> {
+        let socket = self
+            .table
+            .remove(&id)
+            .ok_or::<Error>("Invalid socket ID".into())?;
+
+        let port = socket.port();
+        if port != 0 {
+            match socket.type_() {
+                SocketType::Stream => {
+                    self.tcp_port_socket_id_map.remove(&port);
+                }
+                SocketType::Dgram => {
+                    self.udp_port_socket_id_map.remove(&port);
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn socket_id_by_port_and_type(&self, port: u16, type_: SocketType) -> Result<SocketId> {
@@ -197,5 +225,58 @@ impl SocketTable {
         }
 
         Ok(())
+    }
+
+    pub fn find_tcp_established_socket(&self, server_port: u16) -> Option<SocketId> {
+        for (socket_id, socket) in self.table.iter() {
+            if socket.type_() != SocketType::Stream {
+                continue;
+            }
+
+            if socket.port() != server_port {
+                continue;
+            }
+
+            let tcp_socket = match &socket.inner {
+                SocketInner::Tcp(s) => s,
+                _ => continue,
+            };
+
+            if tcp_socket.state() == TcpSocketState::Established {
+                return Some(*socket_id);
+            }
+        }
+
+        None
+    }
+
+    pub fn find_tcp_socket_by_port_and_addr(
+        &self,
+        local_port: u16,
+        remote_addr: Ipv4Addr,
+        remote_port: u16,
+    ) -> Option<SocketId> {
+        for (socket_id, socket) in self.table.iter() {
+            if socket.type_() != SocketType::Stream {
+                continue;
+            }
+
+            if socket.port() != local_port {
+                continue;
+            }
+
+            let tcp_socket = match &socket.inner {
+                SocketInner::Tcp(s) => s,
+                _ => continue,
+            };
+
+            if let (Some(addr), Some(port)) = (tcp_socket.dst_ipv4_addr(), tcp_socket.dst_port()) {
+                if addr == remote_addr && port == remote_port {
+                    return Some(*socket_id);
+                }
+            }
+        }
+
+        None
     }
 }

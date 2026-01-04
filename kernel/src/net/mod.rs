@@ -62,6 +62,13 @@ impl NetworkManager {
         Ok(socket_id)
     }
 
+    fn close_socket(&mut self, socket_id: SocketId) -> Result<()> {
+        let _ = self.send_tcp_fin(socket_id);
+        self.socket_table.remove_socket(socket_id)?;
+        kinfo!("net: Closed socket {}", socket_id);
+        Ok(())
+    }
+
     fn udp_socket_mut_by_port(&mut self, port: u16) -> Result<&mut UdpSocket> {
         let type_ = SocketType::Dgram;
 
@@ -77,14 +84,30 @@ impl NetworkManager {
         socket.inner_udp_mut()
     }
 
-    fn tcp_socket_mut_by_port(&mut self, port: u16) -> Result<&mut TcpSocket> {
+    fn tcp_socket_mut_by_port(
+        &mut self,
+        local_port: u16,
+        remote_addr: Ipv4Addr,
+        remote_port: u16,
+    ) -> Result<&mut TcpSocket> {
         let type_ = SocketType::Stream;
 
-        let socket_id = if let Ok(id) = self.socket_table.socket_id_by_port_and_type(port, type_) {
+        if let Some(id) =
+            self.socket_table
+                .find_tcp_socket_by_port_and_addr(local_port, remote_addr, remote_port)
+        {
+            let socket = self.socket_table.socket_mut_by_id(id)?;
+            return socket.inner_tcp_mut();
+        }
+
+        let socket_id = if let Ok(id) = self
+            .socket_table
+            .socket_id_by_port_and_type(local_port, type_)
+        {
             id
         } else {
             let id = self.socket_table.insert_new_socket(type_, Protocol::Tcp)?;
-            self.socket_table.bind_port(id, Some(port))?;
+            self.socket_table.bind_port(id, Some(local_port))?;
             id
         };
 
@@ -141,6 +164,294 @@ impl NetworkManager {
         Ok(read_len)
     }
 
+    fn listen_tcp_v4(&mut self, socket_id: SocketId) -> Result<()> {
+        let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+        let port = socket.port();
+
+        if port == 0 {
+            return Err("Socket must be bound before listen".into());
+        }
+
+        let tcp_socket = socket.inner_tcp_mut()?;
+        tcp_socket.start_passive(port)?;
+
+        kinfo!("net: TCP listen on port {}", port);
+        Ok(())
+    }
+
+    fn accept_tcp_v4(&mut self, socket_id: SocketId) -> Result<SocketId> {
+        let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+        let tcp_socket = socket.inner_tcp_mut()?;
+
+        if tcp_socket.state() != TcpSocketState::Listen {
+            return Err("Socket is not listening".into());
+        }
+
+        let server_port = socket.port();
+
+        if let Some(client_socket_id) = self.socket_table.find_tcp_established_socket(server_port) {
+            return Ok(client_socket_id);
+        }
+
+        Err("No incoming connection".into())
+    }
+
+    fn connect_tcp_v4(
+        &mut self,
+        socket_id: SocketId,
+        dst_addr: Ipv4Addr,
+        dst_port: u16,
+    ) -> Result<()> {
+        {
+            let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+
+            if socket.port() == 0 {
+                self.socket_table.bind_port(socket_id, None)?;
+            }
+        }
+
+        let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+        let tcp_socket = socket.inner_tcp_mut()?;
+        tcp_socket.start_active(dst_addr, dst_port)?;
+
+        kinfo!("net: TCP connect initiated to {}:{}", dst_addr, dst_port);
+        Ok(())
+    }
+
+    fn send_tcp_syn(&mut self, socket_id: SocketId) -> Result<()> {
+        kinfo!("net: send_tcp_syn START - socket_id={}", socket_id);
+
+        let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+        let src_port = socket.port();
+        let tcp_socket = socket.inner_tcp_mut()?;
+
+        if tcp_socket.state() != TcpSocketState::SynSent {
+            return Err("Socket is not in SynSent state".into());
+        }
+
+        kinfo!("net: send_tcp_syn - state check OK, src_port={}", src_port);
+
+        let dst_port = tcp_socket
+            .dst_port()
+            .ok_or::<Error>("No destination port".into())?;
+        let dst_addr = tcp_socket
+            .dst_ipv4_addr()
+            .ok_or::<Error>("No destination address".into())?;
+
+        kinfo!(
+            "net: send_tcp_syn - dst={}:{}, seq={}",
+            dst_addr,
+            dst_port,
+            tcp_socket.seq_num()
+        );
+
+        let mut syn_packet = TcpPacket::new_with(
+            src_port,
+            dst_port,
+            tcp_socket.seq_num(),
+            0,
+            TcpPacket::FLAGS_SYN,
+            u16::MAX,
+            0,
+            Vec::new(),
+            Vec::new(),
+        );
+        syn_packet.calc_checksum_with_ipv4(self.my_ipv4_addr, dst_addr);
+
+        let mut ipv4_packet = Ipv4Packet::new_with(
+            0x45,
+            0,
+            0,
+            0,
+            Protocol::Tcp,
+            self.my_ipv4_addr,
+            dst_addr,
+            Ipv4Payload::Tcp(syn_packet),
+        );
+        ipv4_packet.calc_checksum();
+
+        kinfo!("net: send_tcp_syn - resolving MAC for {}", dst_addr);
+        let dst_mac_addr = self
+            .resolve_mac_addr(dst_addr)?
+            .ok_or::<Error>("Failed to resolve MAC address".into())?;
+        kinfo!("net: send_tcp_syn - MAC resolved: {:?}", dst_mac_addr);
+
+        kinfo!("net: send_tcp_syn - calling send_eth_payload");
+        self.send_eth_payload(
+            EthernetPayload::Ipv4(ipv4_packet),
+            dst_mac_addr,
+            EthernetType::Ipv4,
+        )?;
+        kinfo!("net: send_tcp_syn SUCCESS");
+
+        Ok(())
+    }
+
+    fn send_tcp_fin(&mut self, socket_id: SocketId) -> Result<()> {
+        let (src_port, dst_port, dst_addr, seq_num, ack_num) = {
+            let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+            let src_port = socket.port();
+            if let Ok(tcp_socket) = socket.inner_tcp_mut() {
+                if tcp_socket.state() != TcpSocketState::Established {
+                    return Ok(());
+                }
+
+                let dst_port = tcp_socket
+                    .dst_port()
+                    .ok_or::<Error>("No destination port".into())?;
+                let dst_addr = tcp_socket
+                    .dst_ipv4_addr()
+                    .ok_or::<Error>("No destination address".into())?;
+
+                (
+                    src_port,
+                    dst_port,
+                    dst_addr,
+                    tcp_socket.seq_num(),
+                    tcp_socket.next_recv_seq(),
+                )
+            } else {
+                return Ok(());
+            }
+        };
+
+        let mut packet = TcpPacket::new_with(
+            src_port,
+            dst_port,
+            seq_num,
+            ack_num,
+            TcpPacket::FLAGS_ACK | TcpPacket::FLAGS_FIN,
+            u16::MAX,
+            0,
+            Vec::new(),
+            Vec::new(),
+        );
+        packet.calc_checksum_with_ipv4(self.my_ipv4_addr, dst_addr);
+
+        let mut ipv4_packet = Ipv4Packet::new_with(
+            0x45,
+            0,
+            0,
+            0,
+            Protocol::Tcp,
+            self.my_ipv4_addr,
+            dst_addr,
+            Ipv4Payload::Tcp(packet),
+        );
+        ipv4_packet.calc_checksum();
+
+        let dst_mac_addr = self
+            .resolve_mac_addr(dst_addr)?
+            .ok_or::<Error>("Failed to resolve MAC address".into())?;
+
+        self.send_eth_payload(
+            EthernetPayload::Ipv4(ipv4_packet),
+            dst_mac_addr,
+            EthernetType::Ipv4,
+        )?;
+
+        let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+        let tcp_socket = socket.inner_tcp_mut()?;
+        tcp_socket.add_seq_num(1);
+
+        Ok(())
+    }
+
+    fn send_tcp_data(&mut self, socket_id: SocketId, data: &[u8]) -> Result<()> {
+        let (src_port, dst_port, dst_addr, seq_num, ack_num) = {
+            let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+            let src_port = socket.port();
+            let tcp_socket = socket.inner_tcp_mut()?;
+
+            if tcp_socket.state() != TcpSocketState::Established {
+                return Err("Socket is not in Established state".into());
+            }
+
+            let dst_port = tcp_socket
+                .dst_port()
+                .ok_or::<Error>("No destination port".into())?;
+            let dst_addr = tcp_socket
+                .dst_ipv4_addr()
+                .ok_or::<Error>("No destination address".into())?;
+
+            (
+                src_port,
+                dst_port,
+                dst_addr,
+                tcp_socket.seq_num(),
+                tcp_socket.next_recv_seq(),
+            )
+        };
+
+        let mut packet = TcpPacket::new_with(
+            src_port,
+            dst_port,
+            seq_num,
+            ack_num,
+            TcpPacket::FLAGS_ACK | TcpPacket::FLAGS_PSH,
+            u16::MAX,
+            0,
+            Vec::new(),
+            data.to_vec(),
+        );
+        packet.calc_checksum_with_ipv4(self.my_ipv4_addr, dst_addr);
+
+        let mut ipv4_packet = Ipv4Packet::new_with(
+            0x45,
+            0,
+            0,
+            0,
+            Protocol::Tcp,
+            self.my_ipv4_addr,
+            dst_addr,
+            Ipv4Payload::Tcp(packet),
+        );
+        ipv4_packet.calc_checksum();
+
+        let dst_mac_addr = self
+            .resolve_mac_addr(dst_addr)?
+            .ok_or::<Error>("Failed to resolve MAC address".into())?;
+
+        self.send_eth_payload(
+            EthernetPayload::Ipv4(ipv4_packet),
+            dst_mac_addr,
+            EthernetType::Ipv4,
+        )?;
+
+        if !data.is_empty() {
+            let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+            let tcp_socket = socket.inner_tcp_mut()?;
+            tcp_socket.add_seq_num(data.len() as u32);
+        }
+
+        Ok(())
+    }
+
+    fn recv_tcp_data(&mut self, socket_id: SocketId, buf: &mut [u8]) -> Result<usize> {
+        let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+        let tcp_socket = socket.inner_tcp_mut()?;
+
+        if tcp_socket.state() != TcpSocketState::Established {
+            return Err("Socket is not in Established state".into());
+        }
+
+        let data = tcp_socket.get_and_reset_buf();
+        if data.is_empty() {
+            return Ok(0);
+        }
+
+        let len = core::cmp::min(buf.len(), data.len());
+        buf[..len].copy_from_slice(&data[..len]);
+
+        Ok(len)
+    }
+
+    fn is_tcp_established(&mut self, socket_id: SocketId) -> Result<bool> {
+        let socket = self.socket_table.socket_mut_by_id(socket_id)?;
+        let tcp_socket = socket.inner_tcp_mut()?;
+        Ok(tcp_socket.state() == TcpSocketState::Established)
+    }
+
     fn receive_icmp_packet(&mut self, packet: IcmpPacket) -> Result<Option<IcmpPacket>> {
         let ty = packet.ty;
 
@@ -157,18 +468,23 @@ impl NetworkManager {
         Ok(None)
     }
 
-    fn receive_tcp_packet(&mut self, packet: TcpPacket) -> Result<Option<TcpPacket>> {
+    fn receive_tcp_packet(
+        &mut self,
+        packet: TcpPacket,
+        remote_addr: Ipv4Addr,
+    ) -> Result<Option<TcpPacket>> {
         kinfo!("net: TCP packet received");
 
         let src_port = packet.src_port;
         let dst_port = packet.dst_port;
         let seq_num = packet.seq_num;
-        let socket_mut = self.tcp_socket_mut_by_port(dst_port)?;
-
-        // TODO: Remove after
-        if socket_mut.state() == TcpSocketState::Closed {
-            socket_mut.start_passive(dst_port)?;
-        }
+        let socket_mut = match self.tcp_socket_mut_by_port(dst_port, remote_addr, src_port) {
+            Ok(s) => s,
+            Err(e) => {
+                kwarn!("net: TCP socket not found: {:?}", e);
+                return Ok(None);
+            }
+        };
 
         match socket_mut.state() {
             TcpSocketState::Closed => {
@@ -180,15 +496,25 @@ impl NetworkManager {
                     return Ok(None);
                 }
 
-                let next_seq_num = socket_mut.receive_syn(seq_num)?;
-                let ack_num = socket_mut.next_recv_seq();
+                let new_socket_id = self
+                    .socket_table
+                    .insert_new_socket(SocketType::Stream, Protocol::Tcp)?;
+
+                let new_socket = self.socket_table.socket_mut_by_id(new_socket_id)?;
+                new_socket.set_port(dst_port); // manually set port without registering to map
+                let new_tcp_socket = new_socket.inner_tcp_mut()?;
+                new_tcp_socket.start_passive(dst_port)?;
+                new_tcp_socket.set_dst_ipv4_addr(remote_addr);
+                new_tcp_socket.set_dst_port(src_port);
+                let next_seq_num = new_tcp_socket.receive_syn(seq_num)?;
+                let ack_num = new_tcp_socket.next_recv_seq();
 
                 let mut options = Vec::new();
                 let mss_bytes_len = 1460u16;
                 options.push(0x02); // MSS
                 options.push(0x04); // MSS length
-                options.push((mss_bytes_len >> 8) as u8); // MSS high byte
-                options.push((mss_bytes_len & 0xff) as u8); // MSS low byte
+                options.push((mss_bytes_len >> 8) as u8);
+                options.push((mss_bytes_len & 0xff) as u8);
 
                 // send SYN-ACK
                 let reply_packet = TcpPacket::new_with(
@@ -200,8 +526,34 @@ impl NetworkManager {
                     u16::MAX,
                     0,
                     options,
+                    Vec::new(),
                 );
                 kdebug!("net: TCP-SYN-ACK packet: {:?}", reply_packet);
+                return Ok(Some(reply_packet));
+            }
+            TcpSocketState::SynSent => {
+                if !packet.flags_syn() || !packet.flags_ack() {
+                    kwarn!("net: TCP-SYN-ACK not received");
+                    return Ok(None);
+                }
+
+                socket_mut.receive_syn_ack(seq_num)?;
+
+                let next_seq_num = socket_mut.seq_num();
+                let ack_num = socket_mut.next_recv_seq();
+
+                let reply_packet = TcpPacket::new_with(
+                    dst_port,
+                    src_port,
+                    next_seq_num,
+                    ack_num,
+                    TcpPacket::FLAGS_ACK,
+                    u16::MAX,
+                    0,
+                    Vec::new(),
+                    Vec::new(),
+                );
+                kdebug!("net: TCP-ACK packet: {:?}", reply_packet);
                 return Ok(Some(reply_packet));
             }
             TcpSocketState::SynReceived => {
@@ -219,9 +571,7 @@ impl NetworkManager {
                     socket_mut.receive_ack()?;
                 }
 
-                let header_len = packet.flags_header_len();
-                let options_len = header_len.checked_sub(20).unwrap_or(0);
-                let data = &packet.options_and_data[options_len..];
+                let data = &packet.data;
 
                 if !data.is_empty() {
                     kdebug!(
@@ -250,6 +600,7 @@ impl NetworkManager {
                         TcpPacket::FLAGS_ACK,
                         u16::MAX,
                         0,
+                        Vec::new(),
                         Vec::new(),
                     );
                     kdebug!("net: TCP-ACK packet: {:?}", reply_packet);
@@ -325,9 +676,14 @@ impl NetworkManager {
             Ipv4Payload::Tcp(tcp_packet) => {
                 let is_valid =
                     tcp_packet.verify_checksum_with_ipv4(packet.src_addr, packet.dst_addr);
-                assert!(is_valid, "Invalid TCP checksum");
+                if !is_valid {
+                    kwarn!("net: Invalid TCP checksum");
+                    return Ok(None);
+                }
 
-                if let Some(mut reply_tcp_packet) = self.receive_tcp_packet(tcp_packet)? {
+                if let Some(mut reply_tcp_packet) =
+                    self.receive_tcp_packet(tcp_packet, packet.src_addr)?
+                {
                     reply_tcp_packet.calc_checksum_with_ipv4(self.my_ipv4_addr, packet.src_addr);
                     reply_payload = Some(Ipv4Payload::Tcp(reply_tcp_packet));
                 }
@@ -366,6 +722,7 @@ impl NetworkManager {
                 }
             }
             EthernetPayload::Ipv4(ipv4_packet) => {
+                kdebug!("net: IPv4 packet received");
                 if let Some(reply_ipv4_packet) = self.receive_ipv4_packet(ipv4_packet)? {
                     reply_payload = Some(EthernetPayload::Ipv4(reply_ipv4_packet));
                 }
@@ -521,4 +878,36 @@ pub fn sendto_udp_v4(
 
 pub fn recvfrom_udp_v4(socket_id: SocketId, buf: &mut [u8]) -> Result<usize> {
     unsafe { NETWORK_MAN.try_lock() }?.recvfrom_udp_v4(socket_id, buf)
+}
+
+pub fn listen_tcp_v4(socket_id: SocketId) -> Result<()> {
+    unsafe { NETWORK_MAN.try_lock() }?.listen_tcp_v4(socket_id)
+}
+
+pub fn accept_tcp_v4(socket_id: SocketId) -> Result<SocketId> {
+    unsafe { NETWORK_MAN.try_lock() }?.accept_tcp_v4(socket_id)
+}
+
+pub fn connect_tcp_v4(socket_id: SocketId, dst_addr: Ipv4Addr, dst_port: u16) -> Result<()> {
+    unsafe { NETWORK_MAN.try_lock() }?.connect_tcp_v4(socket_id, dst_addr, dst_port)
+}
+
+pub fn send_tcp_syn(socket_id: SocketId) -> Result<()> {
+    unsafe { NETWORK_MAN.try_lock() }?.send_tcp_syn(socket_id)
+}
+
+pub fn send_tcp_data(socket_id: SocketId, data: &[u8]) -> Result<()> {
+    unsafe { NETWORK_MAN.try_lock() }?.send_tcp_data(socket_id, data)
+}
+
+pub fn recv_tcp_data(socket_id: SocketId, buf: &mut [u8]) -> Result<usize> {
+    unsafe { NETWORK_MAN.try_lock() }?.recv_tcp_data(socket_id, buf)
+}
+
+pub fn is_tcp_established(socket_id: SocketId) -> Result<bool> {
+    unsafe { NETWORK_MAN.try_lock() }?.is_tcp_established(socket_id)
+}
+
+pub fn close_socket(socket_id: SocketId) -> Result<()> {
+    unsafe { NETWORK_MAN.try_lock() }?.close_socket(socket_id)
 }

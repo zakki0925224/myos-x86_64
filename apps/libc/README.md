@@ -72,19 +72,39 @@ A reply buffer can be provided to receive the result or response from the system
 
 ### socket
 
-TODO
+Creates an endpoint for communication.
 
 ### bind
 
-TODO
+Binds a port to a socket.
 
 ### sendto
 
-TODO
+Sends a message on a socket.
 
 ### recvfrom
 
-TODO
+Receives a message from a socket.
+
+### send
+
+Sends a message on a connected socket.
+
+### recv
+
+Receives a message from a connected socket.
+
+### connect
+
+Initiates a connection on a socket.
+
+### listen
+
+Listens for connections on a socket.
+
+### accept
+
+Accepts a connection on a socket.
 
 ## Syscall tables
 
@@ -113,3 +133,8 @@ TODO
 | 20     | sys_bind      | 0x14              | int sockfd            | const struct sockaddr \*addr | size_t addrlen         | -          | -                                 | -              | int (0 on success, -1 on error)   |
 | 21     | sys_sendto    | 0x15              | int sockfd            | const void \*buf             | size_t len             | int flags  | const struct sockaddr \*dest_addr | size_t addrlen | int (sent bytes, -1 on error)     |
 | 22     | sys_recvfrom  | 0x16              | int sockfd            | void \*buf                   | size_t len             | int flags  | struct sockaddr \*src_addr        | size_t addrlen | int (received bytes, -1 on error) |
+| 23     | sys_send      | 0x17              | int sockfd            | const void \*buf             | size_t len             | int flags  | -                                 | -              | int (sent bytes, -1 on error)     |
+| 24     | sys_recv      | 0x18              | int sockfd            | void \*buf                   | size_t len             | int flags  | -                                 | -              | int (received bytes, -1 on error) |
+| 25     | sys_connect   | 0x19              | int sockfd            | const struct sockaddr \*addr | size_t addrlen         | -          | -                                 | -              | int (0 on success, -1 on error)   |
+| 26     | sys_listen    | 0x1a              | int sockfd            | int backlog                  | -                      | -          | -                                 | -              | int (0 on success, -1 on error)   |
+| 27     | sys_accept    | 0x1b              | int sockfd            | struct sockaddr \*addr       | size_t \*addrlen       | -          | -                                 | -              | int (sockfd, -1 on error)         |

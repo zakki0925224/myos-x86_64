@@ -39,7 +39,7 @@ This is a replacement project for the previous **[myos](https://github.com/Zakki
     -   [x] ARP
     -   [x] IPv4
         -   [x] ICMP
-        -   [ ] TCP
+        -   [x] TCP
         -   [x] UDP
 -   [x] Async runtime
     -   [x] Simple priority-based executor
