@@ -812,8 +812,22 @@ fn sys_recvfrom(
 
     if src_addr.is_null() {
         // TCP
-        let read_len = net::recv_tcp_data(socket_id, buf_mut)?;
-        return Ok(read_len);
+        loop {
+            match net::recv_tcp_data(socket_id, buf_mut) {
+                Ok(0) => match net::is_tcp_established(socket_id) {
+                    Ok(true) => {
+                        x86_64::stihlt();
+                        continue;
+                    }
+                    Ok(false) => return Ok(0),
+                    Err(Error::Failed("Mutex is already locked")) => continue,
+                    Err(e) => return Err(e),
+                },
+                Ok(len) => return Ok(len),
+                Err(Error::Failed("Mutex is already locked")) => continue,
+                Err(e) => return Err(e),
+            }
+        }
     }
 
     // UDP

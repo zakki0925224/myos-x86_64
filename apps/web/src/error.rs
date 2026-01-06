@@ -12,6 +12,8 @@ pub enum WebError {
     BindFailed,
     SendToFailed,
     RecvFromFailed,
+    InvalidReceivedResponse,
+    InvalidHttpResponse(String),
 }
 
 impl From<String> for WebError {

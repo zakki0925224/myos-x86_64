@@ -8,17 +8,16 @@ mod net;
 
 extern crate alloc;
 
+use crate::http::HttpClient;
+use alloc::string::ToString;
 use libc_rs::*;
-
-use crate::dns::{DnsClient, QEMU_DNS};
 
 #[unsafe(no_mangle)]
 pub fn _start() {
     let _args = parse_args!();
 
-    let client = DnsClient::new(QEMU_DNS);
-    let ip = client.resolve("google.com").unwrap();
-
-    println!("ip: {:?}", ip);
+    let client = HttpClient::new();
+    let res = client.get("example.com".to_string(), 80, "/".to_string());
+    println!("{:?}", res);
     unsafe { exit(0) };
 }

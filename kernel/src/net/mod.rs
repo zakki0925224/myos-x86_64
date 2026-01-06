@@ -452,8 +452,17 @@ impl NetworkManager {
         let socket = self.socket_table.socket_mut_by_id(socket_id)?;
         let tcp_socket = socket.inner_tcp_mut()?;
 
-        if tcp_socket.state() != TcpSocketState::Established {
-            return Err("Socket is not in Established state".into());
+        if !matches!(
+            tcp_socket.state(),
+            TcpSocketState::Established
+                | TcpSocketState::FinWait1
+                | TcpSocketState::FinWait2
+                | TcpSocketState::CloseWait
+                | TcpSocketState::TimeWait
+                | TcpSocketState::LastAck
+                | TcpSocketState::Closing
+        ) {
+            return Err("Socket is not in Established/Closing state".into());
         }
 
         let data = tcp_socket.get_and_reset_buf();
