@@ -19,8 +19,26 @@ pub mod udp;
 
 type ArpTable = BTreeMap<Ipv4Addr, EthernetAddress>;
 
-static mut NETWORK_MAN: Mutex<NetworkManager> =
-    Mutex::new(NetworkManager::new(Ipv4Addr::new(192, 168, 100, 2)));
+const GATEWAY_ADDR: Ipv4Addr = Ipv4Addr::new(10, 0, 2, 2);
+const LOCAL_ADDR: Ipv4Addr = Ipv4Addr::new(10, 0, 2, 15);
+const SUBNET_MASK: Ipv4Addr = Ipv4Addr::new(255, 255, 255, 0);
+
+fn get_target_ip(my_ip: Ipv4Addr, dst_ip: Ipv4Addr) -> Ipv4Addr {
+    let my_octets = my_ip.octets();
+    let dst_octets = dst_ip.octets();
+    let mask_octets = SUBNET_MASK.octets();
+
+    let is_same_subnet =
+        (0..4).all(|i| (my_octets[i] & mask_octets[i]) == (dst_octets[i] & mask_octets[i]));
+
+    if is_same_subnet {
+        dst_ip
+    } else {
+        GATEWAY_ADDR
+    }
+}
+
+static mut NETWORK_MAN: Mutex<NetworkManager> = Mutex::new(NetworkManager::new(LOCAL_ADDR));
 
 struct NetworkManager {
     my_ipv4_addr: Ipv4Addr,
@@ -271,8 +289,9 @@ impl NetworkManager {
         ipv4_packet.calc_checksum();
 
         kinfo!("net: send_tcp_syn - resolving MAC for {}", dst_addr);
+        let target_ip = get_target_ip(self.my_ipv4_addr, dst_addr);
         let dst_mac_addr = self
-            .resolve_mac_addr(dst_addr)?
+            .resolve_mac_addr(target_ip)?
             .ok_or::<Error>("Failed to resolve MAC address".into())?;
         kinfo!("net: send_tcp_syn - MAC resolved: {:?}", dst_mac_addr);
 
@@ -340,8 +359,9 @@ impl NetworkManager {
         );
         ipv4_packet.calc_checksum();
 
+        let target_ip = get_target_ip(self.my_ipv4_addr, dst_addr);
         let dst_mac_addr = self
-            .resolve_mac_addr(dst_addr)?
+            .resolve_mac_addr(target_ip)?
             .ok_or::<Error>("Failed to resolve MAC address".into())?;
 
         self.send_eth_payload(
@@ -408,8 +428,9 @@ impl NetworkManager {
         );
         ipv4_packet.calc_checksum();
 
+        let target_ip = get_target_ip(self.my_ipv4_addr, dst_addr);
         let dst_mac_addr = self
-            .resolve_mac_addr(dst_addr)?
+            .resolve_mac_addr(target_ip)?
             .ok_or::<Error>("Failed to resolve MAC address".into())?;
 
         self.send_eth_payload(
@@ -778,8 +799,10 @@ impl NetworkManager {
         );
         ipv4_packet.calc_checksum();
 
+        let target_ip = get_target_ip(self.my_ipv4_addr, dst_addr);
+
         let dst_mac_addr = self
-            .resolve_mac_addr(dst_addr)?
+            .resolve_mac_addr(target_ip)?
             .ok_or::<Error>("Failed to resolve MAC address".into())?;
 
         self.send_eth_payload(
@@ -839,19 +862,17 @@ pub fn receive_eth_payload(payload: EthernetPayload) -> Result<Option<EthernetPa
 }
 
 pub fn resolve_mac_addr(ipv4_addr: Ipv4Addr) -> Result<EthernetAddress> {
-    let eth_addr = x86_64::disabled_int(|| {
-        let mut network_man = unsafe { NETWORK_MAN.try_lock() }?;
-        let addr = network_man.resolve_mac_addr(ipv4_addr)?;
-        Result::Ok(addr)
-    })?;
-    match eth_addr {
-        Some(addr) => Ok(addr),
-        None => loop {
-            match resolve_mac_addr(ipv4_addr) {
-                Ok(addr) => return Ok(addr),
-                _ => x86_64::stihlt(),
-            }
-        },
+    loop {
+        let eth_addr = x86_64::disabled_int(|| {
+            let mut network_man = unsafe { NETWORK_MAN.try_lock() }?;
+            let addr = network_man.resolve_mac_addr(ipv4_addr)?;
+            Result::Ok(addr)
+        })?;
+
+        match eth_addr {
+            Some(addr) => return Ok(addr),
+            None => x86_64::stihlt(),
+        }
     }
 }
 
@@ -873,6 +894,10 @@ pub fn sendto_udp_v4(
     dst_port: u16,
     data: &[u8],
 ) -> Result<()> {
+    let my_ip = my_ipv4_addr()?;
+    let target_ip = get_target_ip(my_ip, dst_addr);
+    resolve_mac_addr(target_ip)?;
+
     unsafe { NETWORK_MAN.try_lock() }?.sendto_udp_v4(socket_id, dst_addr, dst_port, data)
 }
 
@@ -893,10 +918,48 @@ pub fn connect_tcp_v4(socket_id: SocketId, dst_addr: Ipv4Addr, dst_port: u16) ->
 }
 
 pub fn send_tcp_syn(socket_id: SocketId) -> Result<()> {
+    // pre-resolve MAC address
+    let (dst_addr, _) = {
+        let mut man = unsafe { NETWORK_MAN.try_lock() }?;
+        let socket = man.socket_table.socket_mut_by_id(socket_id)?;
+        let tcp_socket = socket.inner_tcp_mut()?;
+        (
+            tcp_socket
+                .dst_ipv4_addr()
+                .ok_or::<Error>("No destination address".into())?,
+            tcp_socket
+                .dst_port()
+                .ok_or::<Error>("No destination port".into())?,
+        )
+    };
+
+    let my_ip = my_ipv4_addr()?;
+    let target_ip = get_target_ip(my_ip, dst_addr);
+    resolve_mac_addr(target_ip)?;
+
     unsafe { NETWORK_MAN.try_lock() }?.send_tcp_syn(socket_id)
 }
 
 pub fn send_tcp_data(socket_id: SocketId, data: &[u8]) -> Result<()> {
+    // pre-resolve MAC address
+    let (dst_addr, _) = {
+        let mut man = unsafe { NETWORK_MAN.try_lock() }?;
+        let socket = man.socket_table.socket_mut_by_id(socket_id)?;
+        let tcp_socket = socket.inner_tcp_mut()?;
+        (
+            tcp_socket
+                .dst_ipv4_addr()
+                .ok_or::<Error>("No destination address".into())?,
+            tcp_socket
+                .dst_port()
+                .ok_or::<Error>("No destination port".into())?,
+        )
+    };
+
+    let my_ip = my_ipv4_addr()?;
+    let target_ip = get_target_ip(my_ip, dst_addr);
+    resolve_mac_addr(target_ip)?;
+
     unsafe { NETWORK_MAN.try_lock() }?.send_tcp_data(socket_id, data)
 }
 

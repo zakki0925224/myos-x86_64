@@ -7,6 +7,7 @@
         "./apps/libc-rs/Cargo.toml",
         "./apps/mandelbrot/Cargo.toml",
         "./apps/imgvw/Cargo.toml",
-        "./apps/lifegame/Cargo.toml"
+        "./apps/lifegame/Cargo.toml",
+        "./apps/web/Cargo.toml"
     ]
 }

@@ -89,7 +89,6 @@ $ sudo apt update && sudo apt install python3 build-essential lld gcc-multilib c
 
 $ git clone https://github.com/Zakki0925224/myos-x86_64.git
 $ cd myos-x86_64
-$ python3 ./task.py make_netdev
 $ python3 ./task.py run
 ```
 

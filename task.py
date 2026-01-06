@@ -25,10 +25,6 @@ QEMU_TRACE_FILE = "qemu_trace"
 DOOM_WAD_FILE = "doom1.wad"
 INITRAMFS_IMG_FILE = "initramfs.img"
 
-NETDEV_TAP = "tap0"
-NETDEV_BR = "br0"
-NETDEV_IP = "192.168.100.1/24"
-
 QEMU_ARCH = "qemu-system-x86_64"
 QEMU_TARGET_ARCH = "x86_64-softmmu"
 QEMU_MONITOR_PORT = 5678
@@ -41,7 +37,9 @@ QEMU_DEVICES = [
     "-device ide-cd,drive=disk,bus=ahci.0,bootindex=1",
     "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
     "-audiodev pa,id=speaker -machine pcspk-audiodev=speaker",
-    f"-device rtl8139,netdev=net0, -netdev tap,id=net0,ifname={NETDEV_TAP},script=no,downscript=no -object filter-dump,id=f0,netdev=net0,file={DUMP_DIR}/dump.pcap",  # <- ping -4 192.168.100.2 / nc [-u] -zv 192.168.100.2 12345
+    "-netdev user,id=net0,hostfwd=tcp::18080-:18080",
+    "-device rtl8139,netdev=net0",
+    f"-object filter-dump,id=f0,netdev=net0,file={DUMP_DIR}/dump.pcap",
 ]
 QEMU_DRIVES = [
     f"-drive id=disk,if=none,format=raw,file=./{OUTPUT_DIR}/{IMG_FILE}",
@@ -138,7 +136,9 @@ def _build_qemu():
     # check if QEMU directory exists, if not, clone it
     if not os.path.exists(f"{d}/.git"):
         print(f"QEMU submodule not found, initializing...")
-        _run_cmd(f"git submodule update --init --recursive {THIRD_PARTY_DIR}/{QEMU_DIR}")
+        _run_cmd(
+            f"git submodule update --init --recursive {THIRD_PARTY_DIR}/{QEMU_DIR}"
+        )
 
     # always fetch tags to check for updates
     _run_cmd("git fetch --tags", dir=d)
@@ -178,7 +178,7 @@ def _build_qemu():
         # extra_cflags = '--extra-cflags="-DDEBUG_RTL8139"'
         extra_cflags = ""
         _run_cmd(
-            f"mkdir -p build && cd build && ../configure --target-list={QEMU_TARGET_ARCH} --enable-trace-backends=log --enable-sdl {extra_cflags} && make -j$(nproc)",
+            f"mkdir -p build && cd build && ../configure --target-list={QEMU_TARGET_ARCH} --enable-trace-backends=log --enable-sdl {extra_cflags} --enable-slirp && make -j$(nproc)",
             dir=d,
         )
 
@@ -208,7 +208,9 @@ def build():
     _init()
 
     # update submodules (except QEMU, which is handled in _build_qemu())
-    _run_cmd(f"git submodule update --init --recursive -- ':!{THIRD_PARTY_DIR}/{QEMU_DIR}'")
+    _run_cmd(
+        f"git submodule update --init --recursive -- ':!{THIRD_PARTY_DIR}/{QEMU_DIR}'"
+    )
 
     if not is_kernel_test:
         _build_apps()
@@ -294,22 +296,6 @@ def make_iso():
     _run_cmd(f"dd if=./{OUTPUT_DIR}/{IMG_FILE} of=./{OUTPUT_DIR}/{ISO_FILE} bs=1M")
 
 
-def make_netdev():
-    _run_cmd(f"sudo ip link add name {NETDEV_BR} type bridge")
-    _run_cmd(f"sudo ip addr add {NETDEV_IP} dev {NETDEV_BR}")
-    _run_cmd(f"sudo ip link set {NETDEV_BR} up")
-
-    _run_cmd(f"sudo ip tuntap add {NETDEV_TAP} mode tap")
-    _run_cmd(f"sudo ip link set {NETDEV_TAP} up")
-
-    _run_cmd(f"sudo ip link set {NETDEV_TAP} master {NETDEV_BR}")
-
-
-def del_netdev():
-    _run_cmd(f"sudo ip link del {NETDEV_BR}")
-    _run_cmd(f"sudo ip link del {NETDEV_TAP}")
-
-
 def run():
     global is_kernel_test
 
@@ -391,8 +377,6 @@ def clean():
 TASKS = [
     build,
     make_iso,
-    make_netdev,
-    del_netdev,
     run,
     run_nographic,
     run_with_gdb,

@@ -1,0 +1,122 @@
+use crate::{
+    error::{Result, WebError},
+    net::UdpSocket,
+};
+use alloc::vec::Vec;
+use core::net::Ipv4Addr;
+
+pub const QEMU_DNS: &'static str = "10.0.2.3:53";
+
+pub struct DnsClient {
+    dns_server: &'static str,
+}
+
+impl DnsClient {
+    pub fn new(dns_server: &'static str) -> Self {
+        Self { dns_server }
+    }
+
+    pub fn resolve(&self, domain: &str) -> Result<Ipv4Addr> {
+        let socket = UdpSocket::bind("0.0.0.0:0")?;
+
+        // RFC 1035
+        let mut query = Vec::new();
+
+        // 4.1.1. Header section format
+        query.extend_from_slice(&0x1234u16.to_be_bytes()); // ID
+        query.extend_from_slice(&0x0100u16.to_be_bytes()); // SQ+RD
+        query.extend_from_slice(&1u16.to_be_bytes()); // QDCOUNT
+        query.extend_from_slice(&0u16.to_be_bytes()); // ANCOUNT
+        query.extend_from_slice(&0u16.to_be_bytes()); // NSCOUNT
+        query.extend_from_slice(&0u16.to_be_bytes()); // ARCOUNT
+
+        // 4.1.2. Question section format
+        for label in domain.split(".") {
+            if label.is_empty() {
+                continue;
+            }
+
+            query.push(label.len() as u8);
+            query.extend_from_slice(label.as_bytes());
+        }
+        query.push(0);
+
+        query.extend_from_slice(&1u16.to_be_bytes()); // QTYPE: A
+        query.extend_from_slice(&1u16.to_be_bytes()); // QCLASS: IN
+
+        // send
+        socket.send_to(&query, self.dns_server)?;
+
+        // receive
+        let mut buf = [0u8; 1500];
+        let mut n = 0;
+
+        for _ in 0..1000000 {
+            let (res, _, _) = socket.recv_from(&mut buf)?;
+            if res > 0 {
+                n = res;
+                break;
+            }
+            unsafe { core::arch::asm!("pause") };
+        }
+
+        if n == 0 {
+            return Err(WebError::DnsResolutionFailed);
+        }
+
+        let buf = &buf[..n];
+
+        // parse response
+        if buf.len() < 12 {
+            return Err(WebError::DnsResolutionFailed);
+        }
+
+        let id = u16::from_be_bytes([buf[0], buf[1]]);
+        let ancount = u16::from_be_bytes([buf[6], buf[7]]);
+        if id != 0x1234 || ancount == 0 {
+            return Err(WebError::DnsResolutionFailed);
+        }
+
+        let mut pos = 12;
+        pos = self.skip_name(buf, pos)?;
+        pos += 4;
+
+        for _ in 0..ancount {
+            pos = self.skip_name(buf, pos)?;
+            let rtype = u16::from_be_bytes([buf[pos], buf[pos + 1]]);
+            let rdlen = u16::from_be_bytes([buf[pos + 8], buf[pos + 9]]);
+            pos += 10;
+
+            if rtype == 1 && rdlen == 4 {
+                // Type A (IPv4)
+                return Ok(Ipv4Addr::new(
+                    buf[pos],
+                    buf[pos + 1],
+                    buf[pos + 2],
+                    buf[pos + 3],
+                ));
+            }
+            pos += rdlen as usize;
+        }
+
+        Err(WebError::DnsResolutionFailed)
+    }
+
+    fn skip_name(&self, buf: &[u8], mut pos: usize) -> Result<usize> {
+        while pos < buf.len() {
+            let b = buf[pos];
+
+            if b == 0 {
+                return Ok(pos + 1);
+            }
+
+            if (b & 0xc0) == 0xc0 {
+                return Ok(pos + 2);
+            }
+
+            pos += b as usize + 1;
+        }
+
+        Err(WebError::DnsResolutionFailed)
+    }
+}

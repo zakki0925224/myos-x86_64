@@ -1,0 +1,8 @@
+[package]
+name = "web"
+version = "0.1.0"
+edition = "2024"
+authors = ["Zakki <zakki0925224@gmail.com>"]
+
+[dependencies]
+libc-rs = { path = "../libc-rs" }
