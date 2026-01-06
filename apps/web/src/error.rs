@@ -4,7 +4,7 @@ use alloc::string::String;
 pub enum WebError {
     Failed(String),
     InvalidAddress,
-    DnsResolutionFailed,
+    DnsResolutionFailed(String),
     SocketCreationFailed,
     ConnectionFailed,
     RecvFailed,

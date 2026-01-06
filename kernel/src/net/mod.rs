@@ -2,11 +2,11 @@ use crate::{
     arch::x86_64,
     device,
     error::{Error, Result},
-    kdebug, kinfo, kwarn,
+    kinfo, kwarn,
     net::{arp::*, eth::*, icmp::*, ip::*, socket::*, tcp::*, udp::*},
     sync::mutex::Mutex,
 };
-use alloc::{collections::btree_map::BTreeMap, string::String, vec::Vec};
+use alloc::{collections::btree_map::BTreeMap, vec::Vec};
 use core::net::Ipv4Addr;
 
 pub mod arp;
@@ -237,8 +237,6 @@ impl NetworkManager {
     }
 
     fn send_tcp_syn(&mut self, socket_id: SocketId) -> Result<()> {
-        kinfo!("net: send_tcp_syn START - socket_id={}", socket_id);
-
         let socket = self.socket_table.socket_mut_by_id(socket_id)?;
         let src_port = socket.port();
         let tcp_socket = socket.inner_tcp_mut()?;
@@ -247,21 +245,12 @@ impl NetworkManager {
             return Err("Socket is not in SynSent state".into());
         }
 
-        kinfo!("net: send_tcp_syn - state check OK, src_port={}", src_port);
-
         let dst_port = tcp_socket
             .dst_port()
             .ok_or::<Error>("No destination port".into())?;
         let dst_addr = tcp_socket
             .dst_ipv4_addr()
             .ok_or::<Error>("No destination address".into())?;
-
-        kinfo!(
-            "net: send_tcp_syn - dst={}:{}, seq={}",
-            dst_addr,
-            dst_port,
-            tcp_socket.seq_num()
-        );
 
         let mut syn_packet = TcpPacket::new_with(
             src_port,
@@ -288,20 +277,15 @@ impl NetworkManager {
         );
         ipv4_packet.calc_checksum();
 
-        kinfo!("net: send_tcp_syn - resolving MAC for {}", dst_addr);
         let target_ip = get_target_ip(self.my_ipv4_addr, dst_addr);
         let dst_mac_addr = self
             .resolve_mac_addr(target_ip)?
             .ok_or::<Error>("Failed to resolve MAC address".into())?;
-        kinfo!("net: send_tcp_syn - MAC resolved: {:?}", dst_mac_addr);
-
-        kinfo!("net: send_tcp_syn - calling send_eth_payload");
         self.send_eth_payload(
             EthernetPayload::Ipv4(ipv4_packet),
             dst_mac_addr,
             EthernetType::Ipv4,
         )?;
-        kinfo!("net: send_tcp_syn SUCCESS");
 
         Ok(())
     }
@@ -503,8 +487,6 @@ impl NetworkManager {
         packet: TcpPacket,
         remote_addr: Ipv4Addr,
     ) -> Result<Option<TcpPacket>> {
-        kinfo!("net: TCP packet received");
-
         let src_port = packet.src_port;
         let dst_port = packet.dst_port;
         let seq_num = packet.seq_num;
@@ -558,7 +540,6 @@ impl NetworkManager {
                     options,
                     Vec::new(),
                 );
-                kdebug!("net: TCP-SYN-ACK packet: {:?}", reply_packet);
                 return Ok(Some(reply_packet));
             }
             TcpSocketState::SynSent => {
@@ -583,7 +564,6 @@ impl NetworkManager {
                     Vec::new(),
                     Vec::new(),
                 );
-                kdebug!("net: TCP-ACK packet: {:?}", reply_packet);
                 return Ok(Some(reply_packet));
             }
             TcpSocketState::SynReceived => {
@@ -604,16 +584,11 @@ impl NetworkManager {
                 let data = &packet.data;
 
                 if !data.is_empty() {
-                    kdebug!(
-                        "net: TCP data packet received: {:?}",
-                        String::from_utf8_lossy(data)
-                    );
                     socket_mut.receive_data(data, seq_num)?;
                     ack_needed = true;
                 }
 
                 if packet.flags_fin() {
-                    kdebug!("net: TCP-FIN received");
                     socket_mut.receive_fin()?;
                     ack_needed = true;
                 }
@@ -633,7 +608,6 @@ impl NetworkManager {
                         Vec::new(),
                         Vec::new(),
                     );
-                    kdebug!("net: TCP-ACK packet: {:?}", reply_packet);
                     return Ok(Some(reply_packet));
                 }
 
@@ -656,8 +630,6 @@ impl NetworkManager {
         let dst_port = packet.dst_port;
         let socket_mut = self.udp_socket_mut_by_port(dst_port)?;
         socket_mut.receive(&packet.data);
-        let s = socket_mut.buf_to_string_utf8_lossy();
-        kdebug!("net: UDP data: {:?}", s);
 
         Ok(None)
     }
@@ -752,7 +724,6 @@ impl NetworkManager {
                 }
             }
             EthernetPayload::Ipv4(ipv4_packet) => {
-                kdebug!("net: IPv4 packet received");
                 if let Some(reply_ipv4_packet) = self.receive_ipv4_packet(ipv4_packet)? {
                     reply_payload = Some(EthernetPayload::Ipv4(reply_ipv4_packet));
                 }

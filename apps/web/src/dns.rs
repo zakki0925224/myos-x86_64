@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use core::net::Ipv4Addr;
 
 pub const QEMU_DNS: &'static str = "10.0.2.3:53";
+const LOCALHOST_ADDR: Ipv4Addr = Ipv4Addr::new(10, 0, 2, 2);
 
 pub struct DnsClient {
     dns_server: &'static str,
@@ -16,7 +17,11 @@ impl DnsClient {
         Self { dns_server }
     }
 
-    pub fn resolve(&self, domain: &str) -> Result<Ipv4Addr> {
+    pub fn resolve_all(&self, domain: &str) -> Result<Vec<Ipv4Addr>> {
+        if domain == "localhost" {
+            return Ok(vec![LOCALHOST_ADDR]);
+        }
+
         let socket = UdpSocket::bind("0.0.0.0:0")?;
 
         // RFC 1035
@@ -61,25 +66,31 @@ impl DnsClient {
         }
 
         if n == 0 {
-            return Err(WebError::DnsResolutionFailed);
+            return Err(WebError::DnsResolutionFailed(
+                "Timed out waiting for DNS response".into(),
+            ));
         }
 
         let buf = &buf[..n];
 
         // parse response
         if buf.len() < 12 {
-            return Err(WebError::DnsResolutionFailed);
+            return Err(WebError::DnsResolutionFailed("Short DNS response".into()));
         }
 
         let id = u16::from_be_bytes([buf[0], buf[1]]);
         let ancount = u16::from_be_bytes([buf[6], buf[7]]);
         if id != 0x1234 || ancount == 0 {
-            return Err(WebError::DnsResolutionFailed);
+            return Err(WebError::DnsResolutionFailed(
+                "Invalid DNS ID or empty response".into(),
+            ));
         }
 
         let mut pos = 12;
         pos = self.skip_name(buf, pos)?;
         pos += 4;
+
+        let mut addrs = Vec::new();
 
         for _ in 0..ancount {
             pos = self.skip_name(buf, pos)?;
@@ -89,7 +100,7 @@ impl DnsClient {
 
             if rtype == 1 && rdlen == 4 {
                 // Type A (IPv4)
-                return Ok(Ipv4Addr::new(
+                addrs.push(Ipv4Addr::new(
                     buf[pos],
                     buf[pos + 1],
                     buf[pos + 2],
@@ -99,7 +110,11 @@ impl DnsClient {
             pos += rdlen as usize;
         }
 
-        Err(WebError::DnsResolutionFailed)
+        if addrs.is_empty() {
+            return Err(WebError::DnsResolutionFailed("No DNS records found".into()));
+        }
+
+        Ok(addrs)
     }
 
     fn skip_name(&self, buf: &[u8], mut pos: usize) -> Result<usize> {
@@ -117,6 +132,8 @@ impl DnsClient {
             pos += b as usize + 1;
         }
 
-        Err(WebError::DnsResolutionFailed)
+        Err(WebError::DnsResolutionFailed(
+            "Buffer overflow decoding name".into(),
+        ))
     }
 }

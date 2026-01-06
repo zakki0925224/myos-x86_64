@@ -2,6 +2,8 @@ import os
 import subprocess
 import sys
 
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
 APPS_DIR = "apps"
 APPS_LIBC_DIR = "libc"
 OUTPUT_DIR = "build"
@@ -55,6 +57,8 @@ QEMU_ARGS = [
     f"-monitor telnet::{QEMU_MONITOR_PORT},server,nowait",
     f"-gdb tcp::{QEMU_GDB_PORT}",
 ]
+
+WEBSERVER_PORT = 8888
 
 is_kernel_test = False
 test_kernel_path = ""
@@ -374,6 +378,26 @@ def clean():
     _run_cmd(f"rm -rf ./{APPS_DIR}/bin")
 
 
+def webserver():
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-type", "text/html; charset=utf-8")
+            self.end_headers()
+            response = "<html><body><h1>Test</h1><p>Hello world!</p></body></html>"
+            self.wfile.write(response.encode("utf-8"))
+
+    httpd = HTTPServer(("0.0.0.0", WEBSERVER_PORT), Handler)
+    print(f"Starting web server on 0.0.0.0:{WEBSERVER_PORT}")
+    print(f"QEMU guest can access this via http://10.0.2.2:{WEBSERVER_PORT}")
+
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopping web server...")
+        httpd.server_close()
+
+
 TASKS = [
     build,
     make_iso,
@@ -384,6 +408,7 @@ TASKS = [
     gdb,
     dump,
     clean,
+    webserver,
 ]
 
 if __name__ == "__main__":

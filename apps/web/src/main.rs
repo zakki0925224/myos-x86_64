@@ -3,9 +3,11 @@
 
 mod dns;
 mod error;
+mod html;
 mod http;
 mod net;
 
+#[macro_use]
 extern crate alloc;
 
 use crate::http::HttpClient;
@@ -17,7 +19,7 @@ pub fn _start() {
     let _args = parse_args!();
 
     let client = HttpClient::new();
-    let res = client.get("example.com".to_string(), 80, "/".to_string());
+    let res = client.get("localhost".to_string(), 8888, "/".to_string());
     println!("{:?}", res);
     unsafe { exit(0) };
 }

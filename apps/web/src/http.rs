@@ -71,18 +71,21 @@ impl HttpResponse {
     }
 }
 
-pub struct HttpClient;
+pub struct HttpClient {
+    dns_client: DnsClient,
+}
 
 impl HttpClient {
     pub fn new() -> Self {
-        Self
+        Self {
+            dns_client: DnsClient::new(QEMU_DNS),
+        }
     }
 
     pub fn get(&self, host: String, port: u16, path: String) -> Result<HttpResponse> {
-        let dns_client = DnsClient::new(QEMU_DNS);
-        let ip = dns_client.resolve(&host)?;
-        println!("{:?} -> {:?}", host, ip);
-        let socket_addr = SocketAddr::new(IpAddr::V4(ip), port);
+        let addrs = self.dns_client.resolve_all(&host)?;
+        println!("{:?} -> {:?}", host, addrs);
+        let socket_addr = SocketAddr::new(IpAddr::V4(addrs[0]), port);
 
         let stream = TcpStream::connect(&socket_addr.to_string())?;
 
