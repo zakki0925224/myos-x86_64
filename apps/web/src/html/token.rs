@@ -2,7 +2,7 @@ use crate::html::attribute::Attribute;
 use alloc::{string::String, vec::Vec};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Token {
+pub enum HtmlToken {
     StartTag {
         tag: String,
         self_closing: bool,
@@ -38,17 +38,17 @@ pub enum State {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Tokenizer {
+pub struct HtmlTokenizer {
     state: State,
     pos: usize,
     reconsume: bool,
-    latest_token: Option<Token>,
+    latest_token: Option<HtmlToken>,
     input: Vec<char>,
     buf: String,
 }
 
-impl Iterator for Tokenizer {
-    type Item = Token;
+impl Iterator for HtmlTokenizer {
+    type Item = HtmlToken;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.pos >= self.input.len() {
@@ -69,10 +69,10 @@ impl Iterator for Tokenizer {
                     }
 
                     if self.is_eof() {
-                        return Some(Token::Eof);
+                        return Some(HtmlToken::Eof);
                     }
 
-                    return Some(Token::Char(c));
+                    return Some(HtmlToken::Char(c));
                 }
                 State::TagOpen => {
                     if c == '/' {
@@ -88,7 +88,7 @@ impl Iterator for Tokenizer {
                     }
 
                     if self.is_eof() {
-                        return Some(Token::Eof);
+                        return Some(HtmlToken::Eof);
                     }
 
                     self.reconsume = true;
@@ -96,7 +96,7 @@ impl Iterator for Tokenizer {
                 }
                 State::EndTagOpen => {
                     if self.is_eof() {
-                        return Some(Token::Eof);
+                        return Some(HtmlToken::Eof);
                     }
 
                     if c.is_ascii_alphabetic() {
@@ -128,7 +128,7 @@ impl Iterator for Tokenizer {
                     }
 
                     if self.is_eof() {
-                        return Some(Token::Eof);
+                        return Some(HtmlToken::Eof);
                     }
 
                     self.append_tag_name(c);
@@ -184,7 +184,7 @@ impl Iterator for Tokenizer {
                     }
 
                     if self.is_eof() {
-                        return Some(Token::Eof);
+                        return Some(HtmlToken::Eof);
                     }
 
                     self.reconsume = true;
@@ -216,7 +216,7 @@ impl Iterator for Tokenizer {
                     }
 
                     if self.is_eof() {
-                        return Some(Token::Eof);
+                        return Some(HtmlToken::Eof);
                     }
 
                     self.append_attribute(c, false);
@@ -228,7 +228,7 @@ impl Iterator for Tokenizer {
                     }
 
                     if self.is_eof() {
-                        return Some(Token::Eof);
+                        return Some(HtmlToken::Eof);
                     }
 
                     self.append_attribute(c, false);
@@ -245,7 +245,7 @@ impl Iterator for Tokenizer {
                     }
 
                     if self.is_eof() {
-                        return Some(Token::Eof);
+                        return Some(HtmlToken::Eof);
                     }
 
                     self.append_attribute(c, false);
@@ -267,7 +267,7 @@ impl Iterator for Tokenizer {
                     }
 
                     if self.is_eof() {
-                        return Some(Token::Eof);
+                        return Some(HtmlToken::Eof);
                     }
 
                     self.reconsume = true;
@@ -282,7 +282,7 @@ impl Iterator for Tokenizer {
 
                     if self.is_eof() {
                         // invalid parse error
-                        return Some(Token::Eof);
+                        return Some(HtmlToken::Eof);
                     }
                 }
                 State::ScriptData => {
@@ -292,10 +292,10 @@ impl Iterator for Tokenizer {
                     }
 
                     if self.is_eof() {
-                        return Some(Token::Eof);
+                        return Some(HtmlToken::Eof);
                     }
 
-                    return Some(Token::Char(c));
+                    return Some(HtmlToken::Char(c));
                 }
                 State::ScriptDataLessThanSign => {
                     if c == '/' {
@@ -306,7 +306,7 @@ impl Iterator for Tokenizer {
 
                     self.reconsume = true;
                     self.state = State::ScriptData;
-                    return Some(Token::Char('<'));
+                    return Some(HtmlToken::Char('<'));
                 }
                 State::ScriptDataEndTagOpen => {
                     if c.is_ascii_alphabetic() {
@@ -318,7 +318,7 @@ impl Iterator for Tokenizer {
 
                     self.reconsume = true;
                     self.state = State::ScriptData;
-                    return Some(Token::Char('<'));
+                    return Some(HtmlToken::Char('<'));
                 }
                 State::ScriptDataEndTagName => {
                     if c == '>' {
@@ -351,14 +351,14 @@ impl Iterator for Tokenizer {
                         .nth(0)
                         .expect("self.buf should have at least 1 char");
                     self.buf.remove(0);
-                    return Some(Token::Char(c));
+                    return Some(HtmlToken::Char(c));
                 }
             }
         }
     }
 }
 
-impl Tokenizer {
+impl HtmlTokenizer {
     pub fn new(html: String) -> Self {
         Self {
             state: State::Data,
@@ -382,13 +382,13 @@ impl Tokenizer {
 
     fn create_tag(&mut self, start_tag_token: bool) {
         if start_tag_token {
-            self.latest_token = Some(Token::StartTag {
+            self.latest_token = Some(HtmlToken::StartTag {
                 tag: String::new(),
                 self_closing: false,
                 attributes: Vec::new(),
             });
         } else {
-            self.latest_token = Some(Token::EndTag { tag: String::new() })
+            self.latest_token = Some(HtmlToken::EndTag { tag: String::new() })
         }
     }
 
@@ -402,18 +402,18 @@ impl Tokenizer {
 
         if let Some(t) = self.latest_token.as_mut() {
             match t {
-                Token::StartTag {
+                HtmlToken::StartTag {
                     tag,
                     self_closing: _,
                     attributes: _,
                 }
-                | Token::EndTag { tag } => tag.push(c),
+                | HtmlToken::EndTag { tag } => tag.push(c),
                 _ => panic!("`latest_token` should be either StartTag of EndTag"),
             }
         }
     }
 
-    fn take_latest_token(&mut self) -> Option<Token> {
+    fn take_latest_token(&mut self) -> Option<HtmlToken> {
         assert!(self.latest_token.is_some());
 
         let t = self.latest_token.as_ref().cloned();
@@ -428,7 +428,7 @@ impl Tokenizer {
 
         if let Some(t) = self.latest_token.as_mut() {
             match t {
-                Token::StartTag {
+                HtmlToken::StartTag {
                     tag: _,
                     self_closing: _,
                     attributes,
@@ -445,7 +445,7 @@ impl Tokenizer {
 
         if let Some(t) = self.latest_token.as_mut() {
             match t {
-                Token::StartTag {
+                HtmlToken::StartTag {
                     tag: _,
                     self_closing: _,
                     attributes,
@@ -465,7 +465,7 @@ impl Tokenizer {
 
         if let Some(t) = self.latest_token.as_mut() {
             match t {
-                Token::StartTag {
+                HtmlToken::StartTag {
                     tag: _,
                     self_closing,
                     attributes: _,

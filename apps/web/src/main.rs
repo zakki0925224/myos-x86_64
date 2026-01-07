@@ -2,6 +2,7 @@
 #![no_main]
 
 mod dns;
+mod dom;
 mod error;
 mod html;
 mod http;
