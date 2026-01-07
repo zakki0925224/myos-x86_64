@@ -69,6 +69,10 @@ impl HttpResponse {
             body: body.to_string(),
         })
     }
+
+    pub fn body(&self) -> String {
+        self.body.clone()
+    }
 }
 
 pub struct HttpClient {
