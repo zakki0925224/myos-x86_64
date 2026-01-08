@@ -1,4 +1,4 @@
-use crate::dom::node::Node;
+use crate::renderer::dom::node::Node;
 use alloc::{rc::Rc, string::String};
 use core::cell::RefCell;
 

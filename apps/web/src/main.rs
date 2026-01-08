@@ -1,20 +1,17 @@
 #![no_std]
 #![no_main]
 
-mod browser;
 mod dns;
-mod dom;
 mod error;
-mod html;
 mod http;
 mod net;
-mod page;
+mod renderer;
 mod util;
 
 #[macro_use]
 extern crate alloc;
 
-use crate::{browser::Browser, http::HttpClient};
+use crate::{http::HttpClient, renderer::browser::Browser};
 use alloc::string::ToString;
 use libc_rs::*;
 

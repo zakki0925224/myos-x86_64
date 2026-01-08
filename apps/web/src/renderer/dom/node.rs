@@ -1,4 +1,4 @@
-use crate::html::attribute::Attribute;
+use crate::renderer::html::attribute::Attribute;
 use alloc::{
     rc::{Rc, Weak},
     string::String,
@@ -36,6 +36,7 @@ pub enum ElementKind {
     Style,
     Script,
     Body,
+    Div,
     P,
     H1,
     H2,
@@ -52,6 +53,7 @@ impl FromStr for ElementKind {
             "style" => Ok(ElementKind::Style),
             "script" => Ok(ElementKind::Script),
             "body" => Ok(ElementKind::Body),
+            "div" => Ok(ElementKind::Div),
             "p" => Ok(ElementKind::P),
             "h1" => Ok(ElementKind::H1),
             "h2" => Ok(ElementKind::H2),

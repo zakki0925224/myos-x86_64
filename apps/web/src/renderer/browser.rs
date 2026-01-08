@@ -1,4 +1,4 @@
-use crate::page::Page;
+use crate::renderer::page::Page;
 use alloc::{rc::Rc, vec::Vec};
 use core::cell::RefCell;
 

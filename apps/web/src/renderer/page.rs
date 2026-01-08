@@ -1,8 +1,10 @@
 use crate::{
-    browser::Browser,
-    dom::node::Window,
-    html::{parser::HtmlParser, token::HtmlTokenizer},
     http::HttpResponse,
+    renderer::{
+        browser::Browser,
+        dom::node::Window,
+        html::{parser::HtmlParser, token::HtmlTokenizer},
+    },
     util::convert_dom_to_string,
 };
 use alloc::{

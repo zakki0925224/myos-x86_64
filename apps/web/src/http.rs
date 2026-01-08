@@ -8,7 +8,6 @@ use alloc::{
     vec::Vec,
 };
 use core::net::{IpAddr, SocketAddr};
-use libc_rs::println;
 
 #[derive(Debug, Clone)]
 pub struct Header {
@@ -88,7 +87,6 @@ impl HttpClient {
 
     pub fn get(&self, host: String, port: u16, path: String) -> Result<HttpResponse> {
         let addrs = self.dns_client.resolve_all(&host)?;
-        println!("{:?} -> {:?}", host, addrs);
         let socket_addr = SocketAddr::new(IpAddr::V4(addrs[0]), port);
 
         let stream = TcpStream::connect(&socket_addr.to_string())?;

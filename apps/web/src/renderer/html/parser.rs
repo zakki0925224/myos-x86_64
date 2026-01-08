@@ -1,4 +1,4 @@
-use crate::{
+use crate::renderer::{
     dom::node::*,
     html::{
         attribute::Attribute,
@@ -111,7 +111,7 @@ impl HtmlParser {
         );
 
         loop {
-            let current = match self.stack_of_open_elements.last() {
+            let current = match self.stack_of_open_elements.pop() {
                 Some(n) => n,
                 None => return,
             };
@@ -348,14 +348,17 @@ impl HtmlParser {
                                 token = self.t.next();
                                 continue;
                             }
+                            "div" => {
+                                self.insert_element(tag, attributes.to_vec());
+                                token = self.t.next();
+                                continue;
+                            }
                             "a" => {
                                 self.insert_element(tag, attributes.to_vec());
                                 token = self.t.next();
                                 continue;
                             }
-                            _ => {
-                                token = self.t.next();
-                            }
+                            _ => {}
                         },
                         Some(HtmlToken::EndTag { ref tag }) => match tag.as_str() {
                             "body" => {
@@ -393,6 +396,13 @@ impl HtmlParser {
                                 self.pop_until(element_kind);
                                 continue;
                             }
+                            "div" => {
+                                let element_kind = ElementKind::from_str(tag)
+                                    .expect("Failed to convert string to ElementKind");
+                                token = self.t.next();
+                                self.pop_until(element_kind);
+                                continue;
+                            }
                             "a" => {
                                 let element_kind = ElementKind::from_str(tag)
                                     .expect("Failed to convert string to ElementKind");
@@ -400,9 +410,7 @@ impl HtmlParser {
                                 self.pop_until(element_kind);
                                 continue;
                             }
-                            _ => {
-                                token = self.t.next();
-                            }
+                            _ => {}
                         },
                         Some(HtmlToken::Char(c)) => {
                             self.insert_char(c);
@@ -412,7 +420,6 @@ impl HtmlParser {
                         Some(HtmlToken::Eof) | None => {
                             return self.window.clone();
                         }
-                        _ => (),
                     }
 
                     token = self.t.next();

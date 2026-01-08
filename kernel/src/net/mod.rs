@@ -7,7 +7,7 @@ use crate::{
     sync::mutex::Mutex,
 };
 use alloc::{collections::btree_map::BTreeMap, vec::Vec};
-use core::net::Ipv4Addr;
+use core::{net::Ipv4Addr, time::Duration};
 
 pub mod arp;
 pub mod eth;
@@ -17,7 +17,7 @@ pub mod socket;
 pub mod tcp;
 pub mod udp;
 
-type ArpTable = BTreeMap<Ipv4Addr, EthernetAddress>;
+type ArpTable = BTreeMap<Ipv4Addr, (Option<EthernetAddress>, Duration)>;
 
 const GATEWAY_ADDR: Ipv4Addr = Ipv4Addr::new(10, 0, 2, 2);
 const LOCAL_ADDR: Ipv4Addr = Ipv4Addr::new(10, 0, 2, 15);
@@ -640,7 +640,13 @@ impl NetworkManager {
         let sender_mac_addr = packet.sender_eth_addr;
         let target_ipv4_addr = packet.target_ipv4_addr;
 
-        self.arp_table.insert(sender_ipv4_addr, sender_mac_addr);
+        self.arp_table.insert(
+            sender_ipv4_addr,
+            (
+                Some(sender_mac_addr),
+                device::local_apic_timer::global_uptime(),
+            ),
+        );
 
         if arp_op == ArpOperation::Request {
             if target_ipv4_addr != self.my_ipv4_addr {
@@ -806,20 +812,32 @@ impl NetworkManager {
     }
 
     fn resolve_mac_addr(&mut self, ipv4_addr: Ipv4Addr) -> Result<Option<EthernetAddress>> {
-        if let Some(mac) = self.arp_table.get(&ipv4_addr) {
-            Ok(Some(*mac))
-        } else {
-            let eth_addr = EthernetAddress::broadcast();
-            self.send_arp_packet(
-                ArpOperation::Request,
-                self.my_mac_addr()?,
-                self.my_ipv4_addr,
-                eth_addr,
-                ipv4_addr,
-            )?;
+        let now = device::local_apic_timer::global_uptime();
 
-            Ok(None)
+        if let Some(entry) = self.arp_table.get_mut(&ipv4_addr) {
+            match entry {
+                (Some(mac), _) => return Ok(Some(*mac)),
+                (None, last_req) => {
+                    if now < *last_req + Duration::from_millis(1000) {
+                        return Ok(None);
+                    }
+                    *last_req = now; // Update last request time
+                }
+            }
+        } else {
+            self.arp_table.insert(ipv4_addr, (None, now));
         }
+
+        let eth_addr = EthernetAddress::broadcast();
+        self.send_arp_packet(
+            ArpOperation::Request,
+            self.my_mac_addr()?,
+            self.my_ipv4_addr,
+            eth_addr,
+            ipv4_addr,
+        )?;
+
+        Ok(None)
     }
 }
 
