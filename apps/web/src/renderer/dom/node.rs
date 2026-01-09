@@ -4,7 +4,11 @@ use alloc::{
     string::String,
     vec::Vec,
 };
-use core::{cell::RefCell, str::FromStr};
+use core::{
+    cell::RefCell,
+    fmt::{Display, Formatter},
+    str::FromStr,
+};
 
 #[derive(Debug, Clone)]
 pub struct Window {
@@ -63,6 +67,25 @@ impl FromStr for ElementKind {
     }
 }
 
+impl Display for ElementKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            ElementKind::Html => "html",
+            ElementKind::Head => "head",
+            ElementKind::Style => "style",
+            ElementKind::Script => "script",
+            ElementKind::Body => "body",
+            ElementKind::H1 => "h1",
+            ElementKind::H2 => "h2",
+            ElementKind::P => "p",
+            ElementKind::A => "a",
+            ElementKind::Div => "div",
+        };
+
+        write!(f, "{}", s)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Element {
     kind: ElementKind,
@@ -79,6 +102,17 @@ impl Element {
 
     pub fn kind(&self) -> ElementKind {
         self.kind
+    }
+
+    pub fn is_block_element(&self) -> bool {
+        match self.kind {
+            ElementKind::Body | ElementKind::H1 | ElementKind::H2 | ElementKind::P => true,
+            _ => false,
+        }
+    }
+
+    pub fn attributes(&self) -> Vec<Attribute> {
+        self.attributes.clone()
     }
 }
 

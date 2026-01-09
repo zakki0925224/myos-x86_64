@@ -85,17 +85,17 @@ impl HttpClient {
         }
     }
 
-    pub fn get(&self, host: String, port: u16, path: String) -> Result<HttpResponse> {
-        let addrs = self.dns_client.resolve_all(&host)?;
+    pub fn get(&self, host: &str, port: u16, path: &str) -> Result<HttpResponse> {
+        let addrs = self.dns_client.resolve_all(host)?;
         let socket_addr = SocketAddr::new(IpAddr::V4(addrs[0]), port);
 
         let stream = TcpStream::connect(&socket_addr.to_string())?;
 
         let mut request = String::from("GET ");
-        request.push_str(&path);
+        request.push_str(path);
         request.push_str(" HTTP/1.1\r\n");
         request.push_str("Host: ");
-        request.push_str(&host);
+        request.push_str(host);
         request.push_str("\r\n");
         request.push_str("Accept: text/html\r\n");
         request.push_str("Connection: close\r\n");

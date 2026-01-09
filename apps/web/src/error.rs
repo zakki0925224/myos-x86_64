@@ -14,6 +14,7 @@ pub enum WebError {
     RecvFromFailed,
     InvalidReceivedResponse,
     InvalidHttpResponse(String),
+    UnexpectedInput(String),
 }
 
 impl From<String> for WebError {

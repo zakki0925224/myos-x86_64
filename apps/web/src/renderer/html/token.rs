@@ -1,4 +1,4 @@
-use crate::html::attribute::Attribute;
+use crate::renderer::html::attribute::Attribute;
 use alloc::{string::String, vec::Vec};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

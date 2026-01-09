@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+mod constsnt;
 mod dns;
 mod error;
 mod http;
@@ -12,17 +13,19 @@ mod util;
 extern crate alloc;
 
 use crate::{http::HttpClient, renderer::browser::Browser};
-use alloc::string::ToString;
 use libc_rs::*;
 
 #[unsafe(no_mangle)]
 pub fn _start() {
-    let _args = parse_args!();
+    let args = parse_args!();
+    let host = if args.len() < 2 {
+        "example.com"
+    } else {
+        args[1]
+    };
 
     let client = HttpClient::new();
-    let res = client
-        .get("example.com".to_string(), 80, "/".to_string())
-        .unwrap();
+    let res = client.get(host, 80, "/").unwrap();
     println!("{:?}", res);
 
     let browser = Browser::new();
