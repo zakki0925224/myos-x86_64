@@ -2,12 +2,12 @@
 #![no_main]
 
 mod constsnt;
+mod display_item;
 mod dns;
 mod error;
 mod http;
 mod net;
 mod renderer;
-mod util;
 
 #[macro_use]
 extern crate alloc;
@@ -30,10 +30,10 @@ pub fn _start() {
 
     let browser = Browser::new();
     let page = browser.borrow().current_page();
-    let dom_string = page.borrow_mut().receive_response(res);
+    page.borrow_mut().receive_response(res);
 
-    for log in dom_string.lines() {
-        println!("{}", log);
+    for item in browser.borrow().current_page().borrow().display_items() {
+        println!("{:?}", item);
     }
 
     unsafe { exit(0) };

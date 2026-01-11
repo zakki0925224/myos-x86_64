@@ -1,5 +1,9 @@
-use crate::renderer::dom::node::{Element, ElementKind, Node, NodeKind};
-use alloc::{rc::Rc, string::ToString, vec::Vec};
+use crate::renderer::dom::node::*;
+use alloc::{
+    rc::Rc,
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::cell::RefCell;
 
 pub fn get_tagret_element_node(
@@ -14,8 +18,8 @@ pub fn get_tagret_element_node(
                 return Some(n.clone());
             }
 
-            let mut result1 = get_tagret_element_node(n.borrow().first_child(), element_kind);
-            let mut result2 = get_tagret_element_node(n.borrow().next_sibling(), element_kind);
+            let result1 = get_tagret_element_node(n.borrow().first_child(), element_kind);
+            let result2 = get_tagret_element_node(n.borrow().next_sibling(), element_kind);
 
             if result1.is_none() && result2.is_none() {
                 return None;
@@ -29,4 +33,23 @@ pub fn get_tagret_element_node(
         }
         None => None,
     }
+}
+
+pub fn get_style_content(root: Rc<RefCell<Node>>) -> String {
+    let style_node = match get_tagret_element_node(Some(root), ElementKind::Style) {
+        Some(node) => node,
+        None => return "".to_string(),
+    };
+
+    let text_node = match style_node.borrow().first_child() {
+        Some(node) => node,
+        None => return "".to_string(),
+    };
+
+    let content = match &text_node.borrow().kind() {
+        NodeKind::Text(s) => s.clone(),
+        _ => "".to_string(),
+    };
+
+    content
 }
