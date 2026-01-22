@@ -589,8 +589,8 @@ fn sys_chdir(path: *const u8) -> Result<()> {
 
 fn sys_sbrksz(target: *const u8) -> Result<usize> {
     let target_virt_addr: VirtualAddress = (target as u64).into();
-    let TaskResult::MemoryFrameSizeByAddress(size) =
-        task::single_scheduler::request(TaskRequest::MemoryFrameSizeByAddress(target_virt_addr))?
+    let TaskResult::MemoryFrameSize(size) =
+        task::single_scheduler::request(TaskRequest::GetMemoryFrameSize(target_virt_addr))?
     else {
         unreachable!()
     };

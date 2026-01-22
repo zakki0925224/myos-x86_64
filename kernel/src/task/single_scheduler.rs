@@ -219,15 +219,15 @@ pub fn request(req: TaskRequest) -> Result<TaskResult> {
             }?;
             Ok(TaskResult::Ok)
         }
-        TaskRequest::MemoryFrameSizeByAddress(virt_addr) => {
+        TaskRequest::GetMemoryFrameSize(virt_addr) => {
             let size = unsafe { SINGLE_TASK_SCHED.get_memory_frame_size_by_virt_addr(virt_addr) }?;
-            Ok(TaskResult::MemoryFrameSizeByAddress(size))
+            Ok(TaskResult::MemoryFrameSize(size))
         }
         TaskRequest::ExecuteDebugger => {
             let res = unsafe { SINGLE_TASK_SCHED.debug_user_task() };
             Ok(TaskResult::ExecuteDebugger(res))
         }
-        TaskRequest::Dwarf => {
+        TaskRequest::GetDwarf => {
             let dwarf = unsafe { SINGLE_TASK_SCHED.get_running_user_task_dwarf() };
             Ok(TaskResult::Dwarf(dwarf))
         }

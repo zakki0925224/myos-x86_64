@@ -271,7 +271,8 @@ extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
 
     let debugger_result;
 
-    let Ok(TaskResult::Dwarf(dwarf)) = task::single_scheduler::request(TaskRequest::Dwarf) else {
+    let Ok(TaskResult::Dwarf(dwarf)) = task::single_scheduler::request(TaskRequest::GetDwarf)
+    else {
         panic!("Failed to get DWARF");
     };
 
