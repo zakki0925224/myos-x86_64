@@ -6,20 +6,20 @@ use crate::{
     graphics::multi_layer::LayerId,
     kdebug,
     mem::bitmap::MemoryFrameInfo,
-    task::{self, Task},
+    task::{self, *},
 };
 use alloc::{string::ToString, vec::Vec};
 use common::elf::Elf64;
 
-static mut TASK_SCHED: TaskScheduler = TaskScheduler::new();
+static mut SINGLE_TASK_SCHED: SingleTaskScheduler = SingleTaskScheduler::new();
 
-struct TaskScheduler {
+struct SingleTaskScheduler {
     kernel_task: Option<Task>,
     user_tasks: Vec<Task>,
     user_exit_status: Option<i32>,
 }
 
-impl TaskScheduler {
+impl SingleTaskScheduler {
     const fn new() -> Self {
         Self {
             kernel_task: None,
@@ -44,7 +44,7 @@ impl TaskScheduler {
         }
     }
 
-    /// temporarily pop the current user task, execute closure `f`, and push back if needed.
+    // temporarily pop the current user task, execute closure `f`, and push back if needed.
     fn with_popped_user_task<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce(Task, &mut Self) -> R,
@@ -188,41 +188,48 @@ pub fn exec_user_task(
     args: &[&str],
     dwarf: Option<Dwarf>,
 ) -> Result<i32> {
-    unsafe { TASK_SCHED.exec_user_task(elf64, path, args, dwarf) }
-}
-
-pub fn push_allocated_mem_frame_info_for_user_task(mem_frame_info: MemoryFrameInfo) -> Result<()> {
-    unsafe { TASK_SCHED.push_allocated_mem_frame_info_for_user_task(mem_frame_info) }
-}
-
-pub fn get_memory_frame_size_by_virt_addr(virt_addr: VirtualAddress) -> Result<Option<usize>> {
-    unsafe { TASK_SCHED.get_memory_frame_size_by_virt_addr(virt_addr) }
-}
-
-pub fn push_layer_id(layer_id: LayerId) -> Result<()> {
-    unsafe { TASK_SCHED.push_layer_id(layer_id) }
-}
-
-pub fn remove_layer_id(layer_id: LayerId) -> Result<()> {
-    unsafe { TASK_SCHED.remove_layer_id(layer_id) }
-}
-
-pub fn push_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
-    unsafe { TASK_SCHED.push_fd_num(fd_num) }
-}
-
-pub fn remove_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
-    unsafe { TASK_SCHED.remove_fd_num(fd_num) }
+    unsafe { SINGLE_TASK_SCHED.exec_user_task(elf64, path, args, dwarf) }
 }
 
 pub fn return_task(exit_status: i32) {
-    unsafe { TASK_SCHED.return_task(exit_status) }
+    unsafe { SINGLE_TASK_SCHED.return_task(exit_status) }
 }
 
-pub fn debug_user_task() -> bool {
-    unsafe { TASK_SCHED.debug_user_task() }
-}
-
-pub fn get_running_user_task_dwarf() -> Option<Dwarf> {
-    unsafe { TASK_SCHED.get_running_user_task_dwarf() }
+pub fn request(req: TaskRequest) -> Result<TaskResult> {
+    match req {
+        TaskRequest::PushLayerId(layer_id) => {
+            unsafe { SINGLE_TASK_SCHED.push_layer_id(layer_id) }?;
+            Ok(TaskResult::Ok)
+        }
+        TaskRequest::RemoveLayerId(layer_id) => {
+            unsafe { SINGLE_TASK_SCHED.remove_layer_id(layer_id) }?;
+            Ok(TaskResult::Ok)
+        }
+        TaskRequest::PushFileDescriptorNumber(fd_num) => {
+            unsafe { SINGLE_TASK_SCHED.push_fd_num(fd_num) }?;
+            Ok(TaskResult::Ok)
+        }
+        TaskRequest::RemoveFileDescriptorNumber(fd_num) => {
+            unsafe { SINGLE_TASK_SCHED.remove_fd_num(fd_num) }?;
+            Ok(TaskResult::Ok)
+        }
+        TaskRequest::PushMemory(mem_frame_info) => {
+            unsafe {
+                SINGLE_TASK_SCHED.push_allocated_mem_frame_info_for_user_task(mem_frame_info)
+            }?;
+            Ok(TaskResult::Ok)
+        }
+        TaskRequest::MemoryFrameSizeByAddress(virt_addr) => {
+            let size = unsafe { SINGLE_TASK_SCHED.get_memory_frame_size_by_virt_addr(virt_addr) }?;
+            Ok(TaskResult::MemoryFrameSizeByAddress(size))
+        }
+        TaskRequest::ExecuteDebugger => {
+            let res = unsafe { SINGLE_TASK_SCHED.debug_user_task() };
+            Ok(TaskResult::ExecuteDebugger(res))
+        }
+        TaskRequest::Dwarf => {
+            let dwarf = unsafe { SINGLE_TASK_SCHED.get_running_user_task_dwarf() };
+            Ok(TaskResult::Dwarf(dwarf))
+        }
+    }
 }

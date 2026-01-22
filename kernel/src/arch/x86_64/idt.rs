@@ -8,7 +8,7 @@ use crate::{
     kerror, kinfo,
     mem::paging,
     sync::mutex::Mutex,
-    task,
+    task::{self, *},
 };
 
 static mut IDT: Mutex<InterruptDescriptorTable> = Mutex::new(InterruptDescriptorTable::new());
@@ -271,7 +271,11 @@ extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
 
     let debugger_result;
 
-    if let Some(dwarf) = task::scheduler::get_running_user_task_dwarf() {
+    let Ok(TaskResult::Dwarf(dwarf)) = task::single_scheduler::request(TaskRequest::Dwarf) else {
+        panic!("Failed to get DWARF");
+    };
+
+    if let Some(dwarf) = dwarf {
         match debug::user_app_debugger(&stack_frame, &dwarf) {
             Ok(res) => debugger_result = res,
             Err(err) => {
@@ -302,8 +306,14 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 extern "x86-interrupt" fn general_protection_fault_handler(stack_frame: InterruptStackFrame) {
     kerror!("int: GENERAL PROTECTION FAULT, {:?}", stack_frame);
 
-    if task::scheduler::debug_user_task() {
-        task::scheduler::return_task(122);
+    let Ok(TaskResult::ExecuteDebugger(res)) =
+        task::single_scheduler::request(TaskRequest::ExecuteDebugger)
+    else {
+        panic!("Failed to execute debugger");
+    };
+
+    if res {
+        task::single_scheduler::return_task(122);
     }
 
     panic!();
@@ -322,8 +332,14 @@ extern "x86-interrupt" fn page_fault_handler(
         accessed_virt_addr, error_code, stack_frame, page_virt_addr.get(), page_table_entry
     );
 
-    if task::scheduler::debug_user_task() {
-        task::scheduler::return_task(123);
+    let Ok(TaskResult::ExecuteDebugger(res)) =
+        task::single_scheduler::request(TaskRequest::ExecuteDebugger)
+    else {
+        panic!("Failed to execute debugger");
+    };
+
+    if res {
+        task::single_scheduler::return_task(122);
     }
 
     panic!();

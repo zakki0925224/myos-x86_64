@@ -14,7 +14,9 @@ use crate::{
     kdebug, kerror, kinfo,
     mem::{bitmap, paging::PAGE_SIZE},
     net::{self, socket::*},
-    print, task, util,
+    print,
+    task::{self, TaskRequest, TaskResult},
+    util,
 };
 use alloc::{
     boxed::Box,
@@ -438,7 +440,12 @@ fn sys_open(filepath: *const u8, flags: i32) -> Result<i32> {
         .into();
     let create = (flags as u32) & OPEN_FLAG_CREATE != 0;
     let fd_num = vfs::open_file(&filepath, create)?;
-    task::scheduler::push_fd_num(fd_num)?;
+
+    let TaskResult::Ok =
+        task::single_scheduler::request(TaskRequest::PushFileDescriptorNumber(fd_num))?
+    else {
+        unreachable!()
+    };
 
     Ok(fd_num.get() as i32)
 }
@@ -446,7 +453,11 @@ fn sys_open(filepath: *const u8, flags: i32) -> Result<i32> {
 fn sys_close(fd_num: i32) -> Result<()> {
     if let Ok(fd) = FileDescriptorNumber::new_val(fd_num) {
         if vfs::close_file(fd).is_ok() {
-            task::scheduler::remove_fd_num(fd)?;
+            let TaskResult::Ok =
+                task::single_scheduler::request(TaskRequest::RemoveFileDescriptorNumber(fd))?
+            else {
+                unreachable!()
+            };
             return Ok(());
         }
     }
@@ -461,7 +472,7 @@ fn sys_close(fd_num: i32) -> Result<()> {
 }
 
 fn sys_exit(status: i32) {
-    task::scheduler::return_task(status)
+    task::single_scheduler::return_task(status)
 }
 
 fn sys_sbrk(len: usize) -> Result<*const u8> {
@@ -474,7 +485,12 @@ fn sys_sbrk(len: usize) -> Result<*const u8> {
         mem_frame_info.frame_size,
         virt_addr.get()
     );
-    task::scheduler::push_allocated_mem_frame_info_for_user_task(mem_frame_info)?;
+
+    let TaskResult::Ok = task::single_scheduler::request(TaskRequest::PushMemory(mem_frame_info))?
+    else {
+        unreachable!()
+    };
+
     Ok(virt_addr.as_ptr())
 }
 
@@ -516,7 +532,7 @@ fn sys_uname(buf: *mut utsname) -> Result<()> {
 }
 
 fn sys_break() {
-    task::scheduler::debug_user_task();
+    let _ = task::single_scheduler::request(TaskRequest::ExecuteDebugger);
     x86_64::int3();
 }
 
@@ -573,8 +589,13 @@ fn sys_chdir(path: *const u8) -> Result<()> {
 
 fn sys_sbrksz(target: *const u8) -> Result<usize> {
     let target_virt_addr: VirtualAddress = (target as u64).into();
-    let size = task::scheduler::get_memory_frame_size_by_virt_addr(target_virt_addr)?
-        .ok_or::<Error>("Failed to get memory frame size".into())?;
+    let TaskResult::MemoryFrameSizeByAddress(size) =
+        task::single_scheduler::request(TaskRequest::MemoryFrameSizeByAddress(target_virt_addr))?
+    else {
+        unreachable!()
+    };
+
+    let size = size.ok_or::<Error>("Failed to get memory frame size".into())?;
     Ok(size)
 }
 
@@ -622,7 +643,12 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
 
             let layer_id = LayerId::new_val(layer_id as usize);
             simple_window_manager::remove_component(layer_id)?;
-            task::scheduler::remove_layer_id(layer_id)?;
+
+            let TaskResult::Ok =
+                task::single_scheduler::request(TaskRequest::RemoveLayerId(layer_id))?
+            else {
+                unreachable!()
+            };
 
             // reply
             let reply_header = iomsg_header::new(IomsgCommand::RemoveComponent, 0);
@@ -656,7 +682,11 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             }
 
             let layer_id = simple_window_manager::create_window(title, xy, wh)?;
-            task::scheduler::push_layer_id(layer_id.clone())?;
+            let TaskResult::Ok =
+                task::single_scheduler::request(TaskRequest::PushLayerId(layer_id.clone()))?
+            else {
+                unreachable!()
+            };
 
             // reply
             let reply_header =

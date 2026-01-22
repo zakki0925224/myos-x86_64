@@ -1,5 +1,8 @@
 use crate::{
-    arch::x86_64::context::{Context, ContextMode},
+    arch::{
+        x86_64::context::{Context, ContextMode},
+        VirtualAddress,
+    },
     debug::dwarf::Dwarf,
     error::Result,
     fs::vfs::{self, *},
@@ -19,7 +22,8 @@ use core::{
 };
 
 pub mod async_task;
-pub mod scheduler;
+pub mod multi_scheduler;
+pub mod single_scheduler;
 pub mod syscall;
 
 pub const USER_TASK_STACK_SIZE: usize = 1024 * 1024; // 1MiB
@@ -45,9 +49,29 @@ impl TaskId {
 }
 
 #[derive(Debug, Clone)]
+pub enum TaskRequest {
+    PushLayerId(LayerId),
+    RemoveLayerId(LayerId),
+    PushFileDescriptorNumber(FileDescriptorNumber),
+    RemoveFileDescriptorNumber(FileDescriptorNumber),
+    PushMemory(MemoryFrameInfo),
+    MemoryFrameSizeByAddress(VirtualAddress),
+    ExecuteDebugger,
+    Dwarf,
+}
+
+#[derive(Debug, Clone)]
+pub enum TaskResult {
+    Ok,
+    MemoryFrameSizeByAddress(Option<usize>),
+    ExecuteDebugger(bool),
+    Dwarf(Option<Dwarf>),
+}
+
+#[derive(Debug, Clone)]
 struct TaskResource {
     args_mem_frame_info: Option<MemoryFrameInfo>,
-    stack_mem_frame_info: MemoryFrameInfo,
+    stack_mem_frame_info: Option<MemoryFrameInfo>,
     program_mem_info: Vec<(MemoryFrameInfo, MappingInfo)>,
     allocated_mem_frame_info: Vec<MemoryFrameInfo>,
     created_layer_ids: Vec<LayerId>,
@@ -61,10 +85,12 @@ impl Drop for TaskResource {
             bitmap::dealloc_mem_frame(args_mem_frame_info).unwrap();
         }
 
-        self.stack_mem_frame_info
-            .set_permissions_to_supervisor()
-            .unwrap();
-        bitmap::dealloc_mem_frame(self.stack_mem_frame_info).unwrap();
+        if let Some(stack_mem_frame_info) = self.stack_mem_frame_info {
+            stack_mem_frame_info
+                .set_permissions_to_supervisor()
+                .unwrap();
+            bitmap::dealloc_mem_frame(stack_mem_frame_info).unwrap();
+        }
 
         for (mem_info, mapping_info) in self.program_mem_info.iter() {
             let start = mapping_info.start;
@@ -106,7 +132,7 @@ impl Drop for TaskResource {
 impl TaskResource {
     fn new(
         args_mem_frame_info: Option<MemoryFrameInfo>,
-        stack_mem_frame_info: MemoryFrameInfo,
+        stack_mem_frame_info: Option<MemoryFrameInfo>,
         program_mem_info: Vec<(MemoryFrameInfo, MappingInfo)>,
     ) -> Self {
         Self {
@@ -120,9 +146,24 @@ impl TaskResource {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskState {
+    Running,
+    Ready,
+    Sleeping,
+    Exited(i32),
+}
+
+impl TaskState {
+    const fn default() -> Self {
+        Self::Ready
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Task {
     id: TaskId,
+    state: TaskState,
     context: Context,
     resource: TaskResource,
     dwarf: Option<Dwarf>,
@@ -208,13 +249,23 @@ impl Task {
         };
 
         // stack
-        let stack_mem_frame_info = bitmap::alloc_mem_frame(stack_size.div_ceil(PAGE_SIZE).max(1))?;
-        match mode {
-            ContextMode::Kernel => stack_mem_frame_info.set_permissions_to_supervisor()?,
-            ContextMode::User => stack_mem_frame_info.set_permissions_to_user()?,
-        }
-        let rsp =
-            (stack_mem_frame_info.frame_start_virt_addr()?.get() + stack_size as u64 - 63) & !63;
+        let stack_mem_frame_info = if stack_size > 0 {
+            let stack = bitmap::alloc_mem_frame(stack_size.div_ceil(PAGE_SIZE).max(1))?;
+            match mode {
+                ContextMode::Kernel => stack.set_permissions_to_supervisor()?,
+                ContextMode::User => stack.set_permissions_to_user()?,
+            }
+
+            Some(stack)
+        } else {
+            None
+        };
+
+        let rsp = if let Some(stack) = stack_mem_frame_info.as_ref() {
+            (stack.frame_start_virt_addr()?.get() + stack_size as u64 - 63) & !63
+        } else {
+            0
+        };
         assert!(rsp % 64 == 0); // must be 64 bytes align for SSE and AVX instructions, etc.
 
         // args
@@ -259,6 +310,7 @@ impl Task {
 
         Ok(Self {
             id: TaskId::new(),
+            state: TaskState::default(),
             context,
             resource: TaskResource::new(
                 args_mem_frame_info,
@@ -309,14 +361,15 @@ impl Task {
 pub fn debug_task(task: &Task) {
     let ctx = &task.context;
     kdebug!("task id: {}", task.id);
-    kdebug!(
-        "stack: (phys)0x{:x}, size: 0x{:x}bytes",
-        task.resource
-            .stack_mem_frame_info
-            .frame_start_phys_addr
-            .get(),
-        task.resource.stack_mem_frame_info.frame_size,
-    );
+
+    if let Some(stack) = task.resource.stack_mem_frame_info {
+        kdebug!(
+            "stack: (phys)0x{:x}, size: 0x{:x}bytes",
+            stack.frame_start_phys_addr.get(),
+            stack.frame_size,
+        );
+    }
+
     kdebug!("context:");
     kdebug!(
         "\tcr3: 0x{:016x}, rip: 0x{:016x}, rflags: {:?},",
@@ -370,19 +423,15 @@ pub fn debug_task(task: &Task) {
         );
     }
 
-    kdebug!("stack mem frame info:");
-    let virt_addr = task
-        .resource
-        .stack_mem_frame_info
-        .frame_start_virt_addr()
-        .unwrap();
-    kdebug!(
-        "\t(virt)0x{:x}-0x{:x}",
-        virt_addr.get(),
-        virt_addr
-            .offset(task.resource.stack_mem_frame_info.frame_size)
-            .get(),
-    );
+    if let Some(stack) = task.resource.stack_mem_frame_info {
+        kdebug!("stack mem frame info:");
+        let virt_addr = stack.frame_start_virt_addr().unwrap();
+        kdebug!(
+            "\t(virt)0x{:x}-0x{:x}",
+            virt_addr.get(),
+            virt_addr.offset(stack.frame_size).get(),
+        );
+    }
 
     kdebug!("program mem frame info:");
     for (mem_frame_info, mapping_info) in &task.resource.program_mem_info {
