@@ -13,7 +13,7 @@ use core::fmt::Write;
 const BACK_COLOR: ColorCode = ColorCode::BLACK;
 const FORE_COLOR: ColorCode = ColorCode::RED;
 
-static mut PANIC_SCREEN_DRIVER: Mutex<PanicScreenDriver> = Mutex::new(PanicScreenDriver::new());
+static PANIC_SCREEN_DRIVER: Mutex<PanicScreenDriver> = Mutex::new(PanicScreenDriver::new());
 
 struct PanicScreenDriver {
     device_driver_info: DeviceDriverInfo,
@@ -202,12 +202,12 @@ impl DeviceDriverFunction for PanicScreenDriver {
 }
 
 pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = unsafe { PANIC_SCREEN_DRIVER.try_lock() }?;
+    let driver = PANIC_SCREEN_DRIVER.try_lock()?;
     driver.get_device_driver_info()
 }
 
 pub fn probe_and_attach(graphic_info: GraphicInfo) -> Result<()> {
-    let mut driver = unsafe { PANIC_SCREEN_DRIVER.try_lock() }?;
+    let mut driver = PANIC_SCREEN_DRIVER.try_lock()?;
     driver.probe()?;
     driver.attach(graphic_info)?;
     let info = driver.get_device_driver_info()?;
@@ -217,26 +217,26 @@ pub fn probe_and_attach(graphic_info: GraphicInfo) -> Result<()> {
 }
 
 pub fn open() -> Result<()> {
-    let mut driver = unsafe { PANIC_SCREEN_DRIVER.try_lock() }?;
+    let mut driver = PANIC_SCREEN_DRIVER.try_lock()?;
     driver.open()
 }
 
 pub fn close() -> Result<()> {
-    let mut driver = unsafe { PANIC_SCREEN_DRIVER.try_lock() }?;
+    let mut driver = PANIC_SCREEN_DRIVER.try_lock()?;
     driver.close()
 }
 
 pub fn read() -> Result<Vec<u8>> {
-    let mut driver = unsafe { PANIC_SCREEN_DRIVER.try_lock() }?;
+    let mut driver = PANIC_SCREEN_DRIVER.try_lock()?;
     driver.read()
 }
 
 pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = unsafe { PANIC_SCREEN_DRIVER.try_lock() }?;
+    let mut driver = PANIC_SCREEN_DRIVER.try_lock()?;
     driver.write(data)
 }
 
 pub fn write_fmt(args: fmt::Arguments) -> Result<()> {
-    let _ = unsafe { PANIC_SCREEN_DRIVER.try_lock() }?.write_fmt(args);
+    let _ = PANIC_SCREEN_DRIVER.try_lock()?.write_fmt(args);
     Ok(())
 }

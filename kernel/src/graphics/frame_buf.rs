@@ -7,7 +7,7 @@ use crate::{
 use alloc::vec::Vec;
 use common::graphic_info::{GraphicInfo, PixelFormat};
 
-static mut FB: Mutex<FrameBuffer> = Mutex::new(FrameBuffer::new());
+static FB: Mutex<FrameBuffer> = Mutex::new(FrameBuffer::new());
 
 struct FrameBuffer {
     resolution: Option<(usize, usize)>,
@@ -140,33 +140,33 @@ impl FrameBuffer {
 }
 
 pub fn init(graphic_info: &GraphicInfo) -> Result<()> {
-    let mut fb = unsafe { FB.try_lock() }?;
+    let mut fb = FB.try_lock()?;
     fb.init(graphic_info)?;
     Ok(())
 }
 
 pub fn resolution() -> Result<(usize, usize)> {
-    let fb = unsafe { FB.try_lock() }?;
+    let fb = FB.try_lock()?;
     fb.resolution()
 }
 
 pub fn format() -> Result<PixelFormat> {
-    let fb = unsafe { FB.try_lock() }?;
+    let fb = FB.try_lock()?;
     fb.format()
 }
 
 pub fn fill(color: ColorCode) -> Result<()> {
-    let mut fb = unsafe { FB.try_lock() }?;
+    let mut fb = FB.try_lock()?;
     fb.fill(color)
 }
 
 pub fn draw_rect(xy: (usize, usize), wh: (usize, usize), color: ColorCode) -> Result<()> {
-    let mut fb = unsafe { FB.try_lock() }?;
+    let mut fb = FB.try_lock()?;
     fb.draw_rect(xy, wh, color)
 }
 
 pub fn copy_rect(src_xy: (usize, usize), dst_xy: (usize, usize), wh: (usize, usize)) -> Result<()> {
-    let mut fb = unsafe { FB.try_lock() }?;
+    let mut fb = FB.try_lock()?;
     fb.copy_rect(src_xy, dst_xy, wh)
 }
 
@@ -176,21 +176,21 @@ pub fn draw_char(
     fore_color: ColorCode,
     back_color: ColorCode,
 ) -> Result<()> {
-    let mut fb = unsafe { FB.try_lock() }?;
+    let mut fb = FB.try_lock()?;
     fb.draw_char(xy, c, fore_color, back_color)
 }
 
 pub fn enable_shadow_buf() -> Result<()> {
-    let mut fb = unsafe { FB.try_lock() }?;
+    let mut fb = FB.try_lock()?;
     fb.enable_shadow_buf()
 }
 
 pub fn apply_shadow_buf() -> Result<()> {
-    let fb = unsafe { FB.try_lock() }?;
+    let fb = FB.try_lock()?;
     fb.apply_shadow_buf()
 }
 
 pub fn apply_layer_buf(layer: &Layer) -> Result<()> {
-    let mut fb = unsafe { FB.try_lock() }?;
+    let mut fb = FB.try_lock()?;
     fb.apply_layer_buf(layer)
 }

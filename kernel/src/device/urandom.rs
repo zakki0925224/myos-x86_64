@@ -9,7 +9,7 @@ use crate::{
 };
 use alloc::vec::Vec;
 
-static mut URANDOM_DRIVER: Mutex<UrandomDriver> = Mutex::new(UrandomDriver::new());
+static URANDOM_DRIVER: Mutex<UrandomDriver> = Mutex::new(UrandomDriver::new());
 
 struct UrandomDriver {
     device_driver_info: DeviceDriverInfo,
@@ -80,12 +80,12 @@ impl DeviceDriverFunction for UrandomDriver {
 }
 
 pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = unsafe { URANDOM_DRIVER.try_lock() }?;
+    let driver = URANDOM_DRIVER.try_lock()?;
     driver.get_device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = unsafe { URANDOM_DRIVER.try_lock() }?;
+    let mut driver = URANDOM_DRIVER.try_lock()?;
     driver.probe()?;
     driver.attach(())?;
     kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
@@ -94,21 +94,21 @@ pub fn probe_and_attach() -> Result<()> {
 }
 
 pub fn open() -> Result<()> {
-    let mut driver = unsafe { URANDOM_DRIVER.try_lock() }?;
+    let mut driver = URANDOM_DRIVER.try_lock()?;
     driver.open()
 }
 
 pub fn close() -> Result<()> {
-    let mut driver = unsafe { URANDOM_DRIVER.try_lock() }?;
+    let mut driver = URANDOM_DRIVER.try_lock()?;
     driver.close()
 }
 
 pub fn read() -> Result<Vec<u8>> {
-    let mut driver = unsafe { URANDOM_DRIVER.try_lock() }?;
+    let mut driver = URANDOM_DRIVER.try_lock()?;
     driver.read()
 }
 
 pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = unsafe { URANDOM_DRIVER.try_lock() }?;
+    let mut driver = URANDOM_DRIVER.try_lock()?;
     driver.write(data)
 }

@@ -13,7 +13,7 @@ use crate::{
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
 
-static mut USB_BUS_DRIVER: Mutex<UsbBusDriver> = Mutex::new(UsbBusDriver::new());
+static USB_BUS_DRIVER: Mutex<UsbBusDriver> = Mutex::new(UsbBusDriver::new());
 
 pub struct XhciAttachInfo {
     pub port: usize,
@@ -237,12 +237,12 @@ impl DeviceDriverFunction for UsbBusDriver {
 }
 
 pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = unsafe { USB_BUS_DRIVER.try_lock() }?;
+    let driver = USB_BUS_DRIVER.try_lock()?;
     driver.get_device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = unsafe { USB_BUS_DRIVER.try_lock() }?;
+    let mut driver = USB_BUS_DRIVER.try_lock()?;
     driver.probe()?;
     driver.attach(())?;
     kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
@@ -250,32 +250,32 @@ pub fn probe_and_attach() -> Result<()> {
 }
 
 pub fn open() -> Result<()> {
-    let mut driver = unsafe { USB_BUS_DRIVER.try_lock() }?;
+    let mut driver = USB_BUS_DRIVER.try_lock()?;
     driver.open()
 }
 
 pub fn close() -> Result<()> {
-    let mut driver = unsafe { USB_BUS_DRIVER.try_lock() }?;
+    let mut driver = USB_BUS_DRIVER.try_lock()?;
     driver.close()
 }
 
 pub fn read() -> Result<Vec<u8>> {
-    let mut driver = unsafe { USB_BUS_DRIVER.try_lock() }?;
+    let mut driver = USB_BUS_DRIVER.try_lock()?;
     driver.read()
 }
 
 pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = unsafe { USB_BUS_DRIVER.try_lock() }?;
+    let mut driver = USB_BUS_DRIVER.try_lock()?;
     driver.write(data)
 }
 
 pub fn attach_usb_device(device: UsbDevice) -> Result<()> {
-    let mut driver = unsafe { USB_BUS_DRIVER.try_lock() }?;
+    let mut driver = USB_BUS_DRIVER.try_lock()?;
     driver.attach_usb_device(device)?;
     Ok(())
 }
 
 pub fn poll_normal() -> Result<()> {
-    let mut driver = unsafe { USB_BUS_DRIVER.try_lock() }?;
+    let mut driver = USB_BUS_DRIVER.try_lock()?;
     driver.poll_normal()
 }

@@ -7,7 +7,7 @@ use device::{PciDevice, PciDeviceFunction};
 pub mod conf_space;
 mod device;
 
-static mut PCI_BUS_DRIVER: Mutex<PciBusDriver> = Mutex::new(PciBusDriver::new());
+static PCI_BUS_DRIVER: Mutex<PciBusDriver> = Mutex::new(PciBusDriver::new());
 
 struct PciBusDriver {
     device_driver_info: DeviceDriverInfo,
@@ -171,11 +171,11 @@ impl DeviceDriverFunction for PciBusDriver {
 }
 
 pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
-    unsafe { PCI_BUS_DRIVER.try_lock()? }.get_device_driver_info()
+    PCI_BUS_DRIVER.try_lock()?.get_device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = unsafe { PCI_BUS_DRIVER.try_lock() }?;
+    let mut driver = PCI_BUS_DRIVER.try_lock()?;
     let driver_name = driver.get_device_driver_info()?.name;
 
     driver.probe()?;
@@ -188,23 +188,24 @@ pub fn probe_and_attach() -> Result<()> {
 }
 
 pub fn open() -> Result<()> {
-    unsafe { PCI_BUS_DRIVER.try_lock() }?.open()
+    PCI_BUS_DRIVER.try_lock()?.open()
 }
 
 pub fn close() -> Result<()> {
-    unsafe { PCI_BUS_DRIVER.try_lock() }?.close()
+    PCI_BUS_DRIVER.try_lock()?.close()
 }
 
 pub fn read() -> Result<Vec<u8>> {
-    unsafe { PCI_BUS_DRIVER.try_lock() }?.read()
+    PCI_BUS_DRIVER.try_lock()?.read()
 }
 
 pub fn write(data: &[u8]) -> Result<()> {
-    unsafe { PCI_BUS_DRIVER.try_lock() }?.write(data)
+    PCI_BUS_DRIVER.try_lock()?.write(data)
 }
 
 pub fn is_exist_device(bus: usize, device: usize, func: usize) -> Result<bool> {
-    let is_exist = unsafe { PCI_BUS_DRIVER.try_lock() }?
+    let is_exist = PCI_BUS_DRIVER
+        .try_lock()?
         .find_device(bus, device, func)
         .is_ok();
     Ok(is_exist)
@@ -216,7 +217,7 @@ pub fn configure_device<F: FnMut(&mut dyn PciDeviceFunction) -> Result<()>>(
     func: usize,
     mut f: F,
 ) -> Result<()> {
-    let mut driver = unsafe { PCI_BUS_DRIVER.try_lock() }?;
+    let mut driver = PCI_BUS_DRIVER.try_lock()?;
     let device_mut = driver.find_device_mut(bus, device, func)?;
 
     f(device_mut)
@@ -228,7 +229,7 @@ pub fn find_devices<F: FnMut(&mut dyn PciDeviceFunction) -> Result<()>>(
     prog_if: u8,
     mut f: F,
 ) -> Result<()> {
-    let mut driver = unsafe { PCI_BUS_DRIVER.try_lock() }?;
+    let mut driver = PCI_BUS_DRIVER.try_lock()?;
     let devices = driver.find_devices_by_class_mut(class, subclass, prog_if);
 
     for device in devices {
@@ -243,7 +244,7 @@ pub fn find_device_by_vendor_and_device_id<F: FnMut(&mut dyn PciDeviceFunction) 
     device_id: u16,
     mut f: F,
 ) -> Result<()> {
-    let mut driver = unsafe { PCI_BUS_DRIVER.try_lock() }?;
+    let mut driver = PCI_BUS_DRIVER.try_lock()?;
     let device = driver.find_device_by_vendor_and_device_id_mut(vendor_id, device_id)?;
 
     f(device)

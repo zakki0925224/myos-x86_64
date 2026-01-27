@@ -6,7 +6,7 @@ use crate::{
 };
 use common::mem_desc::{MemoryDescriptor, UEFI_PAGE_SIZE};
 
-static mut BMM: Mutex<BitmapMemoryManager> = Mutex::new(BitmapMemoryManager::new());
+static BMM: Mutex<BitmapMemoryManager> = Mutex::new(BitmapMemoryManager::new());
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MemoryFrameInfo {
@@ -442,35 +442,35 @@ impl BitmapMemoryManager {
 }
 
 pub fn init(mem_map: &[MemoryDescriptor]) -> Result<()> {
-    let mut bmm = unsafe { BMM.try_lock() }?;
+    let mut bmm = BMM.try_lock()?;
     bmm.init(mem_map)?;
     bmm.init2(mem_map)
 }
 
 pub fn get_total_mem_size() -> Result<usize> {
-    let bmm = unsafe { BMM.try_lock() }?;
+    let bmm = BMM.try_lock()?;
     let total = bmm.total_frame_len * PAGE_SIZE;
     Ok(total)
 }
 
 pub fn get_mem_size() -> Result<(usize, usize)> {
-    let bmm = unsafe { BMM.try_lock() }?;
+    let bmm = BMM.try_lock()?;
     let used = bmm.allocated_frame_len_in_available_mem * PAGE_SIZE;
     let total = bmm.total_available_mem_size;
     Ok((used, total))
 }
 
 pub fn alloc_mem_frame(len: usize) -> Result<MemoryFrameInfo> {
-    let mut bmm = unsafe { BMM.try_lock() }?;
+    let mut bmm = BMM.try_lock()?;
     bmm.alloc_multi_mem_frame(len)
 }
 
 pub fn dealloc_mem_frame(mem_frame_info: MemoryFrameInfo) -> Result<()> {
-    let mut bmm = unsafe { BMM.try_lock() }?;
+    let mut bmm = BMM.try_lock()?;
     bmm.dealloc_mem_frame(mem_frame_info)
 }
 
 pub fn mem_clear(mem_frame_info: &MemoryFrameInfo) -> Result<()> {
-    let bmm = unsafe { BMM.try_lock() }?;
+    let bmm = BMM.try_lock()?;
     unsafe { bmm.mem_clear(mem_frame_info) }
 }

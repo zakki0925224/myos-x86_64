@@ -11,7 +11,7 @@ use crate::{
     task::{self, *},
 };
 
-static mut IDT: Mutex<InterruptDescriptorTable> = Mutex::new(InterruptDescriptorTable::new());
+static IDT: Mutex<InterruptDescriptorTable> = Mutex::new(InterruptDescriptorTable::new());
 
 // https://github.com/rust-osdev/x86_64/blob/master/src/structures/idt.rs
 #[repr(transparent)]
@@ -377,7 +377,7 @@ pub fn init_pic() {
 }
 
 pub fn init_idt() -> Result<()> {
-    let mut idt = unsafe { IDT.try_lock() }?;
+    let mut idt = IDT.try_lock()?;
     idt.set_handler(
         VEC_DEBUG,
         InterruptHandler::General(debug_handler),
@@ -427,14 +427,14 @@ pub fn init_idt() -> Result<()> {
 }
 
 pub fn set_handler(vec_num: usize, handler: InterruptHandler, gate_type: GateType) -> Result<()> {
-    let mut idt = unsafe { IDT.try_lock() }?;
+    let mut idt = IDT.try_lock()?;
     idt.set_handler(vec_num, handler, gate_type, false)?;
     idt.load();
     Ok(())
 }
 
 pub fn set_handler_dyn_vec(handler: InterruptHandler, gate_type: GateType) -> Result<u8> {
-    let mut idt = unsafe { IDT.try_lock() }?;
+    let mut idt = IDT.try_lock()?;
     let vec_num = idt.set_handler_dyn_vec(handler, gate_type)?;
     idt.load();
     Ok(vec_num)

@@ -12,7 +12,7 @@ use alloc::{boxed::Box, vec::Vec};
 const RX_BUF_LEN: usize = 8192;
 const RX_BUF_SIZE: usize = RX_BUF_LEN + 16 + 1536;
 
-static mut RTL8139_DRIVER: Mutex<Rtl8139Driver> = Mutex::new(Rtl8139Driver::new());
+static RTL8139_DRIVER: Mutex<Rtl8139Driver> = Mutex::new(Rtl8139Driver::new());
 
 struct IoRegister(IoPortAddress);
 
@@ -396,12 +396,12 @@ impl DeviceDriverFunction for Rtl8139Driver {
 }
 
 pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = unsafe { RTL8139_DRIVER.try_lock() }?;
+    let driver = RTL8139_DRIVER.try_lock()?;
     driver.get_device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = unsafe { RTL8139_DRIVER.try_lock() }?;
+    let mut driver = RTL8139_DRIVER.try_lock()?;
     driver.probe()?;
     driver.attach(())?;
     kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
@@ -409,32 +409,32 @@ pub fn probe_and_attach() -> Result<()> {
 }
 
 pub fn open() -> Result<()> {
-    let mut driver = unsafe { RTL8139_DRIVER.try_lock() }?;
+    let mut driver = RTL8139_DRIVER.try_lock()?;
     driver.open()
 }
 
 pub fn close() -> Result<()> {
-    let mut driver = unsafe { RTL8139_DRIVER.try_lock() }?;
+    let mut driver = RTL8139_DRIVER.try_lock()?;
     driver.close()
 }
 
 pub fn read() -> Result<Vec<u8>> {
-    let mut driver = unsafe { RTL8139_DRIVER.try_lock() }?;
+    let mut driver = RTL8139_DRIVER.try_lock()?;
     driver.read()
 }
 
 pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = unsafe { RTL8139_DRIVER.try_lock() }?;
+    let mut driver = RTL8139_DRIVER.try_lock()?;
     driver.write(data)
 }
 
 pub fn poll_normal() -> Result<()> {
-    let mut driver = unsafe { RTL8139_DRIVER.try_lock() }?;
+    let mut driver = RTL8139_DRIVER.try_lock()?;
     driver.poll_normal()
 }
 
 pub fn push_eth_frame_to_tx_queue(eth_frame: EthernetFrame) -> Result<()> {
-    let mut driver = unsafe { RTL8139_DRIVER.try_lock() }?;
+    let mut driver = RTL8139_DRIVER.try_lock()?;
     driver.tx_queue.push(eth_frame);
     Ok(())
 }

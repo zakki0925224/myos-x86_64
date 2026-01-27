@@ -16,7 +16,7 @@ pub const USER_MODE_CS_VALUE: u16 = (4 << 3) | 3;
 const GDT_LEN: usize = 5;
 const TSS_SEL: u16 = (GDT_LEN as u16) << 3;
 
-static mut GDT: Mutex<GlobalDescriptorTable> = Mutex::new(GlobalDescriptorTable::new());
+static GDT: Mutex<GlobalDescriptorTable> = Mutex::new(GlobalDescriptorTable::new());
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
@@ -156,7 +156,7 @@ pub fn init() -> Result<()> {
     let tss_addr = tss::init()?;
 
     {
-        let mut gdt = unsafe { GDT.try_lock() }.unwrap();
+        let mut gdt = GDT.try_lock().unwrap();
         gdt.set_desc(1, gdt1);
         gdt.set_desc(2, gdt2);
         gdt.set_desc(3, gdt3);

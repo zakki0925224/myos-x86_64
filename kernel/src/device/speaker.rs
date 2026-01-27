@@ -10,7 +10,7 @@ use crate::{
 use alloc::vec::Vec;
 use core::time::Duration;
 
-static mut SPEAKER_DRIVER: Mutex<SpeakerDriver> = Mutex::new(SpeakerDriver::new());
+static SPEAKER_DRIVER: Mutex<SpeakerDriver> = Mutex::new(SpeakerDriver::new());
 
 struct SpeakerDriver {
     device_driver_info: DeviceDriverInfo,
@@ -125,11 +125,11 @@ impl DeviceDriverFunction for SpeakerDriver {
 }
 
 pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
-    unsafe { SPEAKER_DRIVER.try_lock() }?.get_device_driver_info()
+    SPEAKER_DRIVER.try_lock()?.get_device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = unsafe { SPEAKER_DRIVER.try_lock() }?;
+    let mut driver = SPEAKER_DRIVER.try_lock()?;
     driver.probe()?;
     driver.attach(())?;
     kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
@@ -138,23 +138,23 @@ pub fn probe_and_attach() -> Result<()> {
 }
 
 pub fn open() -> Result<()> {
-    unsafe { SPEAKER_DRIVER.try_lock() }?.open()
+    SPEAKER_DRIVER.try_lock()?.open()
 }
 
 pub fn close() -> Result<()> {
-    unsafe { SPEAKER_DRIVER.try_lock() }?.close()
+    SPEAKER_DRIVER.try_lock()?.close()
 }
 
 pub fn read() -> Result<Vec<u8>> {
-    unsafe { SPEAKER_DRIVER.try_lock() }?.read()
+    SPEAKER_DRIVER.try_lock()?.read()
 }
 
 pub fn write(data: &[u8]) -> Result<()> {
-    unsafe { SPEAKER_DRIVER.try_lock() }?.write(data)
+    SPEAKER_DRIVER.try_lock()?.write(data)
 }
 
 pub fn play(freq: u32, duration: Duration) -> Result<()> {
-    let mut driver = unsafe { SPEAKER_DRIVER.try_lock() }?;
+    let mut driver = SPEAKER_DRIVER.try_lock()?;
     driver.play(freq);
     util::time::sleep(duration);
     driver.stop();

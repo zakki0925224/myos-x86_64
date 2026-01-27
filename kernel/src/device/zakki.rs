@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 const MESSAGE: &str = "Hello! I'm Zakki, a low-level programmer!\nCheck out my links below:\n\tX: https://x.com/zakki0925224\n\tGitHub: https://github.com/Zakki0925224\n\tPortfolio: https://bento.me/zakki0925224\n";
 
-static mut ZAKKI_DRIVER: Mutex<ZakkiDriver> = Mutex::new(ZakkiDriver::new());
+static ZAKKI_DRIVER: Mutex<ZakkiDriver> = Mutex::new(ZakkiDriver::new());
 
 // https://github.com/Zakki0925224/zakki_driver
 struct ZakkiDriver {
@@ -74,12 +74,12 @@ impl DeviceDriverFunction for ZakkiDriver {
 }
 
 pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = unsafe { ZAKKI_DRIVER.try_lock() }?;
+    let driver = ZAKKI_DRIVER.try_lock()?;
     driver.get_device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = unsafe { ZAKKI_DRIVER.try_lock() }?;
+    let mut driver = ZAKKI_DRIVER.try_lock()?;
     driver.probe()?;
     driver.attach(())?;
     kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
@@ -87,21 +87,21 @@ pub fn probe_and_attach() -> Result<()> {
 }
 
 fn open() -> Result<()> {
-    let mut driver = unsafe { ZAKKI_DRIVER.try_lock() }?;
+    let mut driver = ZAKKI_DRIVER.try_lock()?;
     driver.open()
 }
 
 fn close() -> Result<()> {
-    let mut driver = unsafe { ZAKKI_DRIVER.try_lock() }?;
+    let mut driver = ZAKKI_DRIVER.try_lock()?;
     driver.close()
 }
 
 fn read() -> Result<Vec<u8>> {
-    let mut driver = unsafe { ZAKKI_DRIVER.try_lock() }?;
+    let mut driver = ZAKKI_DRIVER.try_lock()?;
     driver.read()
 }
 
 fn write(data: &[u8]) -> Result<()> {
-    let mut driver = unsafe { ZAKKI_DRIVER.try_lock() }?;
+    let mut driver = ZAKKI_DRIVER.try_lock()?;
     driver.write(data)
 }

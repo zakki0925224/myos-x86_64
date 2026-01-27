@@ -38,7 +38,7 @@ fn get_target_ip(my_ip: Ipv4Addr, dst_ip: Ipv4Addr) -> Ipv4Addr {
     }
 }
 
-static mut NETWORK_MAN: Mutex<NetworkManager> = Mutex::new(NetworkManager::new(LOCAL_ADDR));
+static NETWORK_MAN: Mutex<NetworkManager> = Mutex::new(NetworkManager::new(LOCAL_ADDR));
 
 struct NetworkManager {
     my_ipv4_addr: Ipv4Addr,
@@ -842,27 +842,27 @@ impl NetworkManager {
 }
 
 pub fn set_my_mac_addr(mac_addr: EthernetAddress) -> Result<()> {
-    unsafe { NETWORK_MAN.try_lock() }?.set_my_mac_addr(mac_addr);
+    NETWORK_MAN.try_lock()?.set_my_mac_addr(mac_addr);
     Ok(())
 }
 
 pub fn my_mac_addr() -> Result<EthernetAddress> {
-    unsafe { NETWORK_MAN.try_lock() }?.my_mac_addr()
+    NETWORK_MAN.try_lock()?.my_mac_addr()
 }
 
 pub fn my_ipv4_addr() -> Result<Ipv4Addr> {
-    let addr = unsafe { NETWORK_MAN.try_lock() }?.my_ipv4_addr;
+    let addr = NETWORK_MAN.try_lock()?.my_ipv4_addr;
     Ok(addr)
 }
 
 pub fn receive_eth_payload(payload: EthernetPayload) -> Result<Option<EthernetPayload>> {
-    unsafe { NETWORK_MAN.try_lock() }?.receive_eth_payload(payload)
+    NETWORK_MAN.try_lock()?.receive_eth_payload(payload)
 }
 
 pub fn resolve_mac_addr(ipv4_addr: Ipv4Addr) -> Result<EthernetAddress> {
     loop {
         let eth_addr = x86_64::disabled_int(|| {
-            let mut network_man = unsafe { NETWORK_MAN.try_lock() }?;
+            let mut network_man = NETWORK_MAN.try_lock()?;
             let addr = network_man.resolve_mac_addr(ipv4_addr)?;
             Result::Ok(addr)
         })?;
@@ -875,7 +875,7 @@ pub fn resolve_mac_addr(ipv4_addr: Ipv4Addr) -> Result<EthernetAddress> {
 }
 
 pub fn create_new_socket(type_: SocketType) -> Result<SocketId> {
-    unsafe { NETWORK_MAN.try_lock() }?.create_new_socket(type_)
+    NETWORK_MAN.try_lock()?.create_new_socket(type_)
 }
 
 pub fn bind_socket_v4(
@@ -883,7 +883,9 @@ pub fn bind_socket_v4(
     bound_addr: Option<Ipv4Addr>,
     port: Option<u16>,
 ) -> Result<()> {
-    unsafe { NETWORK_MAN.try_lock() }?.bind_socket_v4(socket_id, bound_addr, port)
+    NETWORK_MAN
+        .try_lock()?
+        .bind_socket_v4(socket_id, bound_addr, port)
 }
 
 pub fn sendto_udp_v4(
@@ -896,29 +898,33 @@ pub fn sendto_udp_v4(
     let target_ip = get_target_ip(my_ip, dst_addr);
     resolve_mac_addr(target_ip)?;
 
-    unsafe { NETWORK_MAN.try_lock() }?.sendto_udp_v4(socket_id, dst_addr, dst_port, data)
+    NETWORK_MAN
+        .try_lock()?
+        .sendto_udp_v4(socket_id, dst_addr, dst_port, data)
 }
 
 pub fn recvfrom_udp_v4(socket_id: SocketId, buf: &mut [u8]) -> Result<usize> {
-    unsafe { NETWORK_MAN.try_lock() }?.recvfrom_udp_v4(socket_id, buf)
+    NETWORK_MAN.try_lock()?.recvfrom_udp_v4(socket_id, buf)
 }
 
 pub fn listen_tcp_v4(socket_id: SocketId) -> Result<()> {
-    unsafe { NETWORK_MAN.try_lock() }?.listen_tcp_v4(socket_id)
+    NETWORK_MAN.try_lock()?.listen_tcp_v4(socket_id)
 }
 
 pub fn accept_tcp_v4(socket_id: SocketId) -> Result<SocketId> {
-    unsafe { NETWORK_MAN.try_lock() }?.accept_tcp_v4(socket_id)
+    NETWORK_MAN.try_lock()?.accept_tcp_v4(socket_id)
 }
 
 pub fn connect_tcp_v4(socket_id: SocketId, dst_addr: Ipv4Addr, dst_port: u16) -> Result<()> {
-    unsafe { NETWORK_MAN.try_lock() }?.connect_tcp_v4(socket_id, dst_addr, dst_port)
+    NETWORK_MAN
+        .try_lock()?
+        .connect_tcp_v4(socket_id, dst_addr, dst_port)
 }
 
 pub fn send_tcp_syn(socket_id: SocketId) -> Result<()> {
     // pre-resolve MAC address
     let (dst_addr, _) = {
-        let mut man = unsafe { NETWORK_MAN.try_lock() }?;
+        let mut man = NETWORK_MAN.try_lock()?;
         let socket = man.socket_table.socket_mut_by_id(socket_id)?;
         let tcp_socket = socket.inner_tcp_mut()?;
         (
@@ -935,13 +941,13 @@ pub fn send_tcp_syn(socket_id: SocketId) -> Result<()> {
     let target_ip = get_target_ip(my_ip, dst_addr);
     resolve_mac_addr(target_ip)?;
 
-    unsafe { NETWORK_MAN.try_lock() }?.send_tcp_syn(socket_id)
+    NETWORK_MAN.try_lock()?.send_tcp_syn(socket_id)
 }
 
 pub fn send_tcp_data(socket_id: SocketId, data: &[u8]) -> Result<()> {
     // pre-resolve MAC address
     let (dst_addr, _) = {
-        let mut man = unsafe { NETWORK_MAN.try_lock() }?;
+        let mut man = NETWORK_MAN.try_lock()?;
         let socket = man.socket_table.socket_mut_by_id(socket_id)?;
         let tcp_socket = socket.inner_tcp_mut()?;
         (
@@ -958,17 +964,17 @@ pub fn send_tcp_data(socket_id: SocketId, data: &[u8]) -> Result<()> {
     let target_ip = get_target_ip(my_ip, dst_addr);
     resolve_mac_addr(target_ip)?;
 
-    unsafe { NETWORK_MAN.try_lock() }?.send_tcp_data(socket_id, data)
+    NETWORK_MAN.try_lock()?.send_tcp_data(socket_id, data)
 }
 
 pub fn recv_tcp_data(socket_id: SocketId, buf: &mut [u8]) -> Result<usize> {
-    unsafe { NETWORK_MAN.try_lock() }?.recv_tcp_data(socket_id, buf)
+    NETWORK_MAN.try_lock()?.recv_tcp_data(socket_id, buf)
 }
 
 pub fn is_tcp_established(socket_id: SocketId) -> Result<bool> {
-    unsafe { NETWORK_MAN.try_lock() }?.is_tcp_established(socket_id)
+    NETWORK_MAN.try_lock()?.is_tcp_established(socket_id)
 }
 
 pub fn close_socket(socket_id: SocketId) -> Result<()> {
-    unsafe { NETWORK_MAN.try_lock() }?.close_socket(socket_id)
+    NETWORK_MAN.try_lock()?.close_socket(socket_id)
 }

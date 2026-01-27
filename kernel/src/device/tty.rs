@@ -5,7 +5,7 @@ use core::fmt::{self, Write};
 
 const IO_BUF_LEN: usize = 512;
 
-static mut TTY: Mutex<Tty> = Mutex::new(Tty::new(true));
+static TTY: Mutex<Tty> = Mutex::new(Tty::new(true));
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BufferType {
@@ -203,7 +203,7 @@ impl DeviceDriverFunction for Tty {
 
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
-    if let Ok(mut tty) = unsafe { TTY.try_lock() } {
+    if let Ok(mut tty) = TTY.try_lock() {
         let _ = tty.write_fmt(args);
     }
 }
@@ -220,12 +220,12 @@ macro_rules! println {
 }
 
 pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = unsafe { TTY.try_lock() }?;
+    let driver = TTY.try_lock()?;
     driver.get_device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = unsafe { TTY.try_lock() }?;
+    let mut driver = TTY.try_lock()?;
     driver.probe()?;
     driver.attach(())?;
     kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
@@ -233,22 +233,22 @@ pub fn probe_and_attach() -> Result<()> {
 }
 
 pub fn open() -> Result<()> {
-    let mut driver = unsafe { TTY.try_lock() }?;
+    let mut driver = TTY.try_lock()?;
     driver.open()
 }
 
 pub fn close() -> Result<()> {
-    let mut driver = unsafe { TTY.try_lock() }?;
+    let mut driver = TTY.try_lock()?;
     driver.close()
 }
 
 pub fn read() -> Result<Vec<u8>> {
-    let mut driver = unsafe { TTY.try_lock() }?;
+    let mut driver = TTY.try_lock()?;
     driver.read()
 }
 
 pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = unsafe { TTY.try_lock() }?;
+    let mut driver = TTY.try_lock()?;
     for &c in data {
         driver.write(c as char, BufferType::Output)?;
     }
@@ -262,7 +262,7 @@ pub fn input(c: char) -> Result<()> {
         c = '\n';
     }
 
-    let mut tty = unsafe { TTY.try_lock() }?;
+    let mut tty = TTY.try_lock()?;
     tty.write(c, BufferType::Input)?;
 
     if c == '\n' {
@@ -273,7 +273,7 @@ pub fn input(c: char) -> Result<()> {
 }
 
 pub fn get_line() -> Result<Option<String>> {
-    let mut tty = unsafe { TTY.try_lock() }?;
+    let mut tty = TTY.try_lock()?;
 
     if tty.is_ready_get_line {
         tty.is_ready_get_line = false;
@@ -284,6 +284,6 @@ pub fn get_line() -> Result<Option<String>> {
 }
 
 pub fn get_char() -> Result<char> {
-    let mut tty = unsafe { TTY.try_lock() }?;
+    let mut tty = TTY.try_lock()?;
     Ok(tty.get_char(BufferType::Input))
 }

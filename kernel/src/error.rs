@@ -34,70 +34,40 @@ impl From<&'static str> for Error {
     }
 }
 
-impl From<LayerError> for Error {
-    fn from(err: LayerError) -> Self {
-        Self::LayerError(err)
+macro_rules! impl_from_error {
+    ($($variant:ident($error_type:ty)),* $(,)?) => {
+        $(
+            impl From<$error_type> for Error {
+                fn from(err: $error_type) -> Self {
+                    Self::$variant(err)
+                }
+            }
+        )*
+    };
+}
+
+impl_from_error! {
+    LayerError(LayerError),
+    BitmapMemoryManagerError(BitmapMemoryManagerError),
+    PageManagerError(PageManagerError),
+    FifoError(FifoError),
+    VirtualFileSystemError(VirtualFileSystemError),
+    Elf64Error(Elf64Error),
+    SimpleWindowManagerError(SimpleWindowManagerError),
+    AcpiError(AcpiError),
+    AllocationError(AllocationError),
+    DrawError(DrawError),
+    XhcDriverError(XhcDriverError),
+}
+
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            _ => write!(f, "{:?}", self),
+        }
     }
 }
 
-impl From<BitmapMemoryManagerError> for Error {
-    fn from(err: BitmapMemoryManagerError) -> Self {
-        Self::BitmapMemoryManagerError(err)
-    }
-}
-
-impl From<PageManagerError> for Error {
-    fn from(err: PageManagerError) -> Self {
-        Self::PageManagerError(err)
-    }
-}
-
-impl From<FifoError> for Error {
-    fn from(err: FifoError) -> Self {
-        Self::FifoError(err)
-    }
-}
-
-impl From<VirtualFileSystemError> for Error {
-    fn from(err: VirtualFileSystemError) -> Self {
-        Self::VirtualFileSystemError(err)
-    }
-}
-
-impl From<Elf64Error> for Error {
-    fn from(err: Elf64Error) -> Self {
-        Self::Elf64Error(err)
-    }
-}
-
-impl From<SimpleWindowManagerError> for Error {
-    fn from(err: SimpleWindowManagerError) -> Self {
-        Self::SimpleWindowManagerError(err)
-    }
-}
-
-impl From<AcpiError> for Error {
-    fn from(err: AcpiError) -> Self {
-        Self::AcpiError(err)
-    }
-}
-
-impl From<AllocationError> for Error {
-    fn from(err: AllocationError) -> Self {
-        Self::AllocationError(err)
-    }
-}
-
-impl From<DrawError> for Error {
-    fn from(err: DrawError) -> Self {
-        Self::DrawError(err)
-    }
-}
-
-impl From<XhcDriverError> for Error {
-    fn from(err: XhcDriverError) -> Self {
-        Self::XhcDriverError(err)
-    }
-}
+impl core::error::Error for Error {}
 
 pub type Result<T> = core::result::Result<T, Error>;

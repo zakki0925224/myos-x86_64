@@ -12,7 +12,7 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-static mut VFS: Mutex<VirtualFileSystem> = Mutex::new(VirtualFileSystem::new());
+static VFS: Mutex<VirtualFileSystem> = Mutex::new(VirtualFileSystem::new());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VfsFileId(usize);
@@ -654,22 +654,22 @@ impl VirtualFileSystem {
 }
 
 pub fn init() -> Result<()> {
-    let mut vfs = unsafe { VFS.try_lock() }?;
+    let mut vfs = VFS.try_lock()?;
     vfs.init()
 }
 
 pub fn chdir(path: &Path) -> Result<()> {
-    let mut vfs = unsafe { VFS.try_lock() }?;
+    let mut vfs = VFS.try_lock()?;
     vfs.chdir(path)
 }
 
 pub fn mount_fs(path: &Path, fs: FileSystem) -> Result<()> {
-    let mut vfs = unsafe { VFS.try_lock() }?;
+    let mut vfs = VFS.try_lock()?;
     vfs.mount_fs(path, fs)
 }
 
 pub fn entry_names(path: &Path) -> Result<Vec<String>> {
-    let vfs = unsafe { VFS.try_lock() }?;
+    let vfs = VFS.try_lock()?;
     let names = vfs
         .files_by_path(path)?
         .iter()
@@ -679,7 +679,7 @@ pub fn entry_names(path: &Path) -> Result<Vec<String>> {
 }
 
 pub fn cwd_path() -> Result<Path> {
-    let vfs = unsafe { VFS.try_lock() }?;
+    let vfs = VFS.try_lock()?;
     let cwd_id = vfs.cwd_id.ok_or(Error::NotInitialized)?;
     let file_ref = vfs.find_file(cwd_id).ok_or(Error::NotInitialized)?;
     let path = vfs
@@ -690,37 +690,37 @@ pub fn cwd_path() -> Result<Path> {
 }
 
 pub fn open_file(path: &Path, create: bool) -> Result<FileDescriptorNumber> {
-    let mut vfs = unsafe { VFS.try_lock() }?;
+    let mut vfs = VFS.try_lock()?;
     let fd = vfs.open_file(path, create)?;
     Ok(fd.num)
 }
 
 pub fn close_file(fd_num: FileDescriptorNumber) -> Result<()> {
-    let mut vfs = unsafe { VFS.try_lock() }?;
+    let mut vfs = VFS.try_lock()?;
     vfs.close_file(fd_num)
 }
 
 pub fn read_file(fd_num: FileDescriptorNumber) -> Result<Vec<u8>> {
-    let vfs = unsafe { VFS.try_lock() }?;
+    let vfs = VFS.try_lock()?;
     vfs.read_file(fd_num)
 }
 
 pub fn write_file(fd_num: FileDescriptorNumber, data: &[u8]) -> Result<()> {
-    let mut vfs = unsafe { VFS.try_lock() }?;
+    let mut vfs = VFS.try_lock()?;
     vfs.write_file(fd_num, data)
 }
 
 pub fn file_size(fd_num: FileDescriptorNumber) -> Result<usize> {
-    let vfs = unsafe { VFS.try_lock() }?;
+    let vfs = VFS.try_lock()?;
     vfs.file_size(fd_num)
 }
 
 pub fn create_file(path: &Path) -> Result<()> {
-    let mut vfs = unsafe { VFS.try_lock() }?;
+    let mut vfs = VFS.try_lock()?;
     vfs.add_file(path, VfsFileType::VirtualFile)
 }
 
 pub fn add_dev_file(desc: DeviceFileDescriptor, file_name: &str) -> Result<()> {
-    let mut vfs = unsafe { VFS.try_lock() }?;
+    let mut vfs = VFS.try_lock()?;
     vfs.add_dev_file(desc, file_name)
 }

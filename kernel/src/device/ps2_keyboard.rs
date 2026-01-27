@@ -19,7 +19,7 @@ use alloc::{collections::btree_map::BTreeMap, vec::Vec};
 const PS2_DATA_REG_ADDR: IoPortAddress = IoPortAddress::new(0x60);
 const PS2_CMD_AND_STATE_REG_ADDR: IoPortAddress = IoPortAddress::new(0x64);
 
-static mut PS2_KBD_DRIVER: Mutex<Ps2KeyboardDriver> =
+static PS2_KBD_DRIVER: Mutex<Ps2KeyboardDriver> =
     Mutex::new(Ps2KeyboardDriver::new(ANSI_US_104_KEY_MAP));
 
 struct Ps2KeyboardDriver {
@@ -194,13 +194,13 @@ impl DeviceDriverFunction for Ps2KeyboardDriver {
 }
 
 pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = unsafe { PS2_KBD_DRIVER.try_lock() }?;
+    let driver = PS2_KBD_DRIVER.try_lock()?;
     driver.get_device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
     x86_64::disabled_int(|| {
-        let mut driver = unsafe { PS2_KBD_DRIVER.try_lock() }?;
+        let mut driver = PS2_KBD_DRIVER.try_lock()?;
         driver.probe()?;
         driver.attach(())?;
         kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
@@ -209,28 +209,28 @@ pub fn probe_and_attach() -> Result<()> {
 }
 
 pub fn open() -> Result<()> {
-    let mut driver = unsafe { PS2_KBD_DRIVER.try_lock() }?;
+    let mut driver = PS2_KBD_DRIVER.try_lock()?;
     driver.open()
 }
 
 pub fn close() -> Result<()> {
-    let mut driver = unsafe { PS2_KBD_DRIVER.try_lock() }?;
+    let mut driver = PS2_KBD_DRIVER.try_lock()?;
     driver.close()
 }
 
 pub fn read() -> Result<Vec<u8>> {
-    let mut driver = unsafe { PS2_KBD_DRIVER.try_lock() }?;
+    let mut driver = PS2_KBD_DRIVER.try_lock()?;
     driver.read()
 }
 
 pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = unsafe { PS2_KBD_DRIVER.try_lock() }?;
+    let mut driver = PS2_KBD_DRIVER.try_lock()?;
     driver.write(data)
 }
 
 pub fn poll_normal() -> Result<()> {
     let key_event = x86_64::disabled_int(|| {
-        let mut driver = unsafe { PS2_KBD_DRIVER.try_lock() }?;
+        let mut driver = PS2_KBD_DRIVER.try_lock()?;
         driver.poll_normal()
     })?;
     let key_event = match key_event {
@@ -275,7 +275,7 @@ pub fn poll_normal() -> Result<()> {
 }
 
 pub extern "x86-interrupt" fn poll_int_ps2_kbd_driver(_stack_frame: idt::InterruptStackFrame) {
-    if let Ok(mut driver) = unsafe { PS2_KBD_DRIVER.try_lock() } {
+    if let Ok(mut driver) = PS2_KBD_DRIVER.try_lock() {
         let _ = driver.poll_int();
     }
     idt::notify_end_of_int();

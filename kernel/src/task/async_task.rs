@@ -12,7 +12,7 @@ use core::{
     time::Duration,
 };
 
-static mut ASYNC_TASK_EXECUTOR: Mutex<Executor> = Mutex::new(Executor::new());
+static ASYNC_TASK_EXECUTOR: Mutex<Executor> = Mutex::new(Executor::new());
 
 #[derive(Default)]
 struct Yield {
@@ -166,18 +166,18 @@ pub async fn exec_yield() {
 }
 
 pub fn poll() -> Result<()> {
-    unsafe { ASYNC_TASK_EXECUTOR.try_lock() }?.poll();
+    ASYNC_TASK_EXECUTOR.try_lock()?.poll();
     Ok(())
 }
 
 pub fn ready() -> Result<()> {
-    unsafe { ASYNC_TASK_EXECUTOR.try_lock() }?.ready();
+    ASYNC_TASK_EXECUTOR.try_lock()?.ready();
     Ok(())
 }
 
 pub fn spawn(future: impl Future<Output = ()> + 'static) -> Result<()> {
     let task = AsyncTask::new(future, Priority::Normal);
-    unsafe { ASYNC_TASK_EXECUTOR.try_lock() }?.spawn(task);
+    ASYNC_TASK_EXECUTOR.try_lock()?.spawn(task);
     Ok(())
 }
 
@@ -186,6 +186,6 @@ pub fn spawn_with_priority(
     priority: Priority,
 ) -> Result<()> {
     let task = AsyncTask::new(future, priority);
-    unsafe { ASYNC_TASK_EXECUTOR.try_lock() }?.spawn(task);
+    ASYNC_TASK_EXECUTOR.try_lock()?.spawn(task);
     Ok(())
 }

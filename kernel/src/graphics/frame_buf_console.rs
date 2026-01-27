@@ -12,7 +12,7 @@ use crate::{
 };
 use core::fmt;
 
-static mut FRAME_BUF_CONSOLE: Mutex<FrameBufferConsole> = Mutex::new(FrameBufferConsole::new());
+static FRAME_BUF_CONSOLE: Mutex<FrameBufferConsole> = Mutex::new(FrameBufferConsole::new());
 
 struct FrameBufferConsole {
     default_back_color: ColorCode,
@@ -444,24 +444,24 @@ impl fmt::Write for FrameBufferConsole {
 }
 
 pub fn init(back_color: ColorCode, fore_color: ColorCode) -> Result<()> {
-    unsafe { FRAME_BUF_CONSOLE.try_lock() }?.init(back_color, fore_color)
+    FRAME_BUF_CONSOLE.try_lock()?.init(back_color, fore_color)
 }
 
 pub fn set_target_layer_id(layer_id: LayerId) -> Result<()> {
-    unsafe { FRAME_BUF_CONSOLE.try_lock() }?.set_target_layer_id(layer_id)
+    FRAME_BUF_CONSOLE.try_lock()?.set_target_layer_id(layer_id)
 }
 
 pub fn set_fore_color(fore_color: ColorCode) -> Result<()> {
-    unsafe { FRAME_BUF_CONSOLE.try_lock() }?.set_fore_color(fore_color);
+    FRAME_BUF_CONSOLE.try_lock()?.set_fore_color(fore_color);
     Ok(())
 }
 
 pub fn reset_fore_color() -> Result<()> {
-    unsafe { FRAME_BUF_CONSOLE.try_lock() }?.reset_fore_color();
+    FRAME_BUF_CONSOLE.try_lock()?.reset_fore_color();
     Ok(())
 }
 
 pub fn write_char(c: char) -> Result<()> {
-    let _ = unsafe { FRAME_BUF_CONSOLE.try_lock() }?.write_char(c);
+    let _ = FRAME_BUF_CONSOLE.try_lock()?.write_char(c);
     Ok(())
 }

@@ -30,7 +30,7 @@ pub mod desc;
 pub mod register;
 pub mod trb;
 
-static mut XHC_DRIVER: Mutex<XhcDriver> = Mutex::new(XhcDriver::new());
+static XHC_DRIVER: Mutex<XhcDriver> = Mutex::new(XhcDriver::new());
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum XhcDriverError {
@@ -962,12 +962,12 @@ impl DeviceDriverFunction for XhcDriver {
 }
 
 pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = unsafe { XHC_DRIVER.try_lock() }?;
+    let driver = XHC_DRIVER.try_lock()?;
     driver.get_device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = unsafe { XHC_DRIVER.try_lock() }?;
+    let mut driver = XHC_DRIVER.try_lock()?;
     driver.probe()?;
     driver.attach(())?;
     kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
@@ -975,31 +975,31 @@ pub fn probe_and_attach() -> Result<()> {
 }
 
 pub fn open() -> Result<()> {
-    let mut driver = unsafe { XHC_DRIVER.try_lock() }?;
+    let mut driver = XHC_DRIVER.try_lock()?;
     driver.open()
 }
 
 pub fn close() -> Result<()> {
-    let mut driver = unsafe { XHC_DRIVER.try_lock() }?;
+    let mut driver = XHC_DRIVER.try_lock()?;
     driver.close()
 }
 
 pub fn read() -> Result<Vec<u8>> {
-    let mut driver = unsafe { XHC_DRIVER.try_lock() }?;
+    let mut driver = XHC_DRIVER.try_lock()?;
     driver.read()
 }
 
 pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = unsafe { XHC_DRIVER.try_lock() }?;
+    let mut driver = XHC_DRIVER.try_lock()?;
     driver.write(data)
 }
 
 pub fn poll_normal() -> Result<()> {
-    let mut driver = unsafe { XHC_DRIVER.try_lock() }?;
+    let mut driver = XHC_DRIVER.try_lock()?;
     driver.poll_normal()
 }
 
 pub fn request<R, F: FnOnce(&mut dyn XhcRequestFunction) -> R>(f: F) -> R {
-    let mut driver = unsafe { XHC_DRIVER.try_lock() }.unwrap();
+    let mut driver = XHC_DRIVER.try_lock().unwrap();
     f(&mut *driver)
 }

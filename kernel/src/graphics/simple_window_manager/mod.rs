@@ -18,7 +18,7 @@ use components::*;
 
 pub mod components;
 
-static mut SIMPLE_WM: Mutex<SimpleWindowManager> = Mutex::new(SimpleWindowManager::new());
+static SIMPLE_WM: Mutex<SimpleWindowManager> = Mutex::new(SimpleWindowManager::new());
 
 pub enum MouseEvent {
     Ps2Mouse(Ps2MouseEvent),
@@ -363,7 +363,7 @@ impl SimpleWindowManager {
 }
 
 pub fn init(mouse_pointer_bmp_path: String) -> Result<()> {
-    let mut simple_wm = unsafe { SIMPLE_WM.try_lock() }?;
+    let mut simple_wm = SIMPLE_WM.try_lock()?;
     let res_xy = frame_buf::resolution()?;
     simple_wm.res_xy = Some(res_xy);
     simple_wm.mouse_pointer_bmp_path = mouse_pointer_bmp_path;
@@ -371,28 +371,30 @@ pub fn init(mouse_pointer_bmp_path: String) -> Result<()> {
 }
 
 pub fn create_taskbar() -> Result<()> {
-    unsafe { SIMPLE_WM.try_lock() }?.create_taskbar()
+    SIMPLE_WM.try_lock()?.create_taskbar()
 }
 
 pub fn mouse_pointer_event(mouse_event: MouseEvent) -> Result<()> {
-    unsafe { SIMPLE_WM.try_lock() }?.mouse_pointer_event(mouse_event)
+    SIMPLE_WM.try_lock()?.mouse_pointer_event(mouse_event)
 }
 
 pub fn create_window(title: String, xy: (usize, usize), wh: (usize, usize)) -> Result<LayerId> {
-    unsafe { SIMPLE_WM.try_lock() }?.create_window(title, xy, wh)
+    SIMPLE_WM.try_lock()?.create_window(title, xy, wh)
 }
 
 pub fn add_component_to_window(
     layer_id: LayerId,
     component: Box<dyn Component>,
 ) -> Result<LayerId> {
-    unsafe { SIMPLE_WM.try_lock() }?.add_component_to_window(layer_id, component)
+    SIMPLE_WM
+        .try_lock()?
+        .add_component_to_window(layer_id, component)
 }
 
 pub fn remove_component(layer_id: LayerId) -> Result<()> {
-    unsafe { SIMPLE_WM.try_lock() }?.remove_component(layer_id)
+    SIMPLE_WM.try_lock()?.remove_component(layer_id)
 }
 
 pub fn flush_components() -> Result<()> {
-    unsafe { SIMPLE_WM.try_lock() }?.flush_components()
+    SIMPLE_WM.try_lock()?.flush_components()
 }

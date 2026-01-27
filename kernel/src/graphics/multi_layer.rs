@@ -7,7 +7,7 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-static mut LAYER_MAN: Mutex<LayerManager> = Mutex::new(LayerManager::new());
+static LAYER_MAN: Mutex<LayerManager> = Mutex::new(LayerManager::new());
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LayerError {
@@ -229,36 +229,37 @@ pub fn create_layer_from_bitmap_image(
 }
 
 pub fn push_layer(layer: Layer) -> Result<()> {
-    unsafe { LAYER_MAN.try_lock() }?.push_layer(layer);
+    LAYER_MAN.try_lock()?.push_layer(layer);
     Ok(())
 }
 
 pub fn draw_to_frame_buf() -> Result<()> {
-    unsafe { LAYER_MAN.try_lock() }?.draw_to_frame_buf()
+    LAYER_MAN.try_lock()?.draw_to_frame_buf()
 }
 
 pub fn draw_layer<F: Fn(&mut dyn Draw) -> Result<()>>(layer_id: LayerId, draw: F) -> Result<()> {
-    draw(unsafe { LAYER_MAN.try_lock() }?.get_layer(layer_id)?)
+    draw(LAYER_MAN.try_lock()?.get_layer(layer_id)?)
 }
 
 pub fn get_layer_info(layer_id: LayerId) -> Result<LayerInfo> {
-    let mut layer_man = unsafe { LAYER_MAN.try_lock() }?;
+    let mut layer_man = LAYER_MAN.try_lock()?;
     let layer = layer_man.get_layer(layer_id)?;
     let layer_info = layer.layer_info();
     Ok(layer_info)
 }
 
 pub fn move_layer(layer_id: LayerId, to_x: usize, to_y: usize) -> Result<()> {
-    unsafe { LAYER_MAN.try_lock() }?
+    LAYER_MAN
+        .try_lock()?
         .get_layer(layer_id)?
         .move_to(to_x, to_y);
     Ok(())
 }
 
 pub fn remove_layer(layer_id: LayerId) -> Result<()> {
-    unsafe { LAYER_MAN.try_lock() }?.remove_layer(layer_id)
+    LAYER_MAN.try_lock()?.remove_layer(layer_id)
 }
 
 pub fn bring_layer_to_front(layer_id: LayerId) -> Result<()> {
-    unsafe { LAYER_MAN.try_lock() }?.bring_layer_to_front(layer_id)
+    LAYER_MAN.try_lock()?.bring_layer_to_front(layer_id)
 }
