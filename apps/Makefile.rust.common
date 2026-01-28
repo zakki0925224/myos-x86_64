@@ -13,7 +13,7 @@ all: $(OUT_FILE)
 $(OUT_FILE): $(RUST_FILES) $(LIBC_A)
 	cargo build --release
 	mkdir -p ../bin
-	cp target/$(TARGET)/release/$(FILE_NAME) $(OUT_FILE)
+	cp ../../target/$(TARGET)/release/$(FILE_NAME) $(OUT_FILE)
 
 $(LIBC_A):
 	$(MAKE) -C $(LIBC_DIR) app
