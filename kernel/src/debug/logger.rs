@@ -46,11 +46,11 @@ impl SimpleLogger {
         }
 
         let fore_color = match level {
-            LogLevel::Error => GLOBAL_THEME.log_color_error,
-            LogLevel::Warn => GLOBAL_THEME.log_color_warn,
-            LogLevel::Info => GLOBAL_THEME.log_color_info,
-            LogLevel::Debug => GLOBAL_THEME.log_color_debug,
-            LogLevel::Trace => GLOBAL_THEME.log_color_trace,
+            LogLevel::Error => GLOBAL_THEME.log.error,
+            LogLevel::Warn => GLOBAL_THEME.log.warn,
+            LogLevel::Info => GLOBAL_THEME.log.info,
+            LogLevel::Debug => GLOBAL_THEME.log.debug,
+            LogLevel::Trace => GLOBAL_THEME.log.trace,
         };
 
         let _ = frame_buf_console::set_fore_color(fore_color);

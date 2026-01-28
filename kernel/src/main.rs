@@ -64,8 +64,8 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     // initialize frame buffer, console
     graphics::init(
         &boot_info.graphic_info,
-        GLOBAL_THEME.back_color,
-        GLOBAL_THEME.fore_color,
+        GLOBAL_THEME.console.back,
+        GLOBAL_THEME.console.fore,
     )
     .unwrap();
 

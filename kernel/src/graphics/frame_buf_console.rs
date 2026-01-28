@@ -69,7 +69,7 @@ impl FrameBufferConsole {
 
         self.fill(self.back_color)?;
 
-        for (i, color) in GLOBAL_THEME.sample_rect_colors.iter().enumerate() {
+        for (i, color) in GLOBAL_THEME.console.palette.iter().enumerate() {
             let xy = (i * 20, 0);
             let wh = (20, 20);
             self.draw_rect(xy, wh, *color)?;

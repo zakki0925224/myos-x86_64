@@ -193,21 +193,21 @@ impl Component for Window {
 
         multi_layer::draw_layer(self.layer_id, |l| {
             // back color
-            l.fill(GLOBAL_THEME.wm_component_back_color)?;
+            l.fill(GLOBAL_THEME.wm.component_back)?;
 
             // borders
-            let border_color1 = GLOBAL_THEME.wm_component_border_color1;
-            let border_color2 = if GLOBAL_THEME.wm_component_border_flat {
-                GLOBAL_THEME.wm_component_border_color1
+            let border_color1 = GLOBAL_THEME.wm.border_color1;
+            let border_color2 = if GLOBAL_THEME.wm.border_flat {
+                GLOBAL_THEME.wm.border_color1
             } else {
-                GLOBAL_THEME.wm_component_border_color2
+                GLOBAL_THEME.wm.border_color2
             };
-            let border_width = if GLOBAL_THEME.wm_component_border_flat {
+            let border_width = if GLOBAL_THEME.wm.border_flat {
                 w_w
             } else {
                 w_w - 2
             };
-            let border_height = if GLOBAL_THEME.wm_component_border_flat {
+            let border_height = if GLOBAL_THEME.wm.border_flat {
                 w_h
             } else {
                 w_h - 2
@@ -220,18 +220,14 @@ impl Component for Window {
             l.draw_rect((0, 0), (border_width, 2), border_color1)?;
 
             // titlebar
-            l.draw_rect(
-                (4, 4),
-                (w_w - 8, 18),
-                GLOBAL_THEME.wm_window_titlebar_back_color,
-            )?;
+            l.draw_rect((4, 4), (w_w - 8, 18), GLOBAL_THEME.wm.titlebar_back)?;
 
             // title
             l.draw_string_wrap(
                 (7, 7),
                 &format!("<{}> {}", self.layer_id, self.title),
-                GLOBAL_THEME.wm_window_titlebar_fore_color,
-                GLOBAL_THEME.wm_window_titlebar_back_color,
+                GLOBAL_THEME.wm.titlebar_fore,
+                GLOBAL_THEME.wm.titlebar_back,
             )?;
             Ok(())
         })?;
@@ -338,21 +334,21 @@ impl Component for Panel {
 
         multi_layer::draw_layer(self.layer_id, |l| {
             // back color
-            l.fill(GLOBAL_THEME.wm_component_back_color)?;
+            l.fill(GLOBAL_THEME.wm.component_back)?;
 
             // borders
-            let border_color1 = GLOBAL_THEME.wm_component_border_color1;
-            let border_color2 = if GLOBAL_THEME.wm_component_border_flat {
-                GLOBAL_THEME.wm_component_border_color1
+            let border_color1 = GLOBAL_THEME.wm.border_color1;
+            let border_color2 = if GLOBAL_THEME.wm.border_flat {
+                GLOBAL_THEME.wm.border_color1
             } else {
-                GLOBAL_THEME.wm_component_border_color2
+                GLOBAL_THEME.wm.border_color2
             };
-            let border_w = if GLOBAL_THEME.wm_component_border_flat {
+            let border_w = if GLOBAL_THEME.wm.border_flat {
                 w
             } else {
                 w - 2
             };
-            let border_h = if GLOBAL_THEME.wm_component_border_flat {
+            let border_h = if GLOBAL_THEME.wm.border_flat {
                 h
             } else {
                 h - 2
@@ -382,8 +378,8 @@ impl Panel {
             l.draw_string_wrap(
                 xy,
                 s,
-                GLOBAL_THEME.wm_component_fore_color,
-                GLOBAL_THEME.wm_component_back_color,
+                GLOBAL_THEME.wm.component_fore,
+                GLOBAL_THEME.wm.component_back,
             )
         })
     }
@@ -410,21 +406,21 @@ impl Component for Button {
 
         multi_layer::draw_layer(self.layer_id, |l| {
             // back color
-            l.fill(GLOBAL_THEME.wm_component_back_color)?;
+            l.fill(GLOBAL_THEME.wm.component_back)?;
 
             // borders
-            let border_color1 = GLOBAL_THEME.wm_component_border_color1;
-            let border_color2 = if GLOBAL_THEME.wm_component_border_flat {
-                GLOBAL_THEME.wm_component_border_color1
+            let border_color1 = GLOBAL_THEME.wm.border_color1;
+            let border_color2 = if GLOBAL_THEME.wm.border_flat {
+                GLOBAL_THEME.wm.border_color1
             } else {
-                GLOBAL_THEME.wm_component_border_color2
+                GLOBAL_THEME.wm.border_color2
             };
-            let border_w = if GLOBAL_THEME.wm_component_border_flat {
+            let border_w = if GLOBAL_THEME.wm.border_flat {
                 w
             } else {
                 w - 2
             };
-            let border_h = if GLOBAL_THEME.wm_component_border_flat {
+            let border_h = if GLOBAL_THEME.wm.border_flat {
                 h
             } else {
                 h - 2
@@ -441,8 +437,8 @@ impl Component for Button {
             l.draw_string_wrap(
                 (w / 2 - f_w * self.title.len() / 2, h / 2 - f_h / 2),
                 &self.title,
-                GLOBAL_THEME.wm_component_fore_color,
-                GLOBAL_THEME.wm_component_back_color,
+                GLOBAL_THEME.wm.component_fore,
+                GLOBAL_THEME.wm.component_back,
             )?;
 
             Ok(())

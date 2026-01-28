@@ -252,8 +252,8 @@ impl SimpleWindowManager {
         // let button7 = Button::create_and_push("button 7".to_string(), (0, 0), (100, 25))?;
         // let label = Label::create_and_push((0, 0),
         //     "[32] Sed ut perspiciatis, unde omnis iste natus error sit voluptatem\naccusantium doloremque laudantium, totam rem aperiam eaque ipsa, quae\nab illo inventore veritatis et quasi architecto beatae vitae dicta sunt,\nexplicabo.\nNemo enim ipsam voluptatem, quia voluptas sit, aspernatur aut\nodit aut fugit, sed quia consequuntur magni dolores eos, qui ratione\nvoluptatem sequi nesciunt, neque porro quisquam est, qui dolorem ipsum,\nquia dolor sit, amet, consectetur, adipisci velit, sed quia non numquam\neius modi tempora incidunt, ut labore et dolore magnam aliquam quaerat\nvoluptatem.".to_string(),
-        //     GLOBAL_THEME.fore_color,
-        //     GLOBAL_THEME.back_color,
+        //     GLOBAL_THEME.console.fore,
+        //     GLOBAL_THEME.console.back,
         // )?;
 
         // window.push_child(Box::new(button1))?;
