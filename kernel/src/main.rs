@@ -26,10 +26,14 @@ mod util;
 use crate::{
     arch::x86_64::{self, *},
     graphics::{
+        color::ColorCode,
         frame_buf, multi_layer,
         simple_window_manager::{self, MouseEvent},
     },
-    task::{async_task, syscall},
+    task::{
+        async_task::{self, Priority},
+        syscall,
+    },
     theme::GLOBAL_THEME,
 };
 use alloc::{string::ToString, vec::Vec};
@@ -138,60 +142,14 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     env::print_info();
     mem::free();
 
-    // tasks
-    let task_graphics = async {
-        loop {
-            let _ = simple_window_manager::flush_components();
-            async_task::exec_yield().await;
-            let _ = multi_layer::draw_to_frame_buf();
-            async_task::exec_yield().await;
-            let _ = frame_buf::apply_shadow_buf();
-            async_task::exec_yield().await;
-        }
-    };
-
-    let task_poll_uart = async {
-        loop {
-            let _ = device::uart::poll_normal();
-            async_task::exec_yield().await;
-        }
-    };
-
-    let task_poll_ps2_keyboard = async {
-        loop {
-            let _ = device::ps2_keyboard::poll_normal();
-            async_task::exec_yield().await;
-        }
-    };
-
-    let task_poll_usb_bus = async {
-        loop {
-            let _ = device::usb::usb_bus::poll_normal();
-            async_task::exec_yield().await;
-        }
-    };
-
-    let task_poll_xhc = async {
-        loop {
-            let _ = device::usb::xhc::poll_normal();
-            async_task::exec_yield().await;
-        }
-    };
-
-    let task_poll_rtl8139 = async {
-        loop {
-            let _ = device::rtl8139::poll_normal();
-            async_task::exec_yield().await;
-        }
-    };
-
-    async_task::spawn_with_priority(task_graphics, async_task::Priority::High).unwrap();
-    async_task::spawn_with_priority(poll_ps2_mouse(), async_task::Priority::High).unwrap();
-    async_task::spawn(task_poll_ps2_keyboard).unwrap();
-    async_task::spawn(task_poll_usb_bus).unwrap();
-    async_task::spawn(task_poll_xhc).unwrap();
-    async_task::spawn_with_priority(task_poll_uart, async_task::Priority::Low).unwrap();
-    async_task::spawn_with_priority(task_poll_rtl8139, async_task::Priority::Low).unwrap();
+    async_task::spawn_with_priority(graphics(), Priority::High).unwrap();
+    async_task::spawn_with_priority(poll_ps2_mouse(), Priority::High).unwrap();
+    async_task::spawn(poll_ps2_keyboard()).unwrap();
+    async_task::spawn(poll_usb_bus()).unwrap();
+    async_task::spawn(poll_xhc()).unwrap();
+    async_task::spawn_with_priority(poll_uart(), Priority::Low).unwrap();
+    async_task::spawn_with_priority(poll_rtl8139(), Priority::Low).unwrap();
+    async_task::spawn_with_priority(mem_monitor(), Priority::Low).unwrap();
     async_task::ready().unwrap();
 
     // execute init app
@@ -215,6 +173,19 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     }
 }
 
+// async tasks
+
+async fn graphics() {
+    loop {
+        let _ = simple_window_manager::flush_components();
+        async_task::exec_yield().await;
+        let _ = multi_layer::draw_to_frame_buf();
+        async_task::exec_yield().await;
+        let _ = frame_buf::apply_shadow_buf();
+        async_task::exec_yield().await;
+    }
+}
+
 async fn poll_ps2_mouse() {
     loop {
         let mouse_event = match device::ps2_mouse::poll_normal() {
@@ -226,6 +197,130 @@ async fn poll_ps2_mouse() {
         };
 
         let _ = simple_window_manager::mouse_pointer_event(MouseEvent::Ps2Mouse(mouse_event));
+        async_task::exec_yield().await;
+    }
+}
+
+async fn poll_ps2_keyboard() {
+    loop {
+        let _ = device::ps2_keyboard::poll_normal();
+        async_task::exec_yield().await;
+    }
+}
+
+async fn poll_usb_bus() {
+    loop {
+        let _ = device::usb::usb_bus::poll_normal();
+        async_task::exec_yield().await;
+    }
+}
+
+async fn poll_xhc() {
+    loop {
+        let _ = device::usb::xhc::poll_normal();
+        async_task::exec_yield().await;
+    }
+}
+
+async fn poll_uart() {
+    loop {
+        let _ = device::uart::poll_normal();
+        async_task::exec_yield().await;
+    }
+}
+
+async fn poll_rtl8139() {
+    loop {
+        let _ = device::rtl8139::poll_normal();
+        async_task::exec_yield().await;
+    }
+}
+
+async fn mem_monitor() {
+    const W: usize = 400;
+    const H: usize = 300;
+
+    // create bitmap reference
+    let (addr, size) = match mem::bitmap::get_bitmap_region() {
+        Ok((addr, size)) => (addr, size),
+        Err(_) => {
+            kwarn!("Memory manager unavailable");
+            return;
+        }
+    };
+    let bitmap_ptr = addr.as_ptr();
+
+    let mut prev_bitmap = vec![0u8; size];
+    let mut diff_intensity = vec![0u8; W * H]; // 0~255
+
+    // create layer
+    let mut layer = multi_layer::create_layer((0, 0), (W, H)).unwrap();
+    layer.always_on_top = true;
+    let layer_id = layer.id;
+    multi_layer::push_layer(layer).unwrap();
+
+    loop {
+        let current_bitmap: &[u8] = unsafe { core::slice::from_raw_parts(bitmap_ptr, size) };
+
+        let _ = multi_layer::draw_layer(layer_id, |l| {
+            l.fill(ColorCode::new_rgb(50, 50, 50))?;
+
+            'outer: for i in 0..size {
+                let curr_val = current_bitmap[i];
+                let prev_val = prev_bitmap[i];
+
+                if i * 8 >= W * H {
+                    break 'outer;
+                }
+
+                for bit in 0..8 {
+                    let page_idx = i * 8 + bit;
+                    if page_idx >= W * H {
+                        break 'outer;
+                    }
+
+                    let curr_bit = (curr_val >> bit) & 1;
+                    let prev_bit = (prev_val >> bit) & 1;
+
+                    if curr_bit != prev_bit {
+                        diff_intensity[page_idx] = 255;
+                    } else {
+                        diff_intensity[page_idx] = diff_intensity[page_idx].saturating_sub(10);
+                    }
+
+                    let intensity = diff_intensity[page_idx];
+                    let is_used = curr_bit != 0;
+
+                    let color = if intensity > 0 {
+                        let white_rate = intensity as u32;
+
+                        if is_used {
+                            let gb = 100 + (155 * white_rate / 255) as u8;
+                            ColorCode::new_rgb(255, gb, gb)
+                        } else {
+                            let r = (255 * white_rate / 255) as u8;
+                            let b = 100 + (155 * white_rate / 255) as u8;
+                            ColorCode::new_rgb(r, 255, b)
+                        }
+                    } else {
+                        if is_used {
+                            ColorCode::new_rgb(255, 0, 0) // red
+                        } else {
+                            ColorCode::new_rgb(0, 255, 0) // green
+                        }
+                    };
+
+                    let px = page_idx % W;
+                    let py = page_idx / W;
+                    l.draw_pixel((px, py), color)?;
+                }
+            }
+
+            Ok(())
+        });
+
+        prev_bitmap.copy_from_slice(current_bitmap);
+
         async_task::exec_yield().await;
     }
 }

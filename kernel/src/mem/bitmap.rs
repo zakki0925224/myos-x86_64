@@ -474,3 +474,11 @@ pub fn mem_clear(mem_frame_info: &MemoryFrameInfo) -> Result<()> {
     let bmm = BMM.try_lock()?;
     unsafe { bmm.mem_clear(mem_frame_info) }
 }
+
+pub fn get_bitmap_region() -> Result<(VirtualAddress, usize)> {
+    let bmm = BMM.try_lock()?;
+    let phys_addr = bmm.bitmap_phys_addr()?;
+    let virt_addr = phys_addr.get_virt_addr()?;
+    let len = bmm.bitmap_len();
+    Ok((virt_addr, len))
+}

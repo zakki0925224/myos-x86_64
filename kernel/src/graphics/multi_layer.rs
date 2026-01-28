@@ -237,7 +237,10 @@ pub fn draw_to_frame_buf() -> Result<()> {
     LAYER_MAN.try_lock()?.draw_to_frame_buf()
 }
 
-pub fn draw_layer<F: Fn(&mut dyn Draw) -> Result<()>>(layer_id: LayerId, draw: F) -> Result<()> {
+pub fn draw_layer<F: FnMut(&mut dyn Draw) -> Result<()>>(
+    layer_id: LayerId,
+    mut draw: F,
+) -> Result<()> {
     draw(LAYER_MAN.try_lock()?.get_layer(layer_id)?)
 }
 
