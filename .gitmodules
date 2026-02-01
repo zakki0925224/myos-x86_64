@@ -3,4 +3,4 @@
 	url = https://gitlab.com/qemu-project/qemu.git
 [submodule "third-party/doom-for-myos"]
 	path = third-party/doom-for-myos
-	url = https://github.com/Zakki0925224/doom-for-myos.git
+	url = https://github.com/zakki0925224/doom-for-myos.git

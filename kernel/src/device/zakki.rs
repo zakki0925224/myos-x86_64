@@ -2,11 +2,11 @@ use super::{DeviceDriverFunction, DeviceDriverInfo};
 use crate::{error::Result, fs::vfs, kinfo, sync::mutex::Mutex};
 use alloc::vec::Vec;
 
-const MESSAGE: &str = "Hello! I'm Zakki, a low-level programmer!\nCheck out my links below:\n\tX: https://x.com/zakki0925224\n\tGitHub: https://github.com/Zakki0925224\n\tPortfolio: https://bento.me/zakki0925224\n";
+const MESSAGE: &str = "Hello! I'm Zakki, a low-level programmer!\nCheck out my links below:\n\tX: https://x.com/zakki0925224\n\tGitHub: https://github.com/zakki0925224\n\tPortfolio: https://zakki0925224.github.io\n";
 
 static ZAKKI_DRIVER: Mutex<ZakkiDriver> = Mutex::new(ZakkiDriver::new());
 
-// https://github.com/Zakki0925224/zakki_driver
+// https://github.com/zakki0925224/zakki_driver
 struct ZakkiDriver {
     device_driver_info: DeviceDriverInfo,
 }

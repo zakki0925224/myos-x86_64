@@ -267,7 +267,6 @@ def _make_initramfs():
     _run_cmd(f"sudo mount -o loop ./{OUTPUT_DIR}/{INITRAMFS_IMG_FILE} {MNT_DIR_PATH}")
     _run_cmd(f"sudo rm -rf {MNT_DIR_PATH}/*")  # clear initramfs
     _run_cmd(f"sudo cp -r ./{INITRAMFS_DIR}/* {MNT_DIR_PATH}/")
-    _run_cmd("sudo sync")
     _run_cmd(f"sudo umount {MNT_DIR_PATH}")
     _run_cmd(f"rm -r {MNT_DIR_PATH}")
 
@@ -289,7 +288,6 @@ def _make_img():
     _run_cmd(
         f"sudo cp ./{OUTPUT_DIR}/{INITRAMFS_IMG_FILE} {MNT_DIR_PATH}/initramfs.img"
     )
-    _run_cmd("sudo sync")
     _run_cmd(f"sudo umount {MNT_DIR_PATH}")
     _run_cmd(f"rm -r {MNT_DIR_PATH}")
 
