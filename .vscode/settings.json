@@ -9,5 +9,11 @@
         "./apps/imgvw/Cargo.toml",
         "./apps/lifegame/Cargo.toml",
         "./apps/web/Cargo.toml"
-    ]
+    ],
+    "files.watcherExclude": {
+        "**/target/**": true,
+        "third-party/qemu/**": true,
+        "build/**": true,
+        "dump/**": true
+    }
 }
