@@ -45,7 +45,7 @@ This is a replacement project for the previous **[myos](https://github.com/zakki
     - [x] UDP
     - [x] TCP
     - [x] Socket API
-- Simple Window Manager
+- Window Manager
 - [Userland applications](/apps/) implemented in C or Rust (libc for myos available [here](/apps/libc/))
     - [x] [Shell](/apps/sh/)
     - [x] [Web browser](/apps/web)

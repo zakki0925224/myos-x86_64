@@ -2,9 +2,7 @@ use crate::{
     arch::x86_64::acpi::AcpiError,
     device::usb::xhc::XhcDriverError,
     fs::vfs::VirtualFileSystemError,
-    graphics::{
-        draw::DrawError, multi_layer::LayerError, simple_window_manager::SimpleWindowManagerError,
-    },
+    graphics::{draw::DrawError, multi_layer::LayerError, window_manager::WindowManagerError},
     mem::{allocator::AllocationError, bitmap::BitmapMemoryManagerError, paging::PageManagerError},
     util::fifo::FifoError,
 };
@@ -21,7 +19,7 @@ pub enum Error {
     IndexOutOfBoundsError(usize),
     VirtualFileSystemError(VirtualFileSystemError),
     Elf64Error(Elf64Error),
-    SimpleWindowManagerError(SimpleWindowManagerError),
+    WindowManagerError(WindowManagerError),
     AcpiError(AcpiError),
     AllocationError(AllocationError),
     DrawError(DrawError),
@@ -53,7 +51,7 @@ impl_from_error! {
     FifoError(FifoError),
     VirtualFileSystemError(VirtualFileSystemError),
     Elf64Error(Elf64Error),
-    SimpleWindowManagerError(SimpleWindowManagerError),
+    WindowManagerError(WindowManagerError),
     AcpiError(AcpiError),
     AllocationError(AllocationError),
     DrawError(DrawError),

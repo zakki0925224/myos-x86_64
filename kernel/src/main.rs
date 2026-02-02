@@ -28,7 +28,7 @@ use crate::{
     arch::x86_64::{self, *},
     graphics::{
         frame_buf, multi_layer,
-        simple_window_manager::{self, MouseEvent},
+        window_manager::{self, MouseEvent},
     },
     task::{
         async_task::{self, Priority},
@@ -77,8 +77,8 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     graphics::enable_shadow_buf().unwrap();
     graphics::init_layer_man(&boot_info.graphic_info).unwrap();
 
-    // initialize simple window manager
-    graphics::init_simple_wm(boot_info.kernel_config.mouse_pointer_bmp_path.to_string()).unwrap();
+    // initialize window manager
+    graphics::init_window_man(boot_info.kernel_config.mouse_pointer_bmp_path.to_string()).unwrap();
 
     // initialize ACPI
     acpi::init(boot_info.rsdp_virt_addr.unwrap().into()).unwrap();
@@ -177,7 +177,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
 
 async fn graphics() {
     loop {
-        let _ = simple_window_manager::flush_components();
+        let _ = window_manager::flush_components();
         async_task::exec_yield().await;
         let _ = multi_layer::draw_to_frame_buf();
         async_task::exec_yield().await;
@@ -196,7 +196,7 @@ async fn poll_ps2_mouse() {
             }
         };
 
-        let _ = simple_window_manager::mouse_pointer_event(MouseEvent::Ps2Mouse(mouse_event));
+        let _ = window_manager::mouse_pointer_event(MouseEvent::Ps2Mouse(mouse_event));
         async_task::exec_yield().await;
     }
 }

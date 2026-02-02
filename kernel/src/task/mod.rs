@@ -6,7 +6,7 @@ use crate::{
     debug::dwarf::Dwarf,
     error::Result,
     fs::vfs::{self, *},
-    graphics::{multi_layer::LayerId, simple_window_manager},
+    graphics::{multi_layer::LayerId, window_manager},
     kdebug,
     mem::{
         bitmap::{self, MemoryFrameInfo},
@@ -119,7 +119,7 @@ impl Drop for TaskResource {
 
         // destroy all created windows
         for layer_id in self.created_layer_ids.iter() {
-            let _ = simple_window_manager::remove_component(*layer_id);
+            let _ = window_manager::remove_component(*layer_id);
         }
 
         // close all opend files

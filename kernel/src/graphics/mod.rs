@@ -9,7 +9,7 @@ pub mod font;
 pub mod frame_buf;
 pub mod frame_buf_console;
 pub mod multi_layer;
-pub mod simple_window_manager;
+pub mod window_manager;
 
 pub fn init(
     graphic_info: &GraphicInfo,
@@ -42,10 +42,10 @@ pub fn init_layer_man(graphic_info: &GraphicInfo) -> Result<()> {
     Ok(())
 }
 
-pub fn init_simple_wm(mouse_pointer_bmp_path: String) -> Result<()> {
-    simple_window_manager::init(mouse_pointer_bmp_path)?;
-    simple_window_manager::create_taskbar()?;
+pub fn init_window_man(mouse_pointer_bmp_path: String) -> Result<()> {
+    window_manager::init(mouse_pointer_bmp_path)?;
+    window_manager::create_taskbar()?;
 
-    kinfo!("graphics: Simple window manager initialized");
+    kinfo!("graphics: Window manager initialized");
     Ok(())
 }

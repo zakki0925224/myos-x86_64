@@ -3,7 +3,7 @@ use crate::{
     graphics::{
         color::ColorCode,
         multi_layer::{self, LayerError, LayerId},
-        simple_window_manager::{
+        window_manager::{
             self,
             components::{self, Component},
         },
@@ -60,7 +60,7 @@ impl NetworkVisualizeManager {
         {
             let mut window_layer_id = self.window_layer_id.try_lock()?;
             if window_layer_id.is_none() {
-                let layer_id = simple_window_manager::create_window(
+                let layer_id = window_manager::create_window(
                     "Network packet visualize".to_string(),
                     WINDOW_DEFAULT_POS,
                     WINDOW_SIZE_WH,
@@ -77,7 +77,7 @@ impl NetworkVisualizeManager {
             if canvas_layer_id.is_none() {
                 let canvas = components::Canvas::create_and_push(WINDOW_DEFAULT_POS, CANVAS_WH)?;
                 *canvas_layer_id = Some(canvas.layer_id());
-                simple_window_manager::add_component_to_window(window_layer_id, Box::new(canvas))?;
+                window_manager::add_component_to_window(window_layer_id, Box::new(canvas))?;
             }
         }
 

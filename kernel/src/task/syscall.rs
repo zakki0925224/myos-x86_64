@@ -10,7 +10,7 @@ use crate::{
         self,
         vfs::{self, FileDescriptorNumber},
     },
-    graphics::{multi_layer::LayerId, simple_window_manager},
+    graphics::{multi_layer::LayerId, window_manager},
     kdebug, kerror, kinfo,
     mem::{bitmap, paging::PAGE_SIZE},
     net::{self, socket::*},
@@ -642,7 +642,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             }
 
             let layer_id = LayerId::new_val(layer_id as usize);
-            simple_window_manager::remove_component(layer_id)?;
+            window_manager::remove_component(layer_id)?;
 
             let TaskResult::Ok =
                 task::single_scheduler::request(TaskRequest::RemoveLayerId(layer_id))?
@@ -681,7 +681,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
                 return Err("Invalid payload size for CreateComponentWindow".into());
             }
 
-            let layer_id = simple_window_manager::create_window(title, xy, wh)?;
+            let layer_id = window_manager::create_window(title, xy, wh)?;
             let TaskResult::Ok =
                 task::single_scheduler::request(TaskRequest::PushLayerId(layer_id.clone()))?
             else {
@@ -730,14 +730,13 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             let wh = (image_width, image_height);
             let framebuf_virt_addr: VirtualAddress = (framebuf_ptr as u64).into();
 
-            let image = simple_window_manager::components::Image::create_and_push_from_framebuf(
+            let image = window_manager::components::Image::create_and_push_from_framebuf(
                 (0, 0),
                 wh,
                 framebuf_virt_addr,
                 pixel_format.into(),
             )?;
-            let new_layer_id =
-                simple_window_manager::add_component_to_window(layer_id, Box::new(image))?;
+            let new_layer_id = window_manager::add_component_to_window(layer_id, Box::new(image))?;
 
             // reply
             let reply_header =

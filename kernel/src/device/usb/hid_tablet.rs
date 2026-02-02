@@ -4,7 +4,7 @@ use crate::{
         usb::{usb_bus::*, xhc::desc::*, UsbDeviceDriverFunction},
     },
     error::{Error, Result},
-    graphics::{frame_buf, simple_window_manager},
+    graphics::{frame_buf, window_manager},
     util,
 };
 use alloc::{collections::vec_deque::VecDeque, vec::Vec};
@@ -114,9 +114,9 @@ impl UsbDeviceDriverFunction for UsbHidTabletDriver {
         };
 
         self.prev_report = report;
-        let _ = simple_window_manager::mouse_pointer_event(
-            simple_window_manager::MouseEvent::UsbHidMouse(mouse_event),
-        );
+        let _ = window_manager::mouse_pointer_event(window_manager::MouseEvent::UsbHidMouse(
+            mouse_event,
+        ));
 
         Ok(())
     }

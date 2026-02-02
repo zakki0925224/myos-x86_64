@@ -18,7 +18,7 @@ use components::*;
 
 pub mod components;
 
-static SIMPLE_WM: Mutex<SimpleWindowManager> = Mutex::new(SimpleWindowManager::new());
+static WINDOW_MAN: Mutex<WindowManager> = Mutex::new(WindowManager::new());
 
 pub enum MouseEvent {
     Ps2Mouse(Ps2MouseEvent),
@@ -26,13 +26,13 @@ pub enum MouseEvent {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum SimpleWindowManagerError {
+pub enum WindowManagerError {
     MousePointerLayerWasNotFound,
     TaskbarLayerWasNotFound,
     WindowWasNotFound { layer_id: usize },
 }
 
-struct SimpleWindowManager {
+struct WindowManager {
     windows: Vec<Window>,
     taskbar: Option<Panel>,
     mouse_pointer: Option<Image>,
@@ -42,7 +42,7 @@ struct SimpleWindowManager {
     dragging_offset: Option<(isize, isize)>,
 }
 
-impl SimpleWindowManager {
+impl WindowManager {
     const PS2_MOUSE_MAX_REL_MOVEMENT: isize = 100;
 
     const fn new() -> Self {
@@ -93,7 +93,7 @@ impl SimpleWindowManager {
         let mouse_pointer = self
             .mouse_pointer
             .as_mut()
-            .ok_or(SimpleWindowManagerError::MousePointerLayerWasNotFound)?;
+            .ok_or(WindowManagerError::MousePointerLayerWasNotFound)?;
 
         let LayerInfo {
             xy: (m_x_before, m_y_before),
@@ -182,7 +182,7 @@ impl SimpleWindowManager {
                     .windows
                     .iter_mut()
                     .find(|w| w.layer_id() == *window_id)
-                    .ok_or(SimpleWindowManagerError::WindowWasNotFound {
+                    .ok_or(WindowManagerError::WindowWasNotFound {
                         layer_id: window_id.get(),
                     })?;
 
@@ -284,7 +284,7 @@ impl SimpleWindowManager {
             .windows
             .iter_mut()
             .find(|w| w.layer_id() == layer_id)
-            .ok_or(SimpleWindowManagerError::WindowWasNotFound {
+            .ok_or(WindowManagerError::WindowWasNotFound {
                 layer_id: layer_id.get(),
             })?;
         window.push_child(component)
@@ -308,7 +308,7 @@ impl SimpleWindowManager {
             }
         }
 
-        Err(SimpleWindowManagerError::WindowWasNotFound {
+        Err(WindowManagerError::WindowWasNotFound {
             layer_id: layer_id.get(),
         }
         .into())
@@ -322,7 +322,7 @@ impl SimpleWindowManager {
         let taskbar = self
             .taskbar
             .as_mut()
-            .ok_or(SimpleWindowManagerError::TaskbarLayerWasNotFound)?;
+            .ok_or(WindowManagerError::TaskbarLayerWasNotFound)?;
         let (w, h) = taskbar.get_layer_info()?.wh;
         taskbar.draw_flush()?;
 
@@ -363,38 +363,38 @@ impl SimpleWindowManager {
 }
 
 pub fn init(mouse_pointer_bmp_path: String) -> Result<()> {
-    let mut simple_wm = SIMPLE_WM.try_lock()?;
+    let mut window_man = WINDOW_MAN.try_lock()?;
     let res_xy = frame_buf::resolution()?;
-    simple_wm.res_xy = Some(res_xy);
-    simple_wm.mouse_pointer_bmp_path = mouse_pointer_bmp_path;
+    window_man.res_xy = Some(res_xy);
+    window_man.mouse_pointer_bmp_path = mouse_pointer_bmp_path;
     Ok(())
 }
 
 pub fn create_taskbar() -> Result<()> {
-    SIMPLE_WM.try_lock()?.create_taskbar()
+    WINDOW_MAN.try_lock()?.create_taskbar()
 }
 
 pub fn mouse_pointer_event(mouse_event: MouseEvent) -> Result<()> {
-    SIMPLE_WM.try_lock()?.mouse_pointer_event(mouse_event)
+    WINDOW_MAN.try_lock()?.mouse_pointer_event(mouse_event)
 }
 
 pub fn create_window(title: String, xy: (usize, usize), wh: (usize, usize)) -> Result<LayerId> {
-    SIMPLE_WM.try_lock()?.create_window(title, xy, wh)
+    WINDOW_MAN.try_lock()?.create_window(title, xy, wh)
 }
 
 pub fn add_component_to_window(
     layer_id: LayerId,
     component: Box<dyn Component>,
 ) -> Result<LayerId> {
-    SIMPLE_WM
+    WINDOW_MAN
         .try_lock()?
         .add_component_to_window(layer_id, component)
 }
 
 pub fn remove_component(layer_id: LayerId) -> Result<()> {
-    SIMPLE_WM.try_lock()?.remove_component(layer_id)
+    WINDOW_MAN.try_lock()?.remove_component(layer_id)
 }
 
 pub fn flush_components() -> Result<()> {
-    SIMPLE_WM.try_lock()?.flush_components()
+    WINDOW_MAN.try_lock()?.flush_components()
 }
