@@ -4,6 +4,7 @@ use crate::{
     error::{Error, Result},
     kinfo, kwarn,
     net::{arp::*, eth::*, icmp::*, ip::*, socket::*, tcp::*, udp::*},
+    net_vis,
     sync::mutex::Mutex,
 };
 use alloc::{collections::btree_map::BTreeMap, vec::Vec};
@@ -361,7 +362,7 @@ impl NetworkManager {
         Ok(())
     }
 
-    fn send_tcp_data(&mut self, socket_id: SocketId, data: &[u8]) -> Result<()> {
+    fn send_tcp_packet(&mut self, socket_id: SocketId, data: &[u8]) -> Result<()> {
         let (src_port, dst_port, dst_addr, seq_num, ack_num) = {
             let socket = self.socket_table.socket_mut_by_id(socket_id)?;
             let src_port = socket.port();
@@ -399,6 +400,7 @@ impl NetworkManager {
             data.to_vec(),
         );
         packet.calc_checksum_with_ipv4(self.my_ipv4_addr, dst_addr);
+        net_vis::hook(net_vis::FunctionHook::SendTcpPacket);
 
         let mut ipv4_packet = Ipv4Packet::new_with(
             0x45,
@@ -432,7 +434,7 @@ impl NetworkManager {
         Ok(())
     }
 
-    fn recv_tcp_data(&mut self, socket_id: SocketId, buf: &mut [u8]) -> Result<usize> {
+    fn recv_tcp_packet(&mut self, socket_id: SocketId, buf: &mut [u8]) -> Result<usize> {
         let socket = self.socket_table.socket_mut_by_id(socket_id)?;
         let tcp_socket = socket.inner_tcp_mut()?;
 
@@ -467,6 +469,8 @@ impl NetworkManager {
     }
 
     fn receive_icmp_packet(&mut self, packet: IcmpPacket) -> Result<Option<IcmpPacket>> {
+        net_vis::hook(net_vis::FunctionHook::ReceiveIcmpPacket);
+
         let ty = packet.ty;
 
         match ty {
@@ -487,6 +491,8 @@ impl NetworkManager {
         packet: TcpPacket,
         remote_addr: Ipv4Addr,
     ) -> Result<Option<TcpPacket>> {
+        net_vis::hook(net_vis::FunctionHook::ReceiveTcpPacket);
+
         let src_port = packet.src_port;
         let dst_port = packet.dst_port;
         let seq_num = packet.seq_num;
@@ -627,6 +633,8 @@ impl NetworkManager {
     }
 
     fn receive_udp_packet(&mut self, packet: UdpPacket) -> Result<Option<UdpPacket>> {
+        net_vis::hook(net_vis::FunctionHook::ReceiveUdpPacket);
+
         let dst_port = packet.dst_port;
         let socket_mut = self.udp_socket_mut_by_port(dst_port)?;
         socket_mut.receive(&packet.data);
@@ -635,6 +643,8 @@ impl NetworkManager {
     }
 
     fn receive_arp_packet(&mut self, packet: ArpPacket) -> Result<Option<ArpPacket>> {
+        net_vis::hook(net_vis::FunctionHook::ReceiveArpPacket);
+
         let arp_op = packet.op()?;
         let sender_ipv4_addr = packet.sender_ipv4_addr;
         let sender_mac_addr = packet.sender_eth_addr;
@@ -668,6 +678,8 @@ impl NetworkManager {
     }
 
     fn receive_ipv4_packet(&mut self, packet: Ipv4Packet) -> Result<Option<Ipv4Packet>> {
+        net_vis::hook(net_vis::FunctionHook::ReceiveIpv4Paket);
+
         packet.validate()?;
 
         if packet.dst_addr != self.my_ipv4_addr {
@@ -721,6 +733,8 @@ impl NetworkManager {
     }
 
     fn receive_eth_payload(&mut self, payload: EthernetPayload) -> Result<Option<EthernetPayload>> {
+        net_vis::hook(net_vis::FunctionHook::ReceiveEthPayload);
+
         let mut reply_payload = None;
 
         match payload {
@@ -756,6 +770,7 @@ impl NetworkManager {
             target_ipv4_addr,
         );
 
+        net_vis::hook(net_vis::FunctionHook::SendArpPacket);
         self.send_eth_payload(
             EthernetPayload::Arp(packet),
             target_eth_addr,
@@ -791,6 +806,7 @@ impl NetworkManager {
             .resolve_mac_addr(target_ip)?
             .ok_or::<Error>("Failed to resolve MAC address".into())?;
 
+        net_vis::hook(net_vis::FunctionHook::SendUdpPacket);
         self.send_eth_payload(
             EthernetPayload::Ipv4(ipv4_packet),
             dst_mac_addr,
@@ -808,6 +824,7 @@ impl NetworkManager {
         let src_mac_addr = self.my_mac_addr()?;
         let eth_frame = EthernetFrame::new_with(dst_mac_addr, src_mac_addr, eth_type, &payload_vec);
 
+        net_vis::hook(net_vis::FunctionHook::SendEthPayload);
         device::rtl8139::push_eth_frame_to_tx_queue(eth_frame)
     }
 
@@ -944,7 +961,7 @@ pub fn send_tcp_syn(socket_id: SocketId) -> Result<()> {
     NETWORK_MAN.try_lock()?.send_tcp_syn(socket_id)
 }
 
-pub fn send_tcp_data(socket_id: SocketId, data: &[u8]) -> Result<()> {
+pub fn send_tcp_packet(socket_id: SocketId, data: &[u8]) -> Result<()> {
     // pre-resolve MAC address
     let (dst_addr, _) = {
         let mut man = NETWORK_MAN.try_lock()?;
@@ -964,11 +981,11 @@ pub fn send_tcp_data(socket_id: SocketId, data: &[u8]) -> Result<()> {
     let target_ip = get_target_ip(my_ip, dst_addr);
     resolve_mac_addr(target_ip)?;
 
-    NETWORK_MAN.try_lock()?.send_tcp_data(socket_id, data)
+    NETWORK_MAN.try_lock()?.send_tcp_packet(socket_id, data)
 }
 
-pub fn recv_tcp_data(socket_id: SocketId, buf: &mut [u8]) -> Result<usize> {
-    NETWORK_MAN.try_lock()?.recv_tcp_data(socket_id, buf)
+pub fn recv_tcp_packet(socket_id: SocketId, buf: &mut [u8]) -> Result<usize> {
+    NETWORK_MAN.try_lock()?.recv_tcp_packet(socket_id, buf)
 }
 
 pub fn is_tcp_established(socket_id: SocketId) -> Result<bool> {

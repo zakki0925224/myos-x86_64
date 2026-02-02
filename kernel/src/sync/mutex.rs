@@ -1,4 +1,4 @@
-use crate::{arch::x86_64, error::Result};
+use crate::error::Result;
 use core::{
     cell::SyncUnsafeCell,
     ops::{Deref, DerefMut},
@@ -21,7 +21,7 @@ impl<T: Sized> Mutex<T> {
     pub fn try_lock(&self) -> Result<MutexGuard<T>> {
         if self
             .locked
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
             return Ok(unsafe { MutexGuard::new(self, &self.value) });
@@ -36,21 +36,19 @@ impl<T: Sized> Mutex<T> {
 
     pub fn spin_lock(&self) -> MutexGuard<T> {
         loop {
-            if let Ok(guard) = self.try_lock() {
-                return guard;
-            } else {
-                x86_64::stihlt();
+            if self
+                .locked
+                .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                return unsafe { MutexGuard::new(self, &self.value) };
+            }
+
+            while self.locked.load(Ordering::Relaxed) {
+                core::hint::spin_loop();
             }
         }
     }
-
-    // pub fn lock(&self) -> MutexGuard<T> {
-    //     self.try_lock().unwrap_or_else(|e| panic!("{:?}", e))
-    // }
-
-    // pub fn is_locked(&self) -> bool {
-    //     self.locked.load(Ordering::SeqCst)
-    // }
 }
 
 unsafe impl<T> Sync for Mutex<T> {}
@@ -87,7 +85,7 @@ impl<'a, T> DerefMut for MutexGuard<'a, T> {
 
 impl<'a, T> Drop for MutexGuard<'a, T> {
     fn drop(&mut self) {
-        self.mutex.locked.store(false, Ordering::Relaxed);
+        self.mutex.locked.store(false, Ordering::Release);
     }
 }
 

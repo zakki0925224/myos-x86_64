@@ -16,6 +16,7 @@ mod fs;
 mod graphics;
 mod mem;
 mod net;
+mod net_vis;
 mod panic;
 mod sync;
 mod task;
@@ -26,7 +27,6 @@ mod util;
 use crate::{
     arch::x86_64::{self, *},
     graphics::{
-        color::ColorCode,
         frame_buf, multi_layer,
         simple_window_manager::{self, MouseEvent},
     },
@@ -149,7 +149,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     async_task::spawn(poll_xhc()).unwrap();
     async_task::spawn_with_priority(poll_uart(), Priority::Low).unwrap();
     async_task::spawn_with_priority(poll_rtl8139(), Priority::Low).unwrap();
-    async_task::spawn_with_priority(mem_monitor(), Priority::Low).unwrap();
+    async_task::spawn_with_priority(poll_net_vis(), Priority::Low).unwrap();
     async_task::ready().unwrap();
 
     // execute init app
@@ -236,91 +236,9 @@ async fn poll_rtl8139() {
     }
 }
 
-async fn mem_monitor() {
-    const W: usize = 400;
-    const H: usize = 300;
-
-    // create bitmap reference
-    let (addr, size) = match mem::bitmap::get_bitmap_region() {
-        Ok((addr, size)) => (addr, size),
-        Err(_) => {
-            kwarn!("Memory manager unavailable");
-            return;
-        }
-    };
-    let bitmap_ptr = addr.as_ptr();
-
-    let mut prev_bitmap = vec![0u8; size];
-    let mut diff_intensity = vec![0u8; W * H]; // 0~255
-
-    // create layer
-    let mut layer = multi_layer::create_layer((0, 0), (W, H)).unwrap();
-    layer.always_on_top = true;
-    let layer_id = layer.id;
-    multi_layer::push_layer(layer).unwrap();
-
+async fn poll_net_vis() {
     loop {
-        let current_bitmap: &[u8] = unsafe { core::slice::from_raw_parts(bitmap_ptr, size) };
-
-        let _ = multi_layer::draw_layer(layer_id, |l| {
-            l.fill(ColorCode::new_rgb(50, 50, 50))?;
-
-            'outer: for i in 0..size {
-                let curr_val = current_bitmap[i];
-                let prev_val = prev_bitmap[i];
-
-                if i * 8 >= W * H {
-                    break 'outer;
-                }
-
-                for bit in 0..8 {
-                    let page_idx = i * 8 + bit;
-                    if page_idx >= W * H {
-                        break 'outer;
-                    }
-
-                    let curr_bit = (curr_val >> bit) & 1;
-                    let prev_bit = (prev_val >> bit) & 1;
-
-                    if curr_bit != prev_bit {
-                        diff_intensity[page_idx] = 255;
-                    } else {
-                        diff_intensity[page_idx] = diff_intensity[page_idx].saturating_sub(10);
-                    }
-
-                    let intensity = diff_intensity[page_idx];
-                    let is_used = curr_bit != 0;
-
-                    let color = if intensity > 0 {
-                        let white_rate = intensity as u32;
-
-                        if is_used {
-                            let gb = 100 + (155 * white_rate / 255) as u8;
-                            ColorCode::new_rgb(255, gb, gb)
-                        } else {
-                            let r = (255 * white_rate / 255) as u8;
-                            let b = 100 + (155 * white_rate / 255) as u8;
-                            ColorCode::new_rgb(r, 255, b)
-                        }
-                    } else {
-                        if is_used {
-                            ColorCode::new_rgb(255, 0, 0) // red
-                        } else {
-                            ColorCode::new_rgb(0, 255, 0) // green
-                        }
-                    };
-
-                    let px = page_idx % W;
-                    let py = page_idx / W;
-                    l.draw_pixel((px, py), color)?;
-                }
-            }
-
-            Ok(())
-        });
-
-        prev_bitmap.copy_from_slice(current_bitmap);
-
+        let _ = net_vis::update_render();
         async_task::exec_yield().await;
     }
 }

@@ -4,6 +4,7 @@ use crate::{
     fs::file::bitmap::BitmapImage,
     graphics::{
         color::ColorCode,
+        draw::Draw,
         font::FONT,
         multi_layer::{self, *},
     },
@@ -15,6 +16,39 @@ use alloc::{
     vec::Vec,
 };
 use common::graphic_info::PixelFormat;
+
+fn fill_back_color_and_draw_borders(l: &mut dyn Draw, wh: (usize, usize)) -> Result<()> {
+    let (w, h) = wh;
+
+    // back color
+    l.fill(GLOBAL_THEME.wm.component_back)?;
+
+    // borders
+    let border_color1 = GLOBAL_THEME.wm.border_color1;
+    let border_color2 = if GLOBAL_THEME.wm.border_flat {
+        GLOBAL_THEME.wm.border_color1
+    } else {
+        GLOBAL_THEME.wm.border_color2
+    };
+    let border_width = if GLOBAL_THEME.wm.border_flat {
+        w
+    } else {
+        w - 2
+    };
+    let border_height = if GLOBAL_THEME.wm.border_flat {
+        h
+    } else {
+        h - 2
+    };
+
+    l.draw_rect((0, 0), (2, border_height), border_color1)?;
+    l.draw_rect((2, h - 2), (w - 2, 2), border_color2)?;
+
+    l.draw_rect((w - 2, 2), (2, h - 2), border_color2)?;
+    l.draw_rect((0, 0), (border_width, 2), border_color1)?;
+
+    Ok(())
+}
 
 pub trait Component {
     fn layer_id(&self) -> LayerId;
@@ -192,32 +226,7 @@ impl Component for Window {
         }
 
         multi_layer::draw_layer(self.layer_id, |l| {
-            // back color
-            l.fill(GLOBAL_THEME.wm.component_back)?;
-
-            // borders
-            let border_color1 = GLOBAL_THEME.wm.border_color1;
-            let border_color2 = if GLOBAL_THEME.wm.border_flat {
-                GLOBAL_THEME.wm.border_color1
-            } else {
-                GLOBAL_THEME.wm.border_color2
-            };
-            let border_width = if GLOBAL_THEME.wm.border_flat {
-                w_w
-            } else {
-                w_w - 2
-            };
-            let border_height = if GLOBAL_THEME.wm.border_flat {
-                w_h
-            } else {
-                w_h - 2
-            };
-
-            l.draw_rect((0, 0), (2, border_height), border_color1)?;
-            l.draw_rect((2, w_h - 2), (w_w - 2, 2), border_color2)?;
-
-            l.draw_rect((w_w - 2, 2), (2, w_h - 2), border_color2)?;
-            l.draw_rect((0, 0), (border_width, 2), border_color1)?;
+            fill_back_color_and_draw_borders(l, (w_w, w_h))?;
 
             // titlebar
             l.draw_rect((4, 4), (w_w - 8, 18), GLOBAL_THEME.wm.titlebar_back)?;
@@ -333,34 +342,7 @@ impl Component for Panel {
         let (w, h) = self.get_layer_info()?.wh;
 
         multi_layer::draw_layer(self.layer_id, |l| {
-            // back color
-            l.fill(GLOBAL_THEME.wm.component_back)?;
-
-            // borders
-            let border_color1 = GLOBAL_THEME.wm.border_color1;
-            let border_color2 = if GLOBAL_THEME.wm.border_flat {
-                GLOBAL_THEME.wm.border_color1
-            } else {
-                GLOBAL_THEME.wm.border_color2
-            };
-            let border_w = if GLOBAL_THEME.wm.border_flat {
-                w
-            } else {
-                w - 2
-            };
-            let border_h = if GLOBAL_THEME.wm.border_flat {
-                h
-            } else {
-                h - 2
-            };
-
-            l.draw_rect((0, 0), (2, border_h), border_color1)?;
-            l.draw_rect((2, h - 2), (w - 2, 2), border_color2)?;
-
-            l.draw_rect((w - 2, 2), (2, h - 2), border_color2)?;
-            l.draw_rect((0, 0), (border_w, 2), border_color1)?;
-
-            Ok(())
+            fill_back_color_and_draw_borders(l, (w, h))
         })
     }
 }
@@ -405,32 +387,7 @@ impl Component for Button {
         let (w, h) = self.get_layer_info()?.wh;
 
         multi_layer::draw_layer(self.layer_id, |l| {
-            // back color
-            l.fill(GLOBAL_THEME.wm.component_back)?;
-
-            // borders
-            let border_color1 = GLOBAL_THEME.wm.border_color1;
-            let border_color2 = if GLOBAL_THEME.wm.border_flat {
-                GLOBAL_THEME.wm.border_color1
-            } else {
-                GLOBAL_THEME.wm.border_color2
-            };
-            let border_w = if GLOBAL_THEME.wm.border_flat {
-                w
-            } else {
-                w - 2
-            };
-            let border_h = if GLOBAL_THEME.wm.border_flat {
-                h
-            } else {
-                h - 2
-            };
-
-            l.draw_rect((0, 0), (2, border_h), border_color1)?;
-            l.draw_rect((2, h - 2), (w - 2, 2), border_color2)?;
-
-            l.draw_rect((w - 2, 2), (2, h - 2), border_color2)?;
-            l.draw_rect((0, 0), (border_w, 2), border_color1)?;
+            fill_back_color_and_draw_borders(l, (w, h))?;
 
             // title
             let (f_w, f_h) = FONT.get_wh();
@@ -514,5 +471,34 @@ impl Label {
             back_color,
             fore_color,
         })
+    }
+}
+
+pub struct Canvas {
+    layer_id: LayerId,
+}
+
+impl Drop for Canvas {
+    fn drop(&mut self) {
+        let _ = multi_layer::remove_layer(self.layer_id);
+    }
+}
+
+impl Component for Canvas {
+    fn layer_id(&self) -> LayerId {
+        self.layer_id
+    }
+
+    fn draw_flush(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl Canvas {
+    pub fn create_and_push(xy: (usize, usize), wh: (usize, usize)) -> Result<Self> {
+        let layer = multi_layer::create_layer(xy, wh)?;
+        let layer_id = layer.id;
+        multi_layer::push_layer(layer)?;
+        Ok(Self { layer_id })
     }
 }

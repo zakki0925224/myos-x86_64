@@ -814,7 +814,7 @@ fn sys_sendto(
 
     if dest_addr.is_null() {
         // TCP
-        net::send_tcp_data(socket_id, data)?;
+        net::send_tcp_packet(socket_id, data)?;
         return Ok(data.len());
     }
 
@@ -843,7 +843,7 @@ fn sys_recvfrom(
     if src_addr.is_null() {
         // TCP
         loop {
-            match net::recv_tcp_data(socket_id, buf_mut) {
+            match net::recv_tcp_packet(socket_id, buf_mut) {
                 Ok(0) => match net::is_tcp_established(socket_id) {
                     Ok(true) => {
                         x86_64::stihlt();
