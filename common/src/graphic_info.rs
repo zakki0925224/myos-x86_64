@@ -1,3 +1,5 @@
+use crate::geometry::Size;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PixelFormat {
@@ -20,7 +22,7 @@ impl From<u8> for PixelFormat {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct GraphicInfo {
-    pub resolution: (usize, usize),
+    pub resolution: Size,
     pub format: PixelFormat,
     pub stride: usize,
     pub framebuf_addr: u64,
@@ -29,7 +31,7 @@ pub struct GraphicInfo {
 
 impl GraphicInfo {
     pub fn fill_screen(&self, r: u8, g: u8, b: u8) {
-        let (w, h) = self.resolution;
+        let (w, h) = self.resolution.wh();
         let framebuf_slice = unsafe {
             core::slice::from_raw_parts_mut(self.framebuf_addr as *mut u32, h * self.stride)
         };

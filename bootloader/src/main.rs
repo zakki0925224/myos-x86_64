@@ -219,7 +219,7 @@ fn init_graphic(resolution: (usize, usize)) -> GraphicInfo {
     let (width, height) = gop.current_mode_info().resolution();
 
     GraphicInfo {
-        resolution: (width, height),
+        resolution: (width, height).into(),
         format: convert_pixel_format(mode_info.pixel_format()),
         stride: mode_info.stride(),
         framebuf_addr: gop.frame_buffer().as_mut_ptr() as u64,

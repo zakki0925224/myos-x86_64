@@ -14,6 +14,7 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
+use common::geometry::{Point, Rect, Size};
 use components::*;
 
 pub mod components;
@@ -36,10 +37,10 @@ struct WindowManager {
     windows: Vec<Window>,
     taskbar: Option<Panel>,
     mouse_pointer: Option<Image>,
-    res_xy: Option<(usize, usize)>,
+    res: Option<Size>,
     mouse_pointer_bmp_path: String,
     dragging_window_id: Option<LayerId>,
-    dragging_offset: Option<(isize, isize)>,
+    dragging_offset: Option<Point>,
 }
 
 impl WindowManager {
@@ -50,7 +51,7 @@ impl WindowManager {
             windows: Vec::new(),
             taskbar: None,
             mouse_pointer: None,
-            res_xy: None,
+            res: None,
             mouse_pointer_bmp_path: String::new(),
             dragging_window_id: None,
             dragging_offset: None,
@@ -60,7 +61,7 @@ impl WindowManager {
     fn create_mouse_pointer(&mut self, pointer_bmp: &BitmapImage) -> Result<()> {
         self.mouse_pointer = Some(Image::create_and_push_from_bitmap_image(
             pointer_bmp,
-            (0, 0),
+            Point::default(),
             true,
         )?);
 
@@ -68,17 +69,16 @@ impl WindowManager {
     }
 
     fn create_taskbar(&mut self) -> Result<()> {
-        let (res_x, res_y) = self.res_xy.ok_or(Error::NotInitialized)?;
+        let res = self.res.ok_or(Error::NotInitialized)?;
 
-        let w = res_x;
         let h = 30;
-        let panel = Panel::create_and_push((0, res_y - h), (w, h))?;
+        let panel = Panel::create_and_push(Point::new(0, res.height - h), Size::new(res.width, h))?;
         self.taskbar = Some(panel);
         Ok(())
     }
 
     fn mouse_pointer_event(&mut self, mouse_event: MouseEvent) -> Result<()> {
-        let (res_x, res_y) = self.res_xy.ok_or(Error::NotInitialized)?;
+        let res = self.res.ok_or(Error::NotInitialized)?;
 
         // create mouse pointer layer if not created
         if self.mouse_pointer.is_none() {
@@ -96,12 +96,18 @@ impl WindowManager {
             .ok_or(WindowManagerError::MousePointerLayerWasNotFound)?;
 
         let LayerInfo {
-            xy: (m_x_before, m_y_before),
-            wh: (m_w, m_h),
+            pos: Point {
+                x: m_x_before,
+                y: m_y_before,
+            },
+            size: Size {
+                width: m_w,
+                height: m_h,
+            },
             format: _,
         } = mouse_pointer.get_layer_info()?;
 
-        let (m_x_after, m_y_after) = match &mouse_event {
+        let m_pos_after = match &mouse_event {
             MouseEvent::Ps2Mouse(e) => {
                 let rel_x = (e.rel_x as isize).clamp(
                     -Self::PS2_MOUSE_MAX_REL_MOVEMENT,
@@ -111,21 +117,23 @@ impl WindowManager {
                     -Self::PS2_MOUSE_MAX_REL_MOVEMENT,
                     Self::PS2_MOUSE_MAX_REL_MOVEMENT,
                 );
-                let m_x_after =
-                    (m_x_before as isize + rel_x).clamp(0, res_x as isize - m_w as isize) as usize;
-                let m_y_after =
-                    (m_y_before as isize + rel_y).clamp(0, res_y as isize - m_h as isize) as usize;
-                (m_x_after, m_y_after)
+                let m_x_after = (m_x_before as isize + rel_x)
+                    .clamp(0, res.width as isize - m_w as isize)
+                    as usize;
+                let m_y_after = (m_y_before as isize + rel_y)
+                    .clamp(0, res.height as isize - m_h as isize)
+                    as usize;
+                Point::new(m_x_after, m_y_after)
             }
             MouseEvent::UsbHidMouse(e) => {
-                let m_x_after = e.abs_x.clamp(0, res_x.saturating_sub(m_w));
-                let m_y_after = e.abs_y.clamp(0, res_y.saturating_sub(m_h));
-                (m_x_after, m_y_after)
+                let m_x_after = e.abs_x.clamp(0, res.width.saturating_sub(m_w));
+                let m_y_after = e.abs_y.clamp(0, res.height.saturating_sub(m_h));
+                Point::new(m_x_after, m_y_after)
             }
         };
 
         // move mouse pointer
-        mouse_pointer.move_by_root(m_x_after, m_y_after)?;
+        mouse_pointer.move_by_root(m_pos_after)?;
 
         let e_left = match &mouse_event {
             MouseEvent::Ps2Mouse(e) => e.left,
@@ -139,32 +147,29 @@ impl WindowManager {
                 for i in (0..self.windows.len()).rev() {
                     let w = &mut self.windows[i];
                     let LayerInfo {
-                        xy: (w_x, w_y),
-                        wh: (w_w, w_h),
+                        pos: w_pos,
+                        size: w_size,
                         format: _,
                     } = w.get_layer_info()?;
 
                     // mouse pointer is inside the window
-                    if m_x_after >= w_x
-                        && m_x_after < w_x + w_w
-                        && m_y_after >= w_y
-                        && m_y_after < w_y + w_h
-                    {
+                    let w_rect = Rect::from_point_and_size(w_pos, w_size);
+                    if w_rect.contains(m_pos_after) {
                         let mut w = self.windows.remove(i);
                         w.request_bring_to_front = true;
-                        let offset_x = m_x_after as isize - w_x as isize;
-                        let offset_y = m_y_after as isize - w_y as isize;
+                        let offset_x = m_pos_after.x - w_pos.x;
+                        let offset_y = m_pos_after.y - w_pos.y;
                         let id = w.layer_id();
                         self.windows.push(w);
                         self.dragging_window_id = Some(id);
-                        self.dragging_offset = Some((offset_x, offset_y));
+                        self.dragging_offset = Some(Point::new(offset_x, offset_y));
                         break;
                     }
                 }
 
                 // when clicked the close button of a window, remove the window
                 for w in self.windows.iter_mut().rev() {
-                    if w.is_close_button_clickable(m_x_after, m_y_after)? {
+                    if w.is_close_button_clickable(m_pos_after)? {
                         w.is_closed = true;
                         self.windows.retain(|w| !w.is_closed);
                         self.dragging_window_id = None;
@@ -175,7 +180,7 @@ impl WindowManager {
             }
 
             // drag the window
-            if let (Some(window_id), Some((offset_x, offset_y))) =
+            if let (Some(window_id), Some(offset)) =
                 (&self.dragging_window_id, &self.dragging_offset)
             {
                 let w = self
@@ -187,37 +192,42 @@ impl WindowManager {
                     })?;
 
                 let LayerInfo {
-                    xy: _,
-                    wh: (w_w, w_h),
+                    pos: _,
+                    size:
+                        Size {
+                            width: w_w,
+                            height: w_h,
+                        },
                     format: _,
                 } = w.get_layer_info()?;
 
-                let max_w_x = res_x.saturating_sub(w_w);
-                let max_w_y = res_y.saturating_sub(w_h);
-                let new_w_x = (m_x_after as isize - offset_x).clamp(0, max_w_x as isize) as usize;
-                let new_w_y = (m_y_after as isize - offset_y).clamp(0, max_w_y as isize) as usize;
-                w.move_by_root(new_w_x, new_w_y)?;
+                let max_w_x = res.width.saturating_sub(w_w);
+                let max_w_y = res.height.saturating_sub(w_h);
+                let new_w_x = (m_pos_after.x as isize - offset.x as isize)
+                    .clamp(0, max_w_x as isize) as usize;
+                let new_w_y = (m_pos_after.y as isize - offset.y as isize)
+                    .clamp(0, max_w_y as isize) as usize;
+                w.move_by_root(Point::new(new_w_x, new_w_y))?;
             } else {
                 for w in self.windows.iter_mut().rev() {
                     let LayerInfo {
-                        xy: (w_x, w_y),
-                        wh: (w_w, w_h),
+                        pos: w_pos,
+                        size: w_size,
                         format: _,
                     } = w.get_layer_info()?;
 
-                    if m_x_after >= w_x
-                        && m_x_after < w_x + w_w
-                        && m_y_after >= w_y
-                        && m_y_after < w_y + w_h
-                    {
-                        let delta_x = m_x_after as isize - m_x_before as isize;
-                        let delta_y = m_y_after as isize - m_y_before as isize;
-                        let max_w_x = res_x.saturating_sub(w_w);
-                        let max_w_y = res_y.saturating_sub(w_h);
-                        let new_w_x = (w_x as isize + delta_x).clamp(0, max_w_x as isize) as usize;
-                        let new_w_y = (w_y as isize + delta_y).clamp(0, max_w_y as isize) as usize;
+                    let w_rect = Rect::from_point_and_size(w_pos, w_size);
+                    if w_rect.contains(m_pos_after) {
+                        let delta_x = m_pos_after.x as isize - m_x_before as isize;
+                        let delta_y = m_pos_after.y as isize - m_y_before as isize;
+                        let max_w_x = res.width.saturating_sub(w_size.width);
+                        let max_w_y = res.height.saturating_sub(w_size.height);
+                        let new_w_x =
+                            (w_pos.x as isize + delta_x).clamp(0, max_w_x as isize) as usize;
+                        let new_w_y =
+                            (w_pos.y as isize + delta_y).clamp(0, max_w_y as isize) as usize;
 
-                        w.move_by_root(new_w_x, new_w_y)?;
+                        w.move_by_root(Point::new(new_w_x, new_w_y))?;
                         self.dragging_window_id = Some(w.layer_id());
                         break;
                     }
@@ -231,40 +241,12 @@ impl WindowManager {
         Ok(())
     }
 
-    fn create_window(
-        &mut self,
-        title: String,
-        xy: (usize, usize),
-        wh: (usize, usize),
-    ) -> Result<LayerId> {
-        if self.res_xy.is_none() {
+    fn create_window(&mut self, title: String, pos: Point, size: Size) -> Result<LayerId> {
+        if self.res.is_none() {
             return Err(Error::NotInitialized);
         }
 
-        let window = Window::create_and_push(title, xy, wh)?;
-
-        // let button1 = Button::create_and_push("button 1".to_string(), (0, 0), (100, 25))?;
-        // let button2 = Button::create_and_push("button 2".to_string(), (0, 0), (100, 25))?;
-        // let button3 = Button::create_and_push("button 3".to_string(), (0, 0), (100, 25))?;
-        // let button4 = Button::create_and_push("button 4".to_string(), (0, 0), (100, 25))?;
-        // let button5 = Button::create_and_push("button 5".to_string(), (0, 0), (100, 25))?;
-        // let button6 = Button::create_and_push("button 6".to_string(), (0, 0), (100, 25))?;
-        // let button7 = Button::create_and_push("button 7".to_string(), (0, 0), (100, 25))?;
-        // let label = Label::create_and_push((0, 0),
-        //     "[32] Sed ut perspiciatis, unde omnis iste natus error sit voluptatem\naccusantium doloremque laudantium, totam rem aperiam eaque ipsa, quae\nab illo inventore veritatis et quasi architecto beatae vitae dicta sunt,\nexplicabo.\nNemo enim ipsam voluptatem, quia voluptas sit, aspernatur aut\nodit aut fugit, sed quia consequuntur magni dolores eos, qui ratione\nvoluptatem sequi nesciunt, neque porro quisquam est, qui dolorem ipsum,\nquia dolor sit, amet, consectetur, adipisci velit, sed quia non numquam\neius modi tempora incidunt, ut labore et dolore magnam aliquam quaerat\nvoluptatem.".to_string(),
-        //     GLOBAL_THEME.console.fore,
-        //     GLOBAL_THEME.console.back,
-        // )?;
-
-        // window.push_child(Box::new(button1))?;
-        // window.push_child(Box::new(button2))?;
-        // window.push_child(Box::new(button3))?;
-        // window.push_child(Box::new(button4))?;
-        // window.push_child(Box::new(button5))?;
-        // window.push_child(Box::new(button6))?;
-        // window.push_child(Box::new(button7))?;
-        // window.push_child(Box::new(label))?;
-
+        let window = Window::create_and_push(title, pos, size)?;
         let layer_id = window.layer_id();
         self.windows.push(window);
 
@@ -276,7 +258,7 @@ impl WindowManager {
         layer_id: LayerId,
         component: Box<dyn Component>,
     ) -> Result<LayerId> {
-        if self.res_xy.is_none() {
+        if self.res.is_none() {
             return Err(Error::NotInitialized);
         }
 
@@ -291,7 +273,7 @@ impl WindowManager {
     }
 
     fn remove_component(&mut self, layer_id: LayerId) -> Result<()> {
-        if self.res_xy.is_none() {
+        if self.res.is_none() {
             return Err(Error::NotInitialized);
         }
 
@@ -315,7 +297,7 @@ impl WindowManager {
     }
 
     fn flush_taskbar(&mut self) -> Result<()> {
-        if self.res_xy.is_none() {
+        if self.res.is_none() {
             return Err(Error::NotInitialized);
         }
 
@@ -323,12 +305,12 @@ impl WindowManager {
             .taskbar
             .as_mut()
             .ok_or(WindowManagerError::TaskbarLayerWasNotFound)?;
-        let (w, h) = taskbar.get_layer_info()?.wh;
+        let size = taskbar.get_layer_info()?.size;
         taskbar.draw_flush()?;
 
         let window_titles: Vec<&str> = self.windows.iter().map(|w| w.title()).collect();
         let s = format!("{:?}", window_titles);
-        taskbar.draw_string((7, h / 2 - 8), &s)?;
+        taskbar.draw_string(Point::new(7, size.height / 2 - 8), &s)?;
 
         let uptime = util::time::global_uptime();
         let s = if uptime.is_zero() {
@@ -340,13 +322,16 @@ impl WindowManager {
                 uptime.as_millis() % 1000
             )
         };
-        taskbar.draw_string((w - s.len() * 8, h / 2 - 8), &s)?;
+        taskbar.draw_string(
+            Point::new(size.width - s.len() * 8, size.height / 2 - 8),
+            &s,
+        )?;
 
         Ok(())
     }
 
     fn flush_components(&mut self) -> Result<()> {
-        if self.res_xy.is_none() {
+        if self.res.is_none() {
             return Err(Error::NotInitialized);
         }
 
@@ -364,8 +349,8 @@ impl WindowManager {
 
 pub fn init(mouse_pointer_bmp_path: String) -> Result<()> {
     let mut window_man = WINDOW_MAN.try_lock()?;
-    let res_xy = frame_buf::resolution()?;
-    window_man.res_xy = Some(res_xy);
+    let res = frame_buf::resolution()?;
+    window_man.res = Some(res);
     window_man.mouse_pointer_bmp_path = mouse_pointer_bmp_path;
     Ok(())
 }
@@ -378,8 +363,8 @@ pub fn mouse_pointer_event(mouse_event: MouseEvent) -> Result<()> {
     WINDOW_MAN.try_lock()?.mouse_pointer_event(mouse_event)
 }
 
-pub fn create_window(title: String, xy: (usize, usize), wh: (usize, usize)) -> Result<LayerId> {
-    WINDOW_MAN.try_lock()?.create_window(title, xy, wh)
+pub fn create_window(title: String, pos: Point, size: Size) -> Result<LayerId> {
+    WINDOW_MAN.try_lock()?.create_window(title, pos, size)
 }
 
 pub fn add_component_to_window(

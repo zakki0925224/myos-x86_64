@@ -10,6 +10,7 @@ use crate::{
     theme::GLOBAL_THEME,
     util::ansi::{AnsiEscapeStream, AnsiEvent, CsiSequence},
 };
+use common::geometry::{Point, Rect, Size};
 use core::fmt;
 
 static FRAME_BUF_CONSOLE: Mutex<FrameBufferConsole> = Mutex::new(FrameBufferConsole::new());
@@ -41,20 +42,20 @@ impl FrameBufferConsole {
         }
     }
 
-    fn screen_wh(&self) -> Result<(usize, usize)> {
+    fn screen_size(&self) -> Result<Size> {
         if let Some(layer_id) = &self.target_layer_id {
-            let wh = multi_layer::get_layer_info(*layer_id)?.wh;
-            Ok(wh)
+            let size = multi_layer::get_layer_info(*layer_id)?.size;
+            Ok(size)
         } else {
             frame_buf::resolution()
         }
     }
 
     fn cursor_max(&self) -> Result<(usize, usize)> {
-        let (s_w, s_h) = self.screen_wh()?;
+        let (width, height) = self.screen_size()?.wh();
         let (f_w, f_h) = FONT.get_wh();
-        let cursor_max_x = s_w / f_w - 1;
-        let cursor_max_y = s_h / f_h - 1;
+        let cursor_max_x = width / f_w - 1;
+        let cursor_max_y = height / f_h - 1;
         Ok((cursor_max_x, cursor_max_y))
     }
 
@@ -70,9 +71,8 @@ impl FrameBufferConsole {
         self.fill(self.back_color)?;
 
         for (i, color) in GLOBAL_THEME.console.palette.iter().enumerate() {
-            let xy = (i * 20, 0);
-            let wh = (20, 20);
-            self.draw_rect(xy, wh, *color)?;
+            let rect = Rect::new(i * 20, 0, 20, 20);
+            self.draw_rect(rect, *color)?;
         }
 
         Ok(())
@@ -164,34 +164,44 @@ impl FrameBufferConsole {
                             unimplemented!()
                         }
                         CsiSequence::ClearScreenAfterCursor => {
-                            let (s_w, s_h) = self.screen_wh()?;
-                            let xy = (self.cursor_x * f_w, self.cursor_y * f_h);
-                            let wh = (s_w - xy.0, s_h - xy.1);
-                            self.draw_rect(xy, wh, self.back_color)?;
+                            let (s_w, s_h) = self.screen_size()?.wh();
+                            let x = self.cursor_x * f_w;
+                            let y = self.cursor_y * f_h;
+                            let w = s_w - x;
+                            let h = s_h - y;
+                            self.draw_rect(Rect::new(x, y, w, h), self.back_color)?;
                         }
                         CsiSequence::ClearScreenBeforeCursor => {
-                            let xy = (0, 0);
-                            let wh = (self.cursor_x * f_w, self.cursor_y * f_h);
-                            self.draw_rect(xy, wh, self.back_color)?;
+                            let x = 0;
+                            let y = 0;
+                            let w = self.cursor_x * f_w;
+                            let h = self.cursor_y * f_h;
+                            self.draw_rect(Rect::new(x, y, w, h), self.back_color)?;
                         }
                         CsiSequence::ClearScreenAll => {
                             self.fill(self.back_color)?;
                         }
                         CsiSequence::ClearRowAfterCursor => {
-                            let (s_w, f_h) = self.screen_wh()?;
-                            let xy = (self.cursor_x * f_w, self.cursor_y * f_h);
-                            let wh = (s_w - xy.0, f_h);
-                            self.draw_rect(xy, wh, self.back_color)?;
+                            let size = self.screen_size()?;
+                            let x = self.cursor_x * f_w;
+                            let y = self.cursor_y * f_h;
+                            let w = size.width - x;
+                            let h = f_h;
+                            self.draw_rect(Rect::new(x, y, w, h), self.back_color)?;
                         }
                         CsiSequence::ClearRowBeforeCursor => {
-                            let xy = (0, self.cursor_y * f_h);
-                            let wh = (self.cursor_x * f_w, f_h);
-                            self.draw_rect(xy, wh, self.back_color)?;
+                            let x = 0;
+                            let y = self.cursor_y * f_h;
+                            let w = self.cursor_x * f_w;
+                            let h = f_h;
+                            self.draw_rect(Rect::new(x, y, w, h), self.back_color)?;
                         }
                         CsiSequence::ClearRowAll => {
-                            let xy = (0, self.cursor_y * f_h);
-                            let wh = (self.screen_wh()?.0, f_h);
-                            self.draw_rect(xy, wh, self.back_color)?;
+                            let (w, _) = self.screen_size()?.wh();
+                            let x = 0;
+                            let y = self.cursor_y * f_h;
+                            let h = f_h;
+                            self.draw_rect(Rect::new(x, y, w, h), self.back_color)?;
                         }
                         CsiSequence::CharReset => {
                             self.reset_back_color();
@@ -287,8 +297,8 @@ impl FrameBufferConsole {
         }
 
         if !self.is_hidden {
-            let xy = (self.cursor_x * f_w, self.cursor_y * f_h);
-            self.draw_font(xy, c, self.fore_color, self.back_color)?;
+            let point = Point::new(self.cursor_x * f_w, self.cursor_y * f_h);
+            self.draw_font(point, c, self.fore_color, self.back_color)?;
             self.inc_cursor()?;
         }
 
@@ -361,12 +371,16 @@ impl FrameBufferConsole {
 
     fn scroll(&self) -> Result<()> {
         let (_, f_h) = FONT.get_wh();
-        let (s_w, s_h) = self.screen_wh()?;
+        let (w, h) = self.screen_size()?.wh();
         // copy
-        self.copy_rect((0, f_h), (0, 0), (s_w, s_h - f_h))?;
+        let src = Point::new(0, f_h);
+        let dst = Point::default();
+        let copy_size = Size::new(w, h - f_h);
+        self.copy_rect(src, dst, copy_size)?;
 
         // fill last line
-        self.draw_rect((0, s_h - f_h), (s_w, f_h), self.back_color)?;
+        let rect = Rect::new(0, h - f_h, w, f_h);
+        self.draw_rect(rect, self.back_color)?;
 
         Ok(())
     }
@@ -381,26 +395,21 @@ impl FrameBufferConsole {
         Ok(())
     }
 
-    fn draw_rect(&self, xy: (usize, usize), wh: (usize, usize), color: ColorCode) -> Result<()> {
+    fn draw_rect(&self, rect: Rect, color: ColorCode) -> Result<()> {
         if let Some(layer_id) = &self.target_layer_id {
-            multi_layer::draw_layer(*layer_id, |l| l.draw_rect(xy, wh, color))?;
+            multi_layer::draw_layer(*layer_id, |l| l.draw_rect(rect, color))?;
         } else {
-            frame_buf::draw_rect(xy, wh, color)?;
+            frame_buf::draw_rect(rect, color)?;
         }
 
         Ok(())
     }
 
-    fn copy_rect(
-        &self,
-        src_xy: (usize, usize),
-        dst_xy: (usize, usize),
-        wh: (usize, usize),
-    ) -> Result<()> {
+    fn copy_rect(&self, src: Point, dst: Point, size: Size) -> Result<()> {
         if let Some(layer_id) = &self.target_layer_id {
-            multi_layer::draw_layer(*layer_id, |l| l.copy_rect(src_xy, dst_xy, wh))?;
+            multi_layer::draw_layer(*layer_id, |l| l.copy_rect(src, dst, size))?;
         } else {
-            frame_buf::copy_rect(src_xy, dst_xy, wh)?;
+            frame_buf::copy_rect(src, dst, size)?;
         }
 
         Ok(())
@@ -408,15 +417,15 @@ impl FrameBufferConsole {
 
     fn draw_font(
         &self,
-        xy: (usize, usize),
+        point: Point,
         c: char,
         fore_color: ColorCode,
         back_color: ColorCode,
     ) -> Result<()> {
         if let Some(layer_id) = &self.target_layer_id {
-            multi_layer::draw_layer(*layer_id, |l| l.draw_char(xy, c, fore_color, back_color))?;
+            multi_layer::draw_layer(*layer_id, |l| l.draw_char(point, c, fore_color, back_color))?;
         } else {
-            frame_buf::draw_char(xy, c, fore_color, back_color)?;
+            frame_buf::draw_char(point, c, fore_color, back_color)?;
         }
 
         Ok(())
@@ -426,11 +435,8 @@ impl FrameBufferConsole {
         let (f_w, f_h) = FONT.get_wh();
 
         self.dec_cursor()?;
-        self.draw_rect(
-            (self.cursor_x * f_w, self.cursor_y * f_h),
-            (f_w, f_h),
-            self.back_color,
-        )?;
+        let rect = Rect::new(self.cursor_x * f_w, self.cursor_y * f_h, f_w, f_h);
+        self.draw_rect(rect, self.back_color)?;
 
         Ok(())
     }

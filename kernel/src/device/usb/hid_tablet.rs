@@ -8,6 +8,7 @@ use crate::{
     util,
 };
 use alloc::{collections::vec_deque::VecDeque, vec::Vec};
+use common::geometry::Size;
 
 #[derive(Default, Debug)]
 pub struct UsbHidMouseEvent {
@@ -24,7 +25,7 @@ pub struct UsbHidTabletDriver {
     input_report_items: Vec<UsbHidReportInputItem>,
     report_size_in_byte: usize,
     prev_report: Vec<u8>,
-    res: (usize, usize),
+    res: Size,
 }
 
 impl UsbDeviceDriverFunction for UsbHidTabletDriver {
@@ -97,7 +98,10 @@ impl UsbDeviceDriverFunction for UsbHidTabletDriver {
             return Ok(());
         }
 
-        let (res_x, res_y) = self.res;
+        let Size {
+            width: res_x,
+            height: res_y,
+        } = self.res;
 
         let l = desc_button_l.value_from_report(&report) == Some(1);
         let r = desc_button_r.value_from_report(&report) == Some(1);
@@ -130,7 +134,7 @@ impl UsbHidTabletDriver {
             input_report_items: Vec::new(),
             report_size_in_byte: 0,
             prev_report: Vec::new(),
-            res: (0, 0),
+            res: Size::default(),
         }
     }
 

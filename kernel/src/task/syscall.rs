@@ -23,6 +23,7 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
+use common::geometry::{Point, Size};
 use core::{arch::naked_asm, net::Ipv4Addr, slice};
 use libc_rs::*;
 
@@ -672,8 +673,8 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             offset += size_of::<usize>();
             let title_ptr = unsafe { msgbuf.offset(offset as isize) as *const u8 };
 
-            let xy = (x_pos as usize, y_pos as usize);
-            let wh = (width as usize, height as usize);
+            let xy = Point::new(x_pos as usize, y_pos as usize);
+            let wh = Size::new(width as usize, height as usize);
             let title = unsafe { util::cstring::from_cstring_ptr(title_ptr) };
             offset += title.len() + 1; // null terminator
 
@@ -727,11 +728,11 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             }
 
             let layer_id = LayerId::new_val(layer_id as usize);
-            let wh = (image_width, image_height);
+            let wh = Size::new(image_width, image_height);
             let framebuf_virt_addr: VirtualAddress = (framebuf_ptr as u64).into();
 
             let image = window_manager::components::Image::create_and_push_from_framebuf(
-                (0, 0),
+                Point::default(),
                 wh,
                 framebuf_virt_addr,
                 pixel_format.into(),

@@ -1,6 +1,7 @@
 use super::{draw::Draw, frame_buf};
 use crate::{error::Result, fs::file::bitmap::BitmapImage, sync::mutex::Mutex};
 use alloc::vec::Vec;
+use common::geometry::{Point, Rect, Size};
 use common::graphic_info::PixelFormat;
 use core::{
     fmt,
@@ -11,14 +12,14 @@ static LAYER_MAN: Mutex<LayerManager> = Mutex::new(LayerManager::new());
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LayerError {
-    OutsideBufferAreaError { layer_id: usize, x: usize, y: usize },
+    OutsideBufferAreaError { layer_id: usize, point: Point },
     InvalidLayerIdError(usize),
 }
 
 #[derive(Debug, Clone)]
 pub struct LayerInfo {
-    pub xy: (usize, usize),
-    pub wh: (usize, usize),
+    pub pos: Point,
+    pub size: Size,
     pub format: PixelFormat,
 }
 
@@ -49,20 +50,20 @@ impl LayerId {
 #[derive(Debug)]
 pub struct Layer {
     pub id: LayerId,
-    xy: (usize, usize),
-    wh: (usize, usize),
+    pos: Point,
+    size: Size,
     buf: Vec<u32>,
     pub disabled: bool,
     format: PixelFormat,
     pub always_on_top: bool,
     dirty: bool,
     pos_moved: bool,
-    old_xy: Option<(usize, usize)>,
+    old_pos: Option<Point>,
 }
 
 impl Draw for Layer {
-    fn resolution(&self) -> Result<(usize, usize)> {
-        Ok(self.wh)
+    fn resolution(&self) -> Result<Size> {
+        Ok(self.size)
     }
 
     fn format(&self) -> Result<PixelFormat> {
@@ -87,38 +88,38 @@ impl Draw for Layer {
 }
 
 impl Layer {
-    pub fn new(xy: (usize, usize), wh: (usize, usize), format: PixelFormat) -> Self {
+    pub fn new(pos: Point, size: Size, format: PixelFormat) -> Self {
         Self {
             id: LayerId::new(),
-            xy,
-            wh,
-            buf: vec![0; wh.0 * wh.1],
+            pos,
+            size,
+            buf: vec![0; size.width * size.height],
             disabled: false,
             format,
             always_on_top: false,
             dirty: false,
             pos_moved: false,
-            old_xy: None,
+            old_pos: None,
         }
     }
 
-    pub fn move_to(&mut self, x: usize, y: usize) {
-        if self.xy == (x, y) {
+    pub fn move_to(&mut self, point: Point) {
+        if self.pos == point {
             return;
         }
 
         if !self.pos_moved {
-            self.old_xy = Some(self.xy);
+            self.old_pos = Some(self.pos);
         }
 
-        self.xy = (x, y);
+        self.pos = point;
         self.pos_moved = true;
     }
 
     pub fn layer_info(&self) -> LayerInfo {
         LayerInfo {
-            xy: self.xy,
-            wh: self.wh,
+            pos: self.pos,
+            size: self.size,
             format: self.format,
         }
     }
@@ -183,7 +184,7 @@ impl LayerManager {
         self.layers
             .sort_by(|a, b| a.always_on_top.cmp(&b.always_on_top));
 
-        let mut invalid_rect: Option<(usize, usize, usize, usize)> = None;
+        let mut invalid_rect: Option<Rect> = None;
 
         for layer in &self.layers {
             if layer.disabled {
@@ -191,18 +192,17 @@ impl LayerManager {
             }
 
             if layer.dirty() {
-                let (x, y) = layer.xy;
-                let (w, h) = layer.wh;
-                invalid_rect = merge_rect(invalid_rect, (x, y, w, h));
+                let rect = Rect::from_point_and_size(layer.pos, layer.size);
+                invalid_rect = merge_rect(invalid_rect, rect);
             }
 
             if layer.pos_moved {
-                let (new_x, new_y) = layer.xy;
-                let (w, h) = layer.wh;
-                invalid_rect = merge_rect(invalid_rect, (new_x, new_y, w, h));
+                let rect = Rect::from_point_and_size(layer.pos, layer.size);
+                invalid_rect = merge_rect(invalid_rect, rect);
 
-                if let Some((old_x, old_y)) = layer.old_xy {
-                    invalid_rect = merge_rect(invalid_rect, (old_x, old_y, w, h));
+                if let Some(old_pos) = layer.old_pos {
+                    let old_rect = Rect::from_point_and_size(old_pos, layer.size);
+                    invalid_rect = merge_rect(invalid_rect, old_rect);
                 }
             }
         }
@@ -221,50 +221,43 @@ impl LayerManager {
 
             layer.set_dirty(false);
             layer.pos_moved = false;
-            layer.old_xy = None;
+            layer.old_pos = None;
         }
 
         Ok(())
     }
 }
 
-fn merge_rect(
-    r1: Option<(usize, usize, usize, usize)>,
-    r2: (usize, usize, usize, usize),
-) -> Option<(usize, usize, usize, usize)> {
+fn merge_rect(r1: Option<Rect>, r2: Rect) -> Option<Rect> {
     match r1 {
-        Some((x1, y1, w1, h1)) => {
-            let (x2, y2, w2, h2) = r2;
-            let min_x = x1.min(x2);
-            let min_y = y1.min(y2);
-            let max_x = (x1 + w1).max(x2 + w2);
-            let max_y = (y1 + h1).max(y2 + h2);
-            Some((min_x, min_y, max_x - min_x, max_y - min_y))
+        Some(rect1) => {
+            let min_x = rect1.origin.x.min(r2.origin.x);
+            let min_y = rect1.origin.y.min(r2.origin.y);
+            let max_x = (rect1.origin.x + rect1.size.width).max(r2.origin.x + r2.size.width);
+            let max_y = (rect1.origin.y + rect1.size.height).max(r2.origin.y + r2.size.height);
+            Some(Rect::new(min_x, min_y, max_x - min_x, max_y - min_y))
         }
         None => Some(r2),
     }
 }
 
-pub fn create_layer(xy: (usize, usize), wh: (usize, usize)) -> Result<Layer> {
+pub fn create_layer(pos: Point, size: Size) -> Result<Layer> {
     let format = frame_buf::format()?;
-    let layer = Layer::new(xy, wh, format);
+    let layer = Layer::new(pos, size, format);
     Ok(layer)
 }
 
-pub fn create_layer_from_bitmap_image(
-    xy: (usize, usize),
-    bitmap_image: &BitmapImage,
-) -> Result<Layer> {
+pub fn create_layer_from_bitmap_image(pos: Point, bitmap_image: &BitmapImage) -> Result<Layer> {
     let bitmap_image_info_header = bitmap_image.info_header();
     let bitmap_image_data = bitmap_image.bitmap_to_color_code();
     let b_w = bitmap_image_info_header.width as usize;
     let b_h = bitmap_image_info_header.height as usize;
-    let mut layer = Layer::new(xy, (b_w, b_h), PixelFormat::Bgr);
+    let mut layer = Layer::new(pos, Size::new(b_w, b_h), PixelFormat::Bgr);
 
     for h in 0..b_h {
         for w in 0..b_w {
             let pixel_data = bitmap_image_data[h * b_w + w];
-            layer.draw_pixel((w, h), pixel_data)?;
+            layer.draw_pixel(Point::new(w, h), pixel_data)?;
         }
     }
 
@@ -294,11 +287,8 @@ pub fn get_layer_info(layer_id: LayerId) -> Result<LayerInfo> {
     Ok(layer_info)
 }
 
-pub fn move_layer(layer_id: LayerId, to_x: usize, to_y: usize) -> Result<()> {
-    LAYER_MAN
-        .try_lock()?
-        .get_layer(layer_id)?
-        .move_to(to_x, to_y);
+pub fn move_layer(layer_id: LayerId, to_pos: Point) -> Result<()> {
+    LAYER_MAN.try_lock()?.get_layer(layer_id)?.move_to(to_pos);
     Ok(())
 }
 

@@ -168,8 +168,8 @@ impl DeviceDriverFunction for PanicScreenDriver {
     fn attach(&mut self, arg: Self::AttachInput) -> Result<()> {
         self.cursor_x = Some(0);
         self.cursor_y = Some(0);
-        self.res_x = Some(arg.resolution.0);
-        self.res_y = Some(arg.resolution.1);
+        self.res_x = Some(arg.resolution.width);
+        self.res_y = Some(arg.resolution.height);
         self.pixel_format = Some(arg.format);
         self.frame_buf_virt_addr = Some(arg.framebuf_addr.into());
         self.device_driver_info.attached = true;
