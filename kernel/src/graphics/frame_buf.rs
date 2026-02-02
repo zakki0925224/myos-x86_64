@@ -16,6 +16,7 @@ struct FrameBuffer {
     frame_buf_virt_addr: Option<VirtualAddress>,
     shadow_buf: Option<Vec<u32>>,
     dirty: bool,
+    updated_rect: Option<(usize, usize, usize, usize)>,
 }
 
 impl Draw for FrameBuffer {
@@ -69,6 +70,7 @@ impl FrameBuffer {
             frame_buf_virt_addr: None,
             shadow_buf: None,
             dirty: false,
+            updated_rect: None,
         }
     }
 
@@ -100,42 +102,95 @@ impl FrameBuffer {
         Ok(())
     }
 
-    fn apply_shadow_buf(&self) -> Result<()> {
+    fn apply_shadow_buf(&mut self) -> Result<()> {
         let shadow_buf = match &self.shadow_buf {
             Some(buf) => buf,
             None => return Ok(()),
         };
 
-        if !self.dirty {
+        if !self.dirty || self.updated_rect.is_none() {
             return Ok(());
         }
 
         let (res_x, res_y) = self.resolution()?;
-        let len = res_x * res_y;
+        let (rect_x, rect_y, rect_w, rect_h) = self.updated_rect.take().unwrap();
+
+        let draw_x = rect_x.min(res_x);
+        let draw_y = rect_y.min(res_y);
+        let draw_w = rect_w.min(res_x - draw_x);
+        let draw_h = rect_h.min(res_y - draw_y);
+
+        if draw_w == 0 || draw_h == 0 {
+            self.dirty = false;
+            return Ok(());
+        }
+
         let fb_ptr: *mut u32 = self
             .frame_buf_virt_addr
             .ok_or_else(|| Error::NotInitialized)?
             .as_ptr_mut();
-        let fb_slice = unsafe { core::slice::from_raw_parts_mut(fb_ptr, len) };
 
-        for y in 0..res_y {
-            let row_start = y * res_x;
-            let row_end = row_start + res_x;
-
-            let fb_row = &mut fb_slice[row_start..row_end];
-            let shadow_row = &shadow_buf[row_start..row_end];
-
-            if fb_row != shadow_row {
-                fb_row.copy_from_slice(shadow_row);
+        unsafe {
+            for i in 0..draw_h {
+                let offset = (draw_y + i) * res_x + draw_x;
+                let src_ptr = shadow_buf.as_ptr().add(offset);
+                let dst_ptr = fb_ptr.add(offset);
+                core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, draw_w);
             }
         }
+
+        self.dirty = false;
 
         Ok(())
     }
 
-    fn apply_layer_buf(&mut self, layer: &Layer) -> Result<()> {
-        let layer_xy = layer.layer_info().xy;
-        layer.copy_to(self, layer_xy)
+    fn apply_layer_buf(
+        &mut self,
+        layer: &Layer,
+        keep_rect: Option<(usize, usize, usize, usize)>,
+    ) -> Result<()> {
+        let (layer_x, layer_y) = layer.layer_info().xy;
+        let (layer_w, layer_h) = layer.layer_info().wh;
+        let (fb_w, fb_h) = self.resolution()?;
+
+        let (rect_x, rect_y, rect_w, rect_h) = if let Some(r) = keep_rect {
+            r
+        } else {
+            (0, 0, fb_w, fb_h)
+        };
+
+        let intersect_x = layer_x.max(rect_x);
+        let intersect_y = layer_y.max(rect_y);
+        let intersect_right = (layer_x + layer_w).min(rect_x + rect_w).min(fb_w);
+        let intersect_bottom = (layer_y + layer_h).min(rect_y + rect_h).min(fb_h);
+
+        if intersect_x >= intersect_right || intersect_y >= intersect_bottom {
+            return Ok(());
+        }
+
+        let draw_w = intersect_right - intersect_x;
+        let draw_h = intersect_bottom - intersect_y;
+
+        self.copy_rect_from(
+            layer,
+            (intersect_x - layer_x, intersect_y - layer_y, draw_w, draw_h),
+            (intersect_x, intersect_y),
+        )?;
+
+        let new_rect = (intersect_x, intersect_y, draw_w, draw_h);
+        self.updated_rect = match self.updated_rect {
+            Some((ox, oy, ow, oh)) => {
+                let min_x = ox.min(new_rect.0);
+                let min_y = oy.min(new_rect.1);
+                let max_x = (ox + ow).max(new_rect.0 + new_rect.2);
+                let max_y = (oy + oh).max(new_rect.1 + new_rect.3);
+                Some((min_x, min_y, max_x - min_x, max_y - min_y))
+            }
+            None => Some(new_rect),
+        };
+
+        self.dirty = true;
+        Ok(())
     }
 }
 
@@ -186,11 +241,14 @@ pub fn enable_shadow_buf() -> Result<()> {
 }
 
 pub fn apply_shadow_buf() -> Result<()> {
-    let fb = FB.try_lock()?;
+    let mut fb = FB.try_lock()?;
     fb.apply_shadow_buf()
 }
 
-pub fn apply_layer_buf(layer: &Layer) -> Result<()> {
+pub fn apply_layer_buf(
+    layer: &Layer,
+    keep_rect: Option<(usize, usize, usize, usize)>,
+) -> Result<()> {
     let mut fb = FB.try_lock()?;
-    fb.apply_layer_buf(layer)
+    fb.apply_layer_buf(layer, keep_rect)
 }

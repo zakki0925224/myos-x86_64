@@ -1,8 +1,8 @@
 use crate::{
-    error::Result,
+    error::{Error, Result},
     graphics::{
         color::ColorCode,
-        multi_layer::{self, LayerId},
+        multi_layer::{self, LayerError, LayerId},
         simple_window_manager::{
             self,
             components::{self, Component},
@@ -104,7 +104,7 @@ impl NetworkVisualizeManager {
             Ok(())
         };
 
-        if draw_result.is_err() {
+        if let Err(Error::LayerError(LayerError::InvalidLayerIdError(_))) = draw_result {
             *self.window_layer_id.try_lock()? = None;
             *self.canvas_layer_id.try_lock()? = None;
         }

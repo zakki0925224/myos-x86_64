@@ -57,6 +57,7 @@ pub struct Layer {
     pub always_on_top: bool,
     dirty: bool,
     pos_moved: bool,
+    old_xy: Option<(usize, usize)>,
 }
 
 impl Draw for Layer {
@@ -97,10 +98,19 @@ impl Layer {
             always_on_top: false,
             dirty: false,
             pos_moved: false,
+            old_xy: None,
         }
     }
 
     pub fn move_to(&mut self, x: usize, y: usize) {
+        if self.xy == (x, y) {
+            return;
+        }
+
+        if !self.pos_moved {
+            self.old_xy = Some(self.xy);
+        }
+
         self.xy = (x, y);
         self.pos_moved = true;
     }
@@ -173,32 +183,65 @@ impl LayerManager {
         self.layers
             .sort_by(|a, b| a.always_on_top.cmp(&b.always_on_top));
 
-        let mut pos_moved = false;
+        let mut invalid_rect: Option<(usize, usize, usize, usize)> = None;
+
         for layer in &self.layers {
             if layer.disabled {
                 continue;
             }
 
+            if layer.dirty() {
+                let (x, y) = layer.xy;
+                let (w, h) = layer.wh;
+                invalid_rect = merge_rect(invalid_rect, (x, y, w, h));
+            }
+
             if layer.pos_moved {
-                pos_moved = true;
-                break;
+                let (new_x, new_y) = layer.xy;
+                let (w, h) = layer.wh;
+                invalid_rect = merge_rect(invalid_rect, (new_x, new_y, w, h));
+
+                if let Some((old_x, old_y)) = layer.old_xy {
+                    invalid_rect = merge_rect(invalid_rect, (old_x, old_y, w, h));
+                }
             }
         }
+
+        let rect = match invalid_rect {
+            Some(r) => r,
+            None => return Ok(()),
+        };
 
         for layer in &mut self.layers {
             if layer.disabled {
                 continue;
             }
 
-            if !layer.dirty() && !pos_moved {
-                continue;
-            }
+            frame_buf::apply_layer_buf(layer, Some(rect))?;
 
-            frame_buf::apply_layer_buf(layer)?;
             layer.set_dirty(false);
+            layer.pos_moved = false;
+            layer.old_xy = None;
         }
 
         Ok(())
+    }
+}
+
+fn merge_rect(
+    r1: Option<(usize, usize, usize, usize)>,
+    r2: (usize, usize, usize, usize),
+) -> Option<(usize, usize, usize, usize)> {
+    match r1 {
+        Some((x1, y1, w1, h1)) => {
+            let (x2, y2, w2, h2) = r2;
+            let min_x = x1.min(x2);
+            let min_y = y1.min(y2);
+            let max_x = (x1 + w1).max(x2 + w2);
+            let max_y = (y1 + h1).max(y2 + h2);
+            Some((min_x, min_y, max_x - min_x, max_y - min_y))
+        }
+        None => Some(r2),
     }
 }
 
