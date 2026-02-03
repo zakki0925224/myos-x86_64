@@ -4,3 +4,6 @@
 [submodule "third-party/doom-for-myos"]
 	path = third-party/doom-for-myos
 	url = https://github.com/zakki0925224/doom-for-myos.git
+[submodule "third-party/lua-for-myos"]
+	path = third-party/lua-for-myos
+	url = https://github.com/zakki0925224/lua-for-myos.git

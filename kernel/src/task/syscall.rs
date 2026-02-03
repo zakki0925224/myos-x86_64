@@ -673,8 +673,8 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             offset += size_of::<usize>();
             let title_ptr = unsafe { msgbuf.offset(offset as isize) as *const u8 };
 
-            let xy = Point::new(x_pos as usize, y_pos as usize);
-            let wh = Size::new(width as usize, height as usize);
+            let xy = Point::new(x_pos, y_pos);
+            let wh = Size::new(width, height);
             let title = unsafe { util::cstring::from_cstring_ptr(title_ptr) };
             offset += title.len() + 1; // null terminator
 

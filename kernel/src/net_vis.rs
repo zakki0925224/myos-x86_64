@@ -92,12 +92,7 @@ impl NetworkVisualizeManager {
                 l.fill(ColorCode::BLACK)?;
                 let rect = Rect::new(2, 2, CANVAS_SIZE.width - 4, CANVAS_SIZE.height - 4);
                 l.draw_rect(rect, ColorCode::GREEN)?;
-
-                l.draw_line(
-                    Point::default(),
-                    Point::new(CANVAS_SIZE.width, CANVAS_SIZE.height),
-                    ColorCode::RED,
-                )?;
+                l.draw_line(Point::default(), CANVAS_SIZE.wh().into(), ColorCode::RED)?;
 
                 l.draw_string_wrap(
                     Point::new(10, 10),

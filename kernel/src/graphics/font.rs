@@ -1,4 +1,5 @@
 use crate::error::Result;
+use common::geometry::Size;
 
 //PSF font v2
 const FONT_BIN: &[u8] = include_bytes!("../../../third-party/font.psf");
@@ -9,8 +10,7 @@ pub static FONT: PsfFont = PsfFont::new();
 
 pub struct PsfFont {
     binary_len: usize,
-    height: usize,
-    width: usize,
+    wh: Size,
     glyphs_len: usize,
     glyph_size: usize,
     has_unicode_table: bool,
@@ -90,8 +90,7 @@ impl PsfFont {
 
         Self {
             binary_len,
-            height,
-            width,
+            wh: Size::new(width, height),
             glyphs_len,
             glyph_size,
             has_unicode_table,
@@ -101,7 +100,7 @@ impl PsfFont {
     }
 
     pub fn get_wh(&self) -> (usize, usize) {
-        (self.width, self.height)
+        self.wh.wh()
     }
 
     // ascii char only
