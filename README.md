@@ -64,6 +64,7 @@ This is a replacement project for the previous **[myos](https://github.com/zakki
 - [Cozette](https://github.com/slavfox/Cozette.git) (download released binary when build)
 - [QEMU](https://gitlab.com/qemu-project/qemu.git) (for debugging)
 - [doom-for-myos](https://github.com/zakki0925224/doom-for-myos) (forked from [ozkl/doomgeneric](https://github.com/ozkl/doomgeneric))
+- [lua-for-myos](https://github.com/zakki0925224/lua-for-myos) (forked from [lua/lua](https://github.com/lua/lua))
 - [doom1.wad](https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad)
 
 ## How to run

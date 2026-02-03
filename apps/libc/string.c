@@ -91,6 +91,20 @@ int is_ascii(const char c) {
     return c >= 0 && c <= 127;
 }
 
+int memcmp(const void* s1, const void* s2, size_t n) {
+    const unsigned char* p1 = (const unsigned char*)s1;
+    const unsigned char* p2 = (const unsigned char*)s2;
+
+    while (n-- > 0) {
+        if (*p1 != *p2)
+            return *p1 - *p2;
+        p1++;
+        p2++;
+    }
+
+    return 0;
+}
+
 void* memcpy(void* dest, const void* src, size_t len) {
     char* d = (char*)dest;
     const char* s = (char*)src;
@@ -199,6 +213,12 @@ int strncmp(const char* s1, const char* s2, size_t n) {
     return (*(unsigned char*)s1 - *(unsigned char*)s2);
 }
 
+char* strcpy(char* dest, const char* src) {
+    char* d = dest;
+    while ((*d++ = *src++) != 0);
+    return dest;
+}
+
 char* strncpy(char* dst, const char* src, size_t n) {
     if (n == 0)
         return dst;
@@ -250,4 +270,37 @@ char* strstr(const char* s1, const char* s2) {
     }
 
     return NULL;
+}
+
+size_t strspn(const char* s, const char* accept) {
+    const char* p = s;
+    const char* a;
+
+    while (*p) {
+        for (a = accept; *a; a++) {
+            if (*p == *a)
+                break;
+        }
+        if (*a == '\0')
+            return p - s;
+        p++;
+    }
+
+    return p - s;
+}
+
+char* strpbrk(const char* s, const char* accept) {
+    while (*s) {
+        const char* a = accept;
+        while (*a) {
+            if (*s == *a++)
+                return (char*)s;
+        }
+        s++;
+    }
+    return NULL;
+}
+
+char* strerror(int errnum) {
+    return "Unknown error";
 }

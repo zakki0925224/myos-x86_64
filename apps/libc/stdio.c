@@ -7,16 +7,28 @@
 #include "string.h"
 #include "syscalls.h"
 
+static f_stat __stdin_stat = {.size = 0};
+static f_stat __stdout_stat = {.size = 0};
+static f_stat __stderr_stat = {.size = 0};
+
+static FILE __stdin = {.fd = FDN_STDIN, .stat = &__stdin_stat, .buf = NULL, .pos = 0};
+static FILE __stdout = {.fd = FDN_STDOUT, .stat = &__stdout_stat, .buf = NULL, .pos = 0};
+static FILE __stderr = {.fd = FDN_STDERR, .stat = &__stderr_stat, .buf = NULL, .pos = 0};
+
+FILE* stdin = &__stdin;
+FILE* stdout = &__stdout;
+FILE* stderr = &__stderr;
+
 void exit(int status) {
     sys_exit((uint64_t)status);
 }
 
-int fprintf(FILE *stream, const char *fmt, ...) {
+int fprintf(FILE* stream, const char* fmt, ...) {
     printf("[DEBUG]fprintf called\n");
     return -1;
 }
 
-FILE *fopen(const char *filepath, const char *mode) {
+FILE* fopen(const char* filepath, const char* mode) {
     // printf("[DEBUG]fopen called\n");
     uint32_t flags = OPEN_FLAG_NONE;
 
@@ -28,14 +40,14 @@ FILE *fopen(const char *filepath, const char *mode) {
     if (fd == -1)
         return NULL;
 
-    f_stat *stat = (f_stat *)malloc(sizeof(f_stat));
+    f_stat* stat = (f_stat*)malloc(sizeof(f_stat));
     if (sys_stat(fd, stat) == -1) {
         free(stat);
         sys_close(fd);
         return NULL;
     }
 
-    FILE *file = (FILE *)malloc(sizeof(FILE));
+    FILE* file = (FILE*)malloc(sizeof(FILE));
     file->fd = fd;
     file->buf = NULL;
     file->stat = stat;
@@ -43,7 +55,7 @@ FILE *fopen(const char *filepath, const char *mode) {
     return file;
 }
 
-int fclose(FILE *stream) {
+int fclose(FILE* stream) {
     // printf("[DEBUG]fclose called\n");
     if (stream == NULL)
         return -1;
@@ -62,7 +74,7 @@ int fclose(FILE *stream) {
     return 0;
 }
 
-long int ftell(FILE *stream) {
+long int ftell(FILE* stream) {
     // printf("[DEBUG]ftell called\n");
     if (stream == NULL)
         return -1;
@@ -70,7 +82,7 @@ long int ftell(FILE *stream) {
     return stream->pos;
 }
 
-int fflush(FILE *stream) {
+int fflush(FILE* stream) {
     if (stream == NULL)
         return -1;
 
@@ -86,7 +98,7 @@ int fflush(FILE *stream) {
     return 0;
 }
 
-int puts(const char *c) {
+int puts(const char* c) {
     int ret = sys_write(FDN_STDOUT, c, strlen(c));
 
     if (ret == -1)
@@ -111,17 +123,17 @@ char getchar(void) {
     return c;
 }
 
-int vfprintf(FILE *stream, const char *fmt, va_list ap) {
+int vfprintf(FILE* stream, const char* fmt, va_list ap) {
     printf("[DEBUG]vfprintf called\n");
     return -1;
 }
 
-int sscanf(const char *buf, const char *fmt, ...) {
+int sscanf(const char* buf, const char* fmt, ...) {
     printf("[DEBUG]sscanf called\n");
     return -1;
 }
 
-size_t fread(void *buf, size_t size, size_t count, FILE *stream) {
+size_t fread(void* buf, size_t size, size_t count, FILE* stream) {
     // printf("[DEBUG]fread called\n");
     if (size == 0 || count == 0)
         return 0;
@@ -129,10 +141,17 @@ size_t fread(void *buf, size_t size, size_t count, FILE *stream) {
     if (stream == NULL)
         return 0;
 
+    if (stream->fd == FDN_STDIN) {
+        int res = sys_read(stream->fd, buf, size * count);
+        if (res == -1)
+            return 0;
+        return res / size;
+    }
+
     size_t f_size = stream->stat->size;
 
     if (stream->buf == NULL) {
-        stream->buf = (char *)malloc(f_size);
+        stream->buf = (char*)malloc(f_size);
         if (stream->buf == NULL)
             return 0;
 
@@ -151,7 +170,7 @@ size_t fread(void *buf, size_t size, size_t count, FILE *stream) {
     return bytes_to_read / size;
 }
 
-int fseek(FILE *stream, long int offset, int whence) {
+int fseek(FILE* stream, long int offset, int whence) {
     // printf("[DEBUG]fseek called\n");
     if (stream == NULL)
         return -1;
@@ -180,7 +199,7 @@ int fseek(FILE *stream, long int offset, int whence) {
     return 0;
 }
 
-size_t fwrite(const void *buf, size_t size, size_t count, FILE *stream) {
+size_t fwrite(const void* buf, size_t size, size_t count, FILE* stream) {
     // printf("[DEBUG]fwrite called\n");
     if (size == 0 || count == 0)
         return 0;
@@ -188,13 +207,20 @@ size_t fwrite(const void *buf, size_t size, size_t count, FILE *stream) {
     if (stream == NULL)
         return 0;
 
+    if (stream->fd == FDN_STDOUT || stream->fd == FDN_STDERR) {
+        int res = sys_write(stream->fd, buf, size * count);
+        if (res == -1)
+            return 0;
+        return count;
+    }
+
     size_t bytes_to_write = size * count;
     if (stream->buf == NULL) {
-        stream->buf = (char *)malloc(bytes_to_write);
+        stream->buf = (char*)malloc(bytes_to_write);
         if (stream->buf == NULL)
             return 0;
     } else {
-        stream->buf = (char *)realloc(stream->buf, stream->pos + bytes_to_write);
+        stream->buf = (char*)realloc(stream->buf, stream->pos + bytes_to_write);
         if (stream->buf == NULL)
             return 0;
     }
@@ -203,4 +229,77 @@ size_t fwrite(const void *buf, size_t size, size_t count, FILE *stream) {
     stream->pos += bytes_to_write;
 
     return count;
+}
+
+int setvbuf(FILE* stream, char* buf, int mode, size_t size) {
+    printf("[DEBUG]setvbuf called\n");
+    return 0;
+}
+
+void clearerr(FILE* stream) {
+    printf("[DEBUG]clearerr called\n");
+}
+
+int ferror(FILE* stream) {
+    printf("[DEBUG]ferror called\n");
+    return 0;
+}
+
+int feof(FILE* stream) {
+    printf("[DEBUG]feof called\n");
+    return 0;
+}
+
+FILE* tmpfile(void) {
+    printf("[DEBUG]tmpfile called\n");
+    return NULL;
+}
+
+int ungetc(int c, FILE* stream) {
+    printf("[DEBUG]ungetc called\n");
+    return EOF;
+}
+
+int getc(FILE* stream) {
+    unsigned char c;
+    if (fread(&c, 1, 1, stream) == 1) {
+        return c;
+    }
+    return EOF;
+}
+
+char* fgets(char* s, int size, FILE* stream) {
+    if (size <= 0) return NULL;
+
+    char* p = s;
+    int c;
+    int i = 0;
+
+    while (i < size - 1) {
+        c = getc(stream);
+        if (c == EOF) {
+            break;
+        }
+        *p++ = (char)c;
+        i++;
+        if (c == '\n') {
+            break;
+        }
+    }
+
+    if (i == 0) return NULL;
+
+    *p = '\0';
+    return s;
+}
+
+FILE* freopen(const char* filename, const char* mode, FILE* stream) {
+    if (stream) {
+        fclose(stream);
+    }
+    return fopen(filename, mode);
+}
+
+int fputs(const char* s, FILE* stream) {
+    return fwrite(s, 1, strlen(s), stream);
 }

@@ -11,7 +11,12 @@
 #define SEEK_CUR 1
 #define SEEK_END 2
 
+#define _IONBF 0
+#define _IOLBF 1
+#define _IOFBF 2
+
 #define EOF (-1)
+#define BUFSIZ 1024
 
 typedef struct
 {
@@ -20,6 +25,10 @@ typedef struct
     char* buf;
     long int pos;
 } FILE;
+
+extern FILE* stdin;
+extern FILE* stdout;
+extern FILE* stderr;
 
 // printf.c
 extern int printf(const char* fmt, ...);
@@ -40,5 +49,15 @@ extern size_t fread(void* buf, size_t size, size_t count, FILE* stream);
 extern int fseek(FILE* stream, long int offset, int whence);
 extern size_t fwrite(const void* buf, size_t size, size_t count, FILE* stream);
 extern int vsnprintf(char* buf, size_t bufsize, const char* format, va_list arg);
+extern int setvbuf(FILE* stream, char* buf, int mode, size_t size);
+extern void clearerr(FILE* stream);
+extern int ferror(FILE* stream);
+extern int feof(FILE* stream);
+extern FILE* tmpfile(void);
+extern int ungetc(int c, FILE* stream);
+extern int getc(FILE* stream);
+extern char* fgets(char* s, int size, FILE* stream);
+extern FILE* freopen(const char* filename, const char* mode, FILE* stream);
+extern int fputs(const char* s, FILE* stream);
 
 #endif

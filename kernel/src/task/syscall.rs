@@ -116,18 +116,24 @@ extern "sysv64" fn syscall_handler(
             let fd_num = arg0 as i32;
             let buf = arg1 as *mut u8;
             let buf_len = arg2 as usize;
-            if let Err(err) = sys_read(fd_num, buf, buf_len) {
-                kerror!("syscall: read: {:?}", err);
-                return -1;
+            match sys_read(fd_num, buf, buf_len) {
+                Ok(len) => return len as i64,
+                Err(err) => {
+                    kerror!("syscall: read: {:?}", err);
+                    return -1;
+                }
             }
         }
         SN_WRITE => {
             let fd_num = arg0 as i32;
             let buf = arg1 as *const u8;
             let buf_len = arg2 as usize;
-            if let Err(err) = sys_write(fd_num, buf, buf_len) {
-                kerror!("syscall: write: {:?}", err);
-                return -1;
+            match sys_write(fd_num, buf, buf_len) {
+                Ok(len) => return len as i64,
+                Err(err) => {
+                    kerror!("syscall: write: {:?}", err);
+                    return -1;
+                }
             }
         }
         SN_OPEN => {
@@ -358,7 +364,7 @@ extern "sysv64" fn syscall_handler(
     0
 }
 
-fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
+fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
     let fd_num = FileDescriptorNumber::new_val(fd_num)?;
 
     match fd_num {
@@ -383,11 +389,15 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
                 unsafe {
                     buf.copy_from_nonoverlapping(c_s.as_ptr(), c_s.len());
                 }
+
+                Ok(c_s.len())
             } else if buf_len == 1 {
                 let mut c = None;
                 while c.is_none() {
-                    c = x86_64::disabled_int(|| tty::get_char()).ok();
-                    x86_64::stihlt();
+                    c = x86_64::disabled_int(|| tty::get_char()).ok().flatten();
+                    if c.is_none() {
+                        x86_64::stihlt();
+                    }
                 }
 
                 if buf_len < 1 {
@@ -397,6 +407,10 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
                 unsafe {
                     buf.write(c.unwrap() as u8);
                 }
+
+                Ok(1)
+            } else {
+                Ok(0)
             }
         }
         fd => {
@@ -409,13 +423,13 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<()> {
             unsafe {
                 buf.copy_from_nonoverlapping(data.as_ptr(), data.len());
             }
+
+            Ok(data.len())
         }
     }
-
-    Ok(())
 }
 
-fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<()> {
+fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<usize> {
     let fd_num = FileDescriptorNumber::new_val(fd_num)?;
     let buf_slice = unsafe { slice::from_raw_parts(buf, buf_len) };
 
@@ -423,16 +437,16 @@ fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<()> {
         FileDescriptorNumber::STDOUT => {
             let s = String::from_utf8_lossy(buf_slice).to_string();
             print!("{}", s);
+            Ok(buf_len)
         }
         FileDescriptorNumber::STDIN | FileDescriptorNumber::STDERR => {
             return Err("fd is not defined".into());
         }
         fd => {
             vfs::write_file(fd, buf_slice)?;
+            Ok(buf_len)
         }
     }
-
-    Ok(())
 }
 
 fn sys_open(filepath: *const u8, flags: i32) -> Result<i32> {
@@ -477,7 +491,10 @@ fn sys_exit(status: i32) {
 }
 
 fn sys_sbrk(len: usize) -> Result<*const u8> {
-    assert!(len > 0);
+    if len == 0 {
+        return Ok(core::ptr::null());
+    }
+
     let mem_frame_info = bitmap::alloc_mem_frame((len + PAGE_SIZE).div_ceil(PAGE_SIZE))?;
     mem_frame_info.set_permissions_to_user()?;
     let virt_addr = mem_frame_info.frame_start_virt_addr()?;
@@ -542,9 +559,8 @@ fn sys_stat(fd_num: i32, buf: *mut f_stat) -> Result<()> {
     let stat_mut = unsafe { &mut *buf };
 
     let size = match fd_num {
-        FileDescriptorNumber::STDIN
-        | FileDescriptorNumber::STDOUT
-        | FileDescriptorNumber::STDERR => 0,
+        FileDescriptorNumber::STDIN => tty::input_count()? as usize,
+        FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => 0,
         fd => vfs::file_size(fd)?,
     };
     stat_mut.size = size;

@@ -39,8 +39,12 @@ impl<const N: usize> Buffer<N> {
 
     fn pop(&mut self) -> Option<char> {
         if self.len > 0 {
+            let c = self.buf[0];
+            for i in 0..self.len - 1 {
+                self.buf[i] = self.buf[i + 1];
+            }
             self.len -= 1;
-            Some(self.buf[self.len])
+            Some(c)
         } else {
             None
         }
@@ -69,8 +73,6 @@ impl Tty {
     }
 
     fn write(&mut self, c: char, buf_type: BufferType) -> Result<()> {
-        let _ = frame_buf_console::write_char(c);
-
         let buf = match buf_type {
             BufferType::Input => &mut self.input_buf,
             BufferType::Output => &mut self.output_buf,
@@ -86,20 +88,24 @@ impl Tty {
             }
         }
 
-        if self.use_serial_port {
-            let data = match c {
-                '\x08' | '\x7f' => '\x08' as u8,
-                _ => c as u8,
-            };
+        if buf_type != BufferType::Input {
+            if self.use_serial_port {
+                let data = match c {
+                    '\x08' | '\x7f' => '\x08' as u8,
+                    _ => c as u8,
+                };
 
-            // backspace
-            if data == 0x08 {
-                uart::send_data(data);
-                uart::send_data(b' ');
-                uart::send_data(data);
-            } else {
-                uart::send_data(data);
+                // backspace
+                if data == 0x08 {
+                    uart::send_data(data);
+                    uart::send_data(b' ');
+                    uart::send_data(data);
+                } else {
+                    uart::send_data(data);
+                }
             }
+
+            let _ = frame_buf_console::write_char(c);
         }
 
         Ok(())
@@ -122,20 +128,21 @@ impl Tty {
             }
         }
 
-        s.chars().rev().collect()
+        s
     }
 
-    fn get_char(&mut self, buf_type: BufferType) -> char {
+    fn get_char(&mut self, buf_type: BufferType) -> Option<char> {
         let buf = match buf_type {
             BufferType::Input => &mut self.input_buf,
             BufferType::Output => &mut self.output_buf,
             BufferType::ErrorOutput => &mut self.err_output_buf,
         };
 
-        match buf.pop() {
-            Some(c) => c,
-            None => '\0', // null
-        }
+        buf.pop()
+    }
+
+    pub fn input_count(&self) -> usize {
+        self.input_buf.len
     }
 }
 
@@ -264,6 +271,7 @@ pub fn input(c: char) -> Result<()> {
 
     let mut tty = TTY.try_lock()?;
     tty.write(c, BufferType::Input)?;
+    let _ = tty.write(c, BufferType::Output);
 
     if c == '\n' {
         tty.is_ready_get_line = true;
@@ -283,7 +291,12 @@ pub fn get_line() -> Result<Option<String>> {
     }
 }
 
-pub fn get_char() -> Result<char> {
+pub fn get_char() -> Result<Option<char>> {
     let mut tty = TTY.try_lock()?;
     Ok(tty.get_char(BufferType::Input))
+}
+
+pub fn input_count() -> Result<usize> {
+    let tty = TTY.try_lock()?;
+    Ok(tty.input_count())
 }

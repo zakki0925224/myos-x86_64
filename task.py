@@ -12,7 +12,6 @@ KERNEL_DIR = "kernel"
 DUMP_DIR = "dump"
 THIRD_PARTY_DIR = "third-party"
 QEMU_DIR = "qemu"
-DOOM_DIR = "doom-for-myos"
 INITRAMFS_DIR = "initramfs"
 MNT_DIR_PATH = f"./{OUTPUT_DIR}/mnt"
 
@@ -351,12 +350,7 @@ def clean():
     _run_cmd(f"rm -f ./{THIRD_PARTY_DIR}/{DOOM_WAD_FILE}")
     _run_cmd(f"rm -f ./{THIRD_PARTY_DIR}/{FONT_FILE}")
     _run_cmd(f"rm -f ./{THIRD_PARTY_DIR}/{COZETTE_BDF}")
-    _run_cmd(f"rm -rf ./{THIRD_PARTY_DIR}/{DOOM_DIR}/build")
     _run_cmd(f"rm -rf ./{THIRD_PARTY_DIR}/{QEMU_DIR}/build")
-    _run_cmd(f"make -C ./{THIRD_PARTY_DIR}/{DOOM_DIR} clean")
-    _run_cmd(
-        f"make -C ./{THIRD_PARTY_DIR}/{DOOM_DIR}/berkley-softfloat-3/build/Linux-x86_64-GCC clean"
-    )
     _run_cmd("cargo clean")
 
     # clean apps
