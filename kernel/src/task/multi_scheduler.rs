@@ -124,6 +124,23 @@ impl MultiTaskScheduler {
         Ok(None)
     }
 
+    fn pop_allocated_memory_by_virt_addr(
+        &mut self,
+        virt_addr: VirtualAddress,
+    ) -> Result<MemoryFrameInfo> {
+        let task = self.running_task.as_mut().ok_or("No running task")?;
+        let allocated_mem_frame_info = &mut task.resource.allocated_mem_frame_info;
+
+        if let Some(index) = allocated_mem_frame_info
+            .iter()
+            .position(|info| info.frame_start_virt_addr() == Ok(virt_addr))
+        {
+            return Ok(allocated_mem_frame_info.remove(index));
+        }
+
+        Err("Invalid virtual address".into())
+    }
+
     fn debug_running_task(&self) -> bool {
         if let Some(task) = self.running_task.as_ref() {
             super::debug_task(task);
@@ -200,6 +217,10 @@ pub fn request(req: TaskRequest) -> Result<TaskResult> {
         TaskRequest::GetMemoryFrameSize(virt_addr) => {
             let size = sched.get_memory_frame_size_by_virt_addr(virt_addr)?;
             Ok(TaskResult::MemoryFrameSize(size))
+        }
+        TaskRequest::PopMemory(virt_addr) => {
+            let info = sched.pop_allocated_memory_by_virt_addr(virt_addr)?;
+            Ok(TaskResult::PopMemory(info))
         }
         TaskRequest::ExecuteDebugger => {
             let res = sched.debug_running_task();

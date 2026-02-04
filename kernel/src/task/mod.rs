@@ -56,6 +56,7 @@ pub enum TaskRequest {
     RemoveFileDescriptorNumber(FileDescriptorNumber),
     PushMemory(MemoryFrameInfo),
     GetMemoryFrameSize(VirtualAddress),
+    PopMemory(VirtualAddress),
     ExecuteDebugger,
     GetDwarf,
 }
@@ -64,6 +65,7 @@ pub enum TaskRequest {
 pub enum TaskResult {
     Ok,
     MemoryFrameSize(Option<usize>),
+    PopMemory(MemoryFrameInfo),
     ExecuteDebugger(bool),
     Dwarf(Option<Dwarf>),
 }

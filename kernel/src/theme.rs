@@ -1,6 +1,6 @@
 use crate::graphics::color::ColorCode;
 
-pub const GLOBAL_THEME: Theme = CLASSIC_THEME;
+pub const GLOBAL_THEME: Theme = LEGACY_THEME;
 
 const LEGACY_BLACK: ColorCode = ColorCode::BLACK;
 const LEGACY_DARK_GREEN: ColorCode = ColorCode::new_rgb(0x00, 0x55, 0x00);

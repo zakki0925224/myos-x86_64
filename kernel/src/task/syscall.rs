@@ -214,6 +214,13 @@ extern "sysv64" fn syscall_handler(
                 return -1;
             }
         }
+        SN_FREE => {
+            let ptr = arg0 as *const u8;
+            if let Err(err) = sys_free(ptr) {
+                kerror!("syscall: free: {:?}", err);
+                return -1;
+            }
+        }
         SN_SBRKSZ => {
             let target = arg0 as *const u8;
             match sys_sbrksz(target) {
@@ -601,6 +608,20 @@ fn sys_chdir(path: *const u8) -> Result<()> {
         .as_str()
         .into();
     vfs::chdir(&path)?;
+    Ok(())
+}
+
+fn sys_free(ptr: *const u8) -> Result<()> {
+    let virt_addr: VirtualAddress = (ptr as u64).into();
+    kdebug!("syscall: free: target memory at 0x{:x}", virt_addr.get());
+
+    let TaskResult::PopMemory(mem_frame_info) =
+        task::single_scheduler::request(TaskRequest::PopMemory(virt_addr))?
+    else {
+        unreachable!()
+    };
+
+    bitmap::dealloc_mem_frame(mem_frame_info)?;
     Ok(())
 }
 

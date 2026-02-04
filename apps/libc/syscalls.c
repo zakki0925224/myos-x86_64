@@ -73,6 +73,10 @@ int sys_chdir(const char* path) {
     return (int)syscall(SN_CHDIR, (uint64_t)path, 0, 0, 0, 0, 0);
 }
 
+int sys_free(void* ptr) {
+    return (int)syscall(SN_FREE, (uint64_t)ptr, 0, 0, 0, 0, 0);
+}
+
 size_t sys_sbrksz(const void* target) {
     return (size_t)syscall(SN_SBRKSZ, (uint64_t)target, 0, 0, 0, 0, 0);
 }

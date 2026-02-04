@@ -5,6 +5,6 @@
 
 typedef long time_t;
 
-extern time_t time(time_t* t);
+time_t time(time_t* t);
 
 #endif

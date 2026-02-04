@@ -31,7 +31,7 @@ struct lconv {
     char n_sign_posn;
 };
 
-extern char* setlocale(int category, const char* locale);
-extern struct lconv* localeconv(void);
+char* setlocale(int category, const char* locale);
+struct lconv* localeconv(void);
 
 #endif

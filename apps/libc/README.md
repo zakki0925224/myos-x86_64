@@ -28,6 +28,10 @@ Exits the application with a status (noreturn).
 
 Allocates memory, aligned to 4KB.
 
+### free
+
+Frees memory allocated by sbrk.
+
 ### uname
 
 Retrieves system information.
@@ -123,7 +127,7 @@ Accepts a connection on a socket.
 | 10     | sys_exec      | 0x0a              | const char \*args     | int flags                    | -                      | -          | -                                 | -              | int (0 on success, -1 on error)   |
 | 11     | sys_getcwd    | 0x0b              | char \*buf            | size_t buf_len               | -                      | -          | -                                 | -              | int (0 on success, -1 on error)   |
 | 12     | sys_chdir     | 0x0c              | const char \*path     | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)   |
-| 13     | -             | -                 | -                     | -                            | -                      | -          | -                                 | -              | -                                 |
+| 13     | sys_free      | 0x0d              | void \*ptr            | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)   |
 | 14     | -             | -                 | -                     | -                            | -                      | -          | -                                 | -              | -                                 |
 | 15     | sys_sbrksz    | 0x0f              | const void \*target   | -                            | -                      | -          | -                                 | -              | size_t (size, 0 on error)         |
 | 16     | -             | -                 | -                     | -                            | -                      | -          | -                                 | -              | -                                 |

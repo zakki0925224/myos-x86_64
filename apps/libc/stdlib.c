@@ -27,7 +27,7 @@ double atof(const char* nptr) {
 }
 
 void free(void* ptr) {
-    printf("[DEBUG]free called\n");
+    sys_free(ptr);
 }
 
 void* calloc(size_t count, size_t size) {

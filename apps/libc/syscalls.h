@@ -23,7 +23,7 @@
 #define SN_EXEC 10
 #define SN_GETCWD 11
 #define SN_CHDIR 12
-// 13
+#define SN_FREE 13
 // 14
 #define SN_SBRKSZ 15
 // 16
@@ -58,30 +58,31 @@
 #define SOCKET_TYPE_SOCK_STREAM 2
 #define SOCKET_PROTO_UDP 17
 
-extern int sys_read(int fd, void* buf, size_t buf_len);
-extern int sys_write(int fd, const void* buf, size_t buf_len);
-extern int sys_open(const char* filepath, int flags);
-extern int sys_close(int fd);
-extern void sys_exit(int status);
-extern void* sys_sbrk(size_t len);
-extern int sys_uname(utsname* buf);
-extern void sys_break(void);
-extern int sys_stat(int fd, f_stat* buf);
-extern uint64_t sys_uptime(void);
-extern int sys_exec(const char* args, int flags);
-extern int sys_getcwd(char* buf, size_t buf_len);
-extern int sys_chdir(const char* path);
-extern size_t sys_sbrksz(const void* target);
-extern int sys_getenames(const char* path, char* buf, size_t buf_len);
-extern int sys_iomsg(const void* msgbuf, void* replymsgbuf, size_t replymsgbuf_len);
-extern int sys_socket(int domain, int type, int protocol);
-extern int sys_bind(int sockfd, const struct sockaddr* addr, size_t addrlen);
-extern int sys_sendto(int sockfd, const void* buf, size_t len, int flags, const struct sockaddr* dest_addr, size_t addrlen);
-extern int sys_recvfrom(int sockfd, void* buf, size_t len, int flags, struct sockaddr* src_addr, size_t addrlen);
-extern int sys_send(int sockfd, const void* buf, size_t len, int flags);
-extern int sys_recv(int sockfd, void* buf, size_t len, int flags);
-extern int sys_connect(int sockfd, const struct sockaddr* addr, size_t addrlen);
-extern int sys_listen(int sockfd, int backlog);
-extern int sys_accept(int sockfd, struct sockaddr* addr, size_t* addrlen);
+int sys_read(int fd, void* buf, size_t buf_len);
+int sys_write(int fd, const void* buf, size_t buf_len);
+int sys_open(const char* filepath, int flags);
+int sys_close(int fd);
+void sys_exit(int status);
+void* sys_sbrk(size_t len);
+int sys_uname(utsname* buf);
+void sys_break(void);
+int sys_stat(int fd, f_stat* buf);
+uint64_t sys_uptime(void);
+int sys_exec(const char* args, int flags);
+int sys_getcwd(char* buf, size_t buf_len);
+int sys_chdir(const char* path);
+int sys_free(void* ptr);
+size_t sys_sbrksz(const void* target);
+int sys_getenames(const char* path, char* buf, size_t buf_len);
+int sys_iomsg(const void* msgbuf, void* replymsgbuf, size_t replymsgbuf_len);
+int sys_socket(int domain, int type, int protocol);
+int sys_bind(int sockfd, const struct sockaddr* addr, size_t addrlen);
+int sys_sendto(int sockfd, const void* buf, size_t len, int flags, const struct sockaddr* dest_addr, size_t addrlen);
+int sys_recvfrom(int sockfd, void* buf, size_t len, int flags, struct sockaddr* src_addr, size_t addrlen);
+int sys_send(int sockfd, const void* buf, size_t len, int flags);
+int sys_recv(int sockfd, void* buf, size_t len, int flags);
+int sys_connect(int sockfd, const struct sockaddr* addr, size_t addrlen);
+int sys_listen(int sockfd, int backlog);
+int sys_accept(int sockfd, struct sockaddr* addr, size_t* addrlen);
 
 #endif

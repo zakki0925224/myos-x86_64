@@ -129,6 +129,23 @@ impl SingleTaskScheduler {
         Ok(None)
     }
 
+    fn pop_allocated_memory_by_virt_addr(
+        &mut self,
+        virt_addr: VirtualAddress,
+    ) -> Result<MemoryFrameInfo> {
+        let user_task = self.current_user_task_mut().ok_or("No current user task")?;
+        let allocated_mem_frame_info = &mut user_task.resource.allocated_mem_frame_info;
+
+        if let Some(index) = allocated_mem_frame_info
+            .iter()
+            .position(|info| info.frame_start_virt_addr() == Ok(virt_addr))
+        {
+            return Ok(allocated_mem_frame_info.remove(index));
+        }
+
+        Err("Invalid virtual address".into())
+    }
+
     fn push_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
         let user_task = self.current_user_task_mut().ok_or("No current user task")?;
         user_task.resource.created_layer_ids.push(layer_id);
@@ -222,6 +239,10 @@ pub fn request(req: TaskRequest) -> Result<TaskResult> {
         TaskRequest::GetMemoryFrameSize(virt_addr) => {
             let size = unsafe { SINGLE_TASK_SCHED.get_memory_frame_size_by_virt_addr(virt_addr) }?;
             Ok(TaskResult::MemoryFrameSize(size))
+        }
+        TaskRequest::PopMemory(virt_addr) => {
+            let info = unsafe { SINGLE_TASK_SCHED.pop_allocated_memory_by_virt_addr(virt_addr) }?;
+            Ok(TaskResult::PopMemory(info))
         }
         TaskRequest::ExecuteDebugger => {
             let res = unsafe { SINGLE_TASK_SCHED.debug_user_task() };
