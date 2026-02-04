@@ -269,3 +269,31 @@ int snprintf(char* buf, size_t size, const char* format, ...) {
 
     return ret;
 }
+
+int fprintf(FILE* stream, const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    int ret = vfprintf(stream, fmt, ap);
+    va_end(ap);
+    return ret;
+}
+
+int vfprintf(FILE* stream, const char* fmt, va_list ap) {
+    if (stream == NULL) {
+        return -1;
+    }
+
+    char buf[1024];
+    int len = vsnprintf(buf, sizeof(buf), fmt, ap);
+
+    if (len < 0) {
+        return -1;
+    }
+
+    size_t written = fwrite(buf, 1, len, stream);
+    if (written < (size_t)len) {
+        return -1;
+    }
+
+    return len;
+}

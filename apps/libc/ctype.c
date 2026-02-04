@@ -43,3 +43,17 @@ int tolower(int c) {
 
     return c;
 }
+
+int iscntrl(int c) {
+    return (c >= 0 && c <= 31) || (c == 127);
+}
+
+int isgraph(int c) {
+    return (c >= 33 && c <= 126);
+}
+
+int ispunct(int c) {
+    return isgraph(c) && !((c >= '0' && c <= '9') ||
+                           (c >= 'A' && c <= 'Z') ||
+                           (c >= 'a' && c <= 'z'));
+}

@@ -441,13 +441,13 @@ fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<usize> {
     let buf_slice = unsafe { slice::from_raw_parts(buf, buf_len) };
 
     match fd_num {
-        FileDescriptorNumber::STDOUT => {
+        FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => {
             let s = String::from_utf8_lossy(buf_slice).to_string();
             print!("{}", s);
             Ok(buf_len)
         }
-        FileDescriptorNumber::STDIN | FileDescriptorNumber::STDERR => {
-            return Err("fd is not defined".into());
+        FileDescriptorNumber::STDIN => {
+            return Err("cannot write data to stdin".into());
         }
         fd => {
             vfs::write_file(fd, buf_slice)?;
@@ -505,11 +505,11 @@ fn sys_sbrk(len: usize) -> Result<*const u8> {
     let mem_frame_info = bitmap::alloc_mem_frame((len + PAGE_SIZE).div_ceil(PAGE_SIZE))?;
     mem_frame_info.set_permissions_to_user()?;
     let virt_addr = mem_frame_info.frame_start_virt_addr()?;
-    kdebug!(
-        "syscall: sbrk: allocated {} bytes at 0x{:x}",
-        mem_frame_info.frame_size,
-        virt_addr.get()
-    );
+    // kdebug!(
+    //     "syscall: sbrk: allocated {} bytes at 0x{:x}",
+    //     mem_frame_info.frame_size,
+    //     virt_addr.get()
+    // );
 
     let TaskResult::Ok = task::single_scheduler::request(TaskRequest::PushMemory(mem_frame_info))?
     else {
@@ -613,7 +613,7 @@ fn sys_chdir(path: *const u8) -> Result<()> {
 
 fn sys_free(ptr: *const u8) -> Result<()> {
     let virt_addr: VirtualAddress = (ptr as u64).into();
-    kdebug!("syscall: free: target memory at 0x{:x}", virt_addr.get());
+    // kdebug!("syscall: free: target memory at 0x{:x}", virt_addr.get());
 
     let TaskResult::PopMemory(mem_frame_info) =
         task::single_scheduler::request(TaskRequest::PopMemory(virt_addr))?
@@ -621,6 +621,7 @@ fn sys_free(ptr: *const u8) -> Result<()> {
         unreachable!()
     };
 
+    mem_frame_info.set_permissions_to_supervisor()?;
     bitmap::dealloc_mem_frame(mem_frame_info)?;
     Ok(())
 }

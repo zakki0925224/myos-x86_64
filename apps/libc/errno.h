@@ -1,7 +1,7 @@
 #ifndef _ERRNO_H
 #define _ERRNO_H
 
-int errno;
+extern int errno;
 
 #define ENOENT 2
 #define ESRCH 3

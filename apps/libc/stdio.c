@@ -23,13 +23,7 @@ void exit(int status) {
     sys_exit((uint64_t)status);
 }
 
-int fprintf(FILE* stream, const char* fmt, ...) {
-    printf("[DEBUG]fprintf called\n");
-    return -1;
-}
-
 FILE* fopen(const char* filepath, const char* mode) {
-    // printf("[DEBUG]fopen called\n");
     uint32_t flags = OPEN_FLAG_NONE;
 
     if (strcmp(mode, "w") == 0) {
@@ -56,7 +50,6 @@ FILE* fopen(const char* filepath, const char* mode) {
 }
 
 int fclose(FILE* stream) {
-    // printf("[DEBUG]fclose called\n");
     if (stream == NULL)
         return -1;
 
@@ -75,7 +68,6 @@ int fclose(FILE* stream) {
 }
 
 long int ftell(FILE* stream) {
-    // printf("[DEBUG]ftell called\n");
     if (stream == NULL)
         return -1;
 
@@ -123,18 +115,12 @@ char getchar(void) {
     return c;
 }
 
-int vfprintf(FILE* stream, const char* fmt, va_list ap) {
-    printf("[DEBUG]vfprintf called\n");
-    return -1;
-}
-
 int sscanf(const char* buf, const char* fmt, ...) {
     printf("[DEBUG]sscanf called\n");
     return -1;
 }
 
 size_t fread(void* buf, size_t size, size_t count, FILE* stream) {
-    // printf("[DEBUG]fread called\n");
     if (size == 0 || count == 0)
         return 0;
 
@@ -171,7 +157,6 @@ size_t fread(void* buf, size_t size, size_t count, FILE* stream) {
 }
 
 int fseek(FILE* stream, long int offset, int whence) {
-    // printf("[DEBUG]fseek called\n");
     if (stream == NULL)
         return -1;
 
@@ -200,7 +185,6 @@ int fseek(FILE* stream, long int offset, int whence) {
 }
 
 size_t fwrite(const void* buf, size_t size, size_t count, FILE* stream) {
-    // printf("[DEBUG]fwrite called\n");
     if (size == 0 || count == 0)
         return 0;
 

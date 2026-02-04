@@ -27,11 +27,13 @@ double atof(const char* nptr) {
 }
 
 void free(void* ptr) {
+    if (ptr == NULL)
+        return;
+
     sys_free(ptr);
 }
 
 void* calloc(size_t count, size_t size) {
-    // printf("[DEBUG]calloc called\n");
     void* ptr = malloc(count * size);
     if (ptr == NULL)
         return NULL;
@@ -41,7 +43,6 @@ void* calloc(size_t count, size_t size) {
 }
 
 void* realloc(void* ptr, size_t size) {
-    // printf("[DEBUG]realloc called\n");
     if (ptr == NULL) {
         return malloc(size);
     }
