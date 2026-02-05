@@ -8,29 +8,96 @@
 #include "string.h"
 #include "syscalls.h"
 
-int abs(int i) {
-    return i < 0 ? -i : i;
+// malloc/free
+#define PAGE_SIZE 4096
+#define ALIGN 8
+
+typedef struct FreeBlock {
+    size_t size;
+    struct FreeBlock* next;
+} FreeBlock;
+
+// simple first-fit allocator
+static FreeBlock* free_list = NULL;
+
+static FreeBlock* request_mem(size_t need) {
+    size_t total = (need + sizeof(FreeBlock) + (ALIGN - 1)) & ~(ALIGN - 1);
+
+    if (total < PAGE_SIZE)
+        total = PAGE_SIZE;
+
+    void* ptr = sys_sbrk(total);
+
+    if (ptr == (void*)-1)
+        return NULL;
+
+    FreeBlock* block = (FreeBlock*)ptr;
+    block->size = total;
+    block->next = NULL;
+    return block;
+}
+
+static void split_block(FreeBlock* block, size_t need) {
+    size_t remain = block->size - need;
+
+    // if too small
+    if (remain <= sizeof(FreeBlock))
+        return;
+
+    FreeBlock* new_block = (FreeBlock*)((char*)block + need);
+    new_block->size = remain;
+    new_block->next = block->next;
+
+    block->size = need;
+    block->next = new_block;
 }
 
 void* malloc(size_t len) {
-    return sys_sbrk(len);
-}
+    if (len == 0)
+        return NULL;
 
-int atoi(const char* str) {
-    printf("[DEBUG]atoi called\n");
-    return -1;
-}
+    size_t need = (len + sizeof(FreeBlock) + (ALIGN - 1)) & ~(ALIGN - 1);
 
-double atof(const char* nptr) {
-    printf("[DEBUG]atof called\n");
-    return -1.0;
+    FreeBlock** prev = &free_list;
+    FreeBlock* curr = free_list;
+
+    // find block
+    while (curr) {
+        if (curr->size >= need) {
+            split_block(curr, need);
+
+            *prev = curr->next;
+            return (void*)((char*)curr + sizeof(FreeBlock));
+        }
+
+        prev = &curr->next;
+        curr = curr->next;
+    }
+
+    FreeBlock* new_block = request_mem(need);
+    if (new_block == NULL)
+        return NULL;
+
+    split_block(new_block, need);
+
+    if (new_block->next != NULL) {
+        FreeBlock* remain = new_block->next;
+        remain->next = free_list;
+        free_list = remain;
+
+        new_block->next = NULL;
+    }
+
+    return (void*)((char*)new_block + sizeof(FreeBlock));
 }
 
 void free(void* ptr) {
     if (ptr == NULL)
         return;
 
-    sys_free(ptr);
+    FreeBlock* block = (FreeBlock*)((char*)ptr - sizeof(FreeBlock));
+    block->next = free_list;
+    free_list = block;
 }
 
 void* calloc(size_t count, size_t size) {
@@ -47,17 +114,40 @@ void* realloc(void* ptr, size_t size) {
         return malloc(size);
     }
 
-    size_t old_size = sys_sbrksz(ptr);
-    if (old_size == 0)
+    if (size == 0) {
+        free(ptr);
         return NULL;
+    }
+
+    FreeBlock* block = (FreeBlock*)((char*)ptr - sizeof(FreeBlock));
+    size_t old_size = block->size - sizeof(FreeBlock);
+
+    if (size <= old_size) {
+        return ptr;
+    }
 
     void* new_ptr = malloc(size);
-    if (new_ptr == NULL)
-        return NULL;
+    if (!new_ptr) return NULL;
 
-    memcpy(new_ptr, ptr, old_size > size ? size : old_size);
+    memcpy(new_ptr, ptr, old_size < size ? old_size : size);
     free(ptr);
     return new_ptr;
+}
+
+// --------------------------------------------------------------
+
+int abs(int i) {
+    return i < 0 ? -i : i;
+}
+
+int atoi(const char* str) {
+    printf("[DEBUG]atoi called\n");
+    return -1;
+}
+
+double atof(const char* nptr) {
+    printf("[DEBUG]atof called\n");
+    return -1.0;
 }
 
 int system(const char* command) {

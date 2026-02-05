@@ -18,12 +18,16 @@
 #define EOF (-1)
 #define BUFSIZ 1024
 
+#define _FILE_EOF_FLAG 0x01
+#define _FILE_ERR_FLAG 0x02
+
 typedef struct
 {
     int fd;
     f_stat* stat;
     char* buf;
     long int pos;
+    int flags;
 } FILE;
 
 extern FILE* stdin;

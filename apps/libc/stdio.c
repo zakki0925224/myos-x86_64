@@ -11,9 +11,9 @@ static f_stat __stdin_stat = {.size = 0};
 static f_stat __stdout_stat = {.size = 0};
 static f_stat __stderr_stat = {.size = 0};
 
-static FILE __stdin = {.fd = FDN_STDIN, .stat = &__stdin_stat, .buf = NULL, .pos = 0};
-static FILE __stdout = {.fd = FDN_STDOUT, .stat = &__stdout_stat, .buf = NULL, .pos = 0};
-static FILE __stderr = {.fd = FDN_STDERR, .stat = &__stderr_stat, .buf = NULL, .pos = 0};
+static FILE __stdin = {.fd = FDN_STDIN, .stat = &__stdin_stat, .buf = NULL, .pos = 0, .flags = 0};
+static FILE __stdout = {.fd = FDN_STDOUT, .stat = &__stdout_stat, .buf = NULL, .pos = 0, .flags = 0};
+static FILE __stderr = {.fd = FDN_STDERR, .stat = &__stderr_stat, .buf = NULL, .pos = 0, .flags = 0};
 
 FILE* stdin = &__stdin;
 FILE* stdout = &__stdout;
@@ -46,6 +46,7 @@ FILE* fopen(const char* filepath, const char* mode) {
     file->buf = NULL;
     file->stat = stat;
     file->pos = 0;
+    file->flags = 0;
     return file;
 }
 
@@ -129,8 +130,13 @@ size_t fread(void* buf, size_t size, size_t count, FILE* stream) {
 
     if (stream->fd == FDN_STDIN) {
         int res = sys_read(stream->fd, buf, size * count);
-        if (res == -1)
+        if (res == -1) {
+            stream->flags |= _FILE_ERR_FLAG;
             return 0;
+        }
+        if (res == 0) {
+            stream->flags |= _FILE_EOF_FLAG;
+        }
         return res / size;
     }
 
@@ -153,12 +159,19 @@ size_t fread(void* buf, size_t size, size_t count, FILE* stream) {
     memcpy(buf, stream->buf + stream->pos, bytes_to_read);
     stream->pos += bytes_to_read;
 
+    if (bytes_to_read < size * count) {
+        stream->flags |= _FILE_EOF_FLAG;
+    }
+
     return bytes_to_read / size;
 }
 
 int fseek(FILE* stream, long int offset, int whence) {
     if (stream == NULL)
         return -1;
+
+    // fseek clears EOF flag
+    stream->flags &= ~_FILE_EOF_FLAG;
 
     size_t f_size = stream->stat->size;
     switch (whence) {
@@ -221,17 +234,23 @@ int setvbuf(FILE* stream, char* buf, int mode, size_t size) {
 }
 
 void clearerr(FILE* stream) {
-    printf("[DEBUG]clearerr called\n");
+    if (stream != NULL) {
+        stream->flags = 0;
+    }
 }
 
 int ferror(FILE* stream) {
-    printf("[DEBUG]ferror called\n");
-    return 0;
+    if (stream == NULL) {
+        return 0;
+    }
+    return (stream->flags & _FILE_ERR_FLAG) != 0;
 }
 
 int feof(FILE* stream) {
-    printf("[DEBUG]feof called\n");
-    return 0;
+    if (stream == NULL) {
+        return 0;
+    }
+    return (stream->flags & _FILE_EOF_FLAG) != 0;
 }
 
 FILE* tmpfile(void) {
