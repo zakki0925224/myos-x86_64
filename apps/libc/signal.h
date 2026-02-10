@@ -10,6 +10,7 @@
 #define SIG_ERR ((void (*)(int)) - 1)
 #define SIG_IGN ((void (*)(int))1)
 
+typedef int sig_atomic_t;
 typedef void (*sighandler_t)(int);
 
 sighandler_t signal(int signum, sighandler_t handler);
