@@ -37,6 +37,7 @@ impl Window {
 pub enum ElementKind {
     Html,
     Head,
+    Title,
     Style,
     Script,
     Body,
@@ -54,6 +55,7 @@ impl FromStr for ElementKind {
         match s {
             "html" => Ok(ElementKind::Html),
             "head" => Ok(ElementKind::Head),
+            "title" => Ok(ElementKind::Title),
             "style" => Ok(ElementKind::Style),
             "script" => Ok(ElementKind::Script),
             "body" => Ok(ElementKind::Body),
@@ -72,6 +74,7 @@ impl Display for ElementKind {
         let s = match self {
             ElementKind::Html => "html",
             ElementKind::Head => "head",
+            ElementKind::Title => "title",
             ElementKind::Style => "style",
             ElementKind::Script => "script",
             ElementKind::Body => "body",

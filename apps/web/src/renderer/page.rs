@@ -7,7 +7,10 @@ use crate::{
             cssom::{CssParser, StyleSheet},
             token::CssTokenizer,
         },
-        dom::{api::get_style_content, node::Window},
+        dom::{
+            api::{get_style_content, get_title_content},
+            node::Window,
+        },
         html::{parser::HtmlParser, token::HtmlTokenizer},
         layout::layout_view::LayoutView,
     },
@@ -51,6 +54,13 @@ impl Page {
 
     pub fn display_items(&self) -> Vec<DisplayItem> {
         self.display_items.clone()
+    }
+
+    pub fn title(&self) -> String {
+        match &self.frame {
+            Some(frame) => get_title_content(frame.borrow().document()),
+            None => String::new(),
+        }
     }
 
     pub fn clear_display_items(&mut self) {

@@ -4,9 +4,11 @@ use crate::{
 };
 use alloc::vec::Vec;
 use core::net::Ipv4Addr;
+use libc_rs::sys_uptime;
 
 pub const QEMU_DNS: &'static str = "10.0.2.3:53";
 const LOCALHOST_ADDR: Ipv4Addr = Ipv4Addr::new(10, 0, 2, 2);
+const DNS_TIMEOUT_MS: u64 = 5000;
 
 pub struct DnsClient {
     dns_server: &'static str,
@@ -20,6 +22,11 @@ impl DnsClient {
     pub fn resolve_all(&self, domain: &str) -> Result<Vec<Ipv4Addr>> {
         if domain == "localhost" {
             return Ok(vec![LOCALHOST_ADDR]);
+        }
+
+        // Skip DNS for raw IPv4 addresses
+        if let Ok(ip) = domain.parse::<Ipv4Addr>() {
+            return Ok(vec![ip]);
         }
 
         let socket = UdpSocket::bind("0.0.0.0:0")?;
@@ -52,11 +59,17 @@ impl DnsClient {
         // send
         socket.send_to(&query, self.dns_server)?;
 
-        // receive
+        // receive with real-time timeout
         let mut buf = [0u8; 1500];
         let mut n = 0;
+        let start = unsafe { sys_uptime() };
 
-        for _ in 0..1000000 {
+        loop {
+            let elapsed = unsafe { sys_uptime() } - start;
+            if elapsed > DNS_TIMEOUT_MS {
+                break;
+            }
+
             let (res, _, _) = socket.recv_from(&mut buf)?;
             if res > 0 {
                 n = res;

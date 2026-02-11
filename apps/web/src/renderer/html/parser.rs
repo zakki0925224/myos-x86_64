@@ -264,7 +264,7 @@ impl HtmlParser {
                             self_closing: _,
                             ref attributes,
                         }) => {
-                            if tag == "style" || tag == "script" {
+                            if tag == "title" || tag == "style" || tag == "script" {
                                 self.insert_element(tag, attributes.to_vec());
                                 self.original_insertion_mode = self.mode;
                                 self.mode = InsertionMode::Text;

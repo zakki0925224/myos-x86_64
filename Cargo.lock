@@ -598,6 +598,7 @@ checksum = "f63a545481291138910575129486daeaf8ac54aee4387fe7906919f7830c7d9d"
 name = "web"
 version = "0.1.0"
 dependencies = [
+ "embedded-graphics",
  "libc-rs",
 ]
 

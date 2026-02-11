@@ -35,6 +35,23 @@ pub fn get_tagret_element_node(
     }
 }
 
+pub fn get_title_content(root: Rc<RefCell<Node>>) -> String {
+    let title_node = match get_tagret_element_node(Some(root), ElementKind::Title) {
+        Some(node) => node,
+        None => return "".to_string(),
+    };
+
+    let text_node = match title_node.borrow().first_child() {
+        Some(node) => node,
+        None => return "".to_string(),
+    };
+
+    match &text_node.borrow().kind() {
+        NodeKind::Text(s) => s.trim().to_string(),
+        _ => "".to_string(),
+    }
+}
+
 pub fn get_style_content(root: Rc<RefCell<Node>>) -> String {
     let style_node = match get_tagret_element_node(Some(root), ElementKind::Style) {
         Some(node) => node,
