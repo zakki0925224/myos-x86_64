@@ -15,6 +15,7 @@ mod error;
 mod fs;
 mod graphics;
 mod mem;
+mod mem_vis;
 mod net;
 mod net_vis;
 mod panic;
@@ -150,6 +151,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     async_task::spawn_with_priority(poll_uart(), Priority::Low).unwrap();
     async_task::spawn_with_priority(poll_rtl8139(), Priority::Low).unwrap();
     async_task::spawn_with_priority(poll_net_vis(), Priority::Low).unwrap();
+    async_task::spawn_with_priority(poll_mem_vis(), Priority::Low).unwrap();
     async_task::ready().unwrap();
 
     // execute init app
@@ -239,6 +241,13 @@ async fn poll_rtl8139() {
 async fn poll_net_vis() {
     loop {
         let _ = net_vis::update_render();
+        async_task::exec_yield().await;
+    }
+}
+
+async fn poll_mem_vis() {
+    loop {
+        let _ = mem_vis::update_render();
         async_task::exec_yield().await;
     }
 }

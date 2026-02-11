@@ -2,6 +2,7 @@ use crate::{
     arch::{PhysicalAddress, VirtualAddress},
     error::{Error, Result},
     mem::paging::{self, *},
+    mem_vis,
     sync::mutex::Mutex,
 };
 use common::mem_desc::{MemoryDescriptor, UEFI_PAGE_SIZE};
@@ -405,6 +406,8 @@ impl BitmapMemoryManager {
             self.allocated_frame_len + self.free_frame_len
         );
 
+        mem_vis::hook(mem_vis::MemEvent::Alloc, frame_index, 1);
+
         Ok(())
     }
 
@@ -428,6 +431,8 @@ impl BitmapMemoryManager {
             self.total_frame_len,
             self.allocated_frame_len + self.free_frame_len
         );
+
+        mem_vis::hook(mem_vis::MemEvent::Dealloc, frame_index, 1);
 
         Ok(())
     }
