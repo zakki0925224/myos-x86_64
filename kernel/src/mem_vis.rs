@@ -95,6 +95,19 @@ impl EventRingBuffer {
     }
 
     fn push(&mut self, entry: MemEventEntry) {
+        if self.count > 0 {
+            let prev_idx = (self.head + MAX_EVENTS - 1) % MAX_EVENTS;
+            let prev = &mut self.buf[prev_idx];
+
+            if prev.event == entry.event
+                && (prev.frame_index + prev.frame_count) == entry.frame_index
+            {
+                prev.frame_count += entry.frame_count;
+                prev.age = 0;
+                return;
+            }
+        }
+
         self.buf[self.head] = entry;
         self.head = (self.head + 1) % MAX_EVENTS;
         if self.count < MAX_EVENTS {
@@ -197,19 +210,12 @@ impl MemoryVisualizeManager {
             return Ok(());
         }
 
-        let bytes_per_col = if bitmap_len > MINIMAP_WIDTH {
-            bitmap_len / MINIMAP_WIDTH
-        } else {
-            1
-        };
-        let cols = (bitmap_len / bytes_per_col).min(MINIMAP_WIDTH);
-
         let events = self.events.try_lock();
         let bitmap_ptr = virt_addr.as_ptr::<u8>();
 
-        for col in 0..cols {
-            let byte_start = col * bytes_per_col;
-            let byte_end = ((col + 1) * bytes_per_col).min(bitmap_len);
+        for col in 0..MINIMAP_WIDTH {
+            let byte_start = (col * bitmap_len) / MINIMAP_WIDTH;
+            let byte_end = ((col + 1) * bitmap_len) / MINIMAP_WIDTH;
             let chunk_len = byte_end - byte_start;
 
             if chunk_len == 0 {
@@ -238,7 +244,7 @@ impl MemoryVisualizeManager {
             let b = (COLOR_FREE.b as usize
                 + (COLOR_USED.b as usize - COLOR_FREE.b as usize) * density / 255)
                 as u8;
-            let mut color = ColorCode::new_rgb(r, g, b);
+            let mut base_color = ColorCode::new_rgb(r, g, b);
 
             // Flash overlay for recent alloc/dealloc events
             let col_frame_start = byte_start * 8;
@@ -252,25 +258,28 @@ impl MemoryVisualizeManager {
                     let evt_end = evt.frame_index + evt.frame_count;
                     if evt_start < col_frame_end && evt_end > col_frame_start {
                         let intensity = 255 - (evt.age * 255 / EVENT_FLASH_FRAMES).min(255);
-                        color = match evt.event {
-                            MemEvent::Alloc => ColorCode::new_rgb(
-                                (COLOR_ALLOC_FLASH.r as usize * intensity / 255) as u8,
-                                (COLOR_ALLOC_FLASH.g as usize * intensity / 255) as u8,
-                                (COLOR_ALLOC_FLASH.b as usize * intensity / 255) as u8,
-                            ),
-                            MemEvent::Dealloc => ColorCode::new_rgb(
-                                (COLOR_DEALLOC_FLASH.r as usize * intensity / 255) as u8,
-                                (COLOR_DEALLOC_FLASH.g as usize * intensity / 255) as u8,
-                                (COLOR_DEALLOC_FLASH.b as usize * intensity / 255) as u8,
-                            ),
+                        let flash_target = match evt.event {
+                            MemEvent::Alloc => COLOR_ALLOC_FLASH,
+                            MemEvent::Dealloc => COLOR_DEALLOC_FLASH,
                         };
+                        base_color = ColorCode::new_rgb(
+                            ((flash_target.r as usize * intensity
+                                + base_color.r as usize * (255 - intensity))
+                                / 255) as u8,
+                            ((flash_target.g as usize * intensity
+                                + base_color.g as usize * (255 - intensity))
+                                / 255) as u8,
+                            ((flash_target.b as usize * intensity
+                                + base_color.b as usize * (255 - intensity))
+                                / 255) as u8,
+                        );
                         break;
                     }
                 }
             }
 
             let x = MINIMAP_X + col;
-            l.draw_rect(Rect::new(x, MINIMAP_Y, 1, MINIMAP_HEIGHT), color)?;
+            l.draw_rect(Rect::new(x, MINIMAP_Y, 1, MINIMAP_HEIGHT), base_color)?;
         }
 
         Ok(())

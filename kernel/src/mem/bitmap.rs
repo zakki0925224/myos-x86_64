@@ -243,7 +243,7 @@ impl BitmapMemoryManager {
     }
 
     fn bitmap_len(&self) -> usize {
-        self.total_frame_len / Bitmap::BITMAP_SIZE
+        (self.total_frame_len + Bitmap::BITMAP_SIZE - 1) / Bitmap::BITMAP_SIZE
     }
 
     fn get_mem_frame(&self, frame_index: usize) -> Option<MemoryFrameInfo> {
@@ -262,32 +262,29 @@ impl BitmapMemoryManager {
             return Err(BitmapMemoryManagerError::FreeMemoryFrameWasNotFoundError.into());
         }
 
-        let mut found_mem_frame_index = 0;
-        'outer: for i in 0..self.bitmap_len() {
+        for i in 0..self.bitmap_len() {
             let bitmap = self.bitmap(i)?;
             if bitmap.is_allocated_all() {
                 continue;
             }
 
             for j in 0..Bitmap::BITMAP_SIZE {
-                if !bitmap.get(j)? {
-                    found_mem_frame_index = i * Bitmap::BITMAP_SIZE + j;
+                let frame_index = i * Bitmap::BITMAP_SIZE + j;
+                if frame_index == 0 {
+                    continue;
+                }
 
-                    if found_mem_frame_index != 0 {
-                        break 'outer;
-                    }
+                if !bitmap.get(j)? {
+                    self.alloc_frame(frame_index)?;
+                    return Ok(MemoryFrameInfo {
+                        frame_start_phys_addr: ((frame_index * PAGE_SIZE) as u64).into(),
+                        frame_size: PAGE_SIZE,
+                    });
                 }
             }
         }
 
-        assert_ne!(found_mem_frame_index, 0);
-        self.alloc_frame(found_mem_frame_index)?;
-        let mem_frame_info = MemoryFrameInfo {
-            frame_start_phys_addr: ((found_mem_frame_index * PAGE_SIZE) as u64).into(),
-            frame_size: PAGE_SIZE,
-        };
-
-        Ok(mem_frame_info)
+        Err(BitmapMemoryManagerError::FreeMemoryFrameWasNotFoundError.into())
     }
 
     fn alloc_multi_mem_frame(&mut self, len: usize) -> Result<MemoryFrameInfo> {
@@ -303,58 +300,53 @@ impl BitmapMemoryManager {
             return Err(BitmapMemoryManagerError::FreeMemoryFrameWasNotFoundError.into());
         }
 
-        let mut start_mem_frame_index = None;
-        let mut end_mem_frame_index = None;
+        let mut start_frame_index = None;
+        let mut consecutive_count = 0;
 
         'outer: for i in 0..self.bitmap_len() {
             let bitmap = self.bitmap(i)?;
 
-            if len == Bitmap::BITMAP_SIZE && bitmap.is_free_all() {
-                start_mem_frame_index = Some(i * Bitmap::BITMAP_SIZE);
-                end_mem_frame_index = Some(i * Bitmap::BITMAP_SIZE + 7);
+            if len == Bitmap::BITMAP_SIZE && i > 0 && bitmap.is_free_all() {
+                start_frame_index = Some(i * Bitmap::BITMAP_SIZE);
+                consecutive_count = len;
                 break 'outer;
             }
 
             for j in 0..Bitmap::BITMAP_SIZE {
-                // found all free area
-                if let (Some(s_i), Some(e_i)) = (start_mem_frame_index, end_mem_frame_index) {
-                    if e_i == s_i + len {
-                        break 'outer;
-                    }
+                let frame_index = i * Bitmap::BITMAP_SIZE + j;
+                if frame_index == 0 {
+                    continue;
                 }
 
                 if !bitmap.get(j)? {
-                    if let Some(s_i) = start_mem_frame_index {
-                        if let Some(e_i) = end_mem_frame_index.as_mut() {
-                            *e_i += 1;
-                        } else {
-                            end_mem_frame_index = Some(s_i + 1);
-                        }
-                    } else {
-                        start_mem_frame_index = Some(i * Bitmap::BITMAP_SIZE + j);
+                    if consecutive_count == 0 {
+                        start_frame_index = Some(frame_index);
+                    }
+                    consecutive_count += 1;
+                    if consecutive_count == len {
+                        break 'outer;
                     }
                 } else {
-                    start_mem_frame_index = None;
-                    end_mem_frame_index = None;
+                    consecutive_count = 0;
+                    start_frame_index = None;
                 }
             }
         }
 
-        let start_mem_frame_index = start_mem_frame_index
-            .ok_or(BitmapMemoryManagerError::FreeMemoryFrameWasNotFoundError)?;
-        let end_mem_frame_index =
-            end_mem_frame_index.ok_or(BitmapMemoryManagerError::FreeMemoryFrameWasNotFoundError)?;
-
-        for i in start_mem_frame_index..=end_mem_frame_index {
-            self.alloc_frame(i)?;
+        let start_frame_index =
+            start_frame_index.ok_or(BitmapMemoryManagerError::FreeMemoryFrameWasNotFoundError)?;
+        if consecutive_count < len {
+            return Err(BitmapMemoryManagerError::FreeMemoryFrameWasNotFoundError.into());
         }
 
-        let mem_frame_info = MemoryFrameInfo {
-            frame_start_phys_addr: ((start_mem_frame_index * PAGE_SIZE) as u64).into(),
-            frame_size: PAGE_SIZE * len,
-        };
+        for i in 0..len {
+            self.alloc_frame(start_frame_index + i)?;
+        }
 
-        Ok(mem_frame_info)
+        Ok(MemoryFrameInfo {
+            frame_start_phys_addr: ((start_frame_index * PAGE_SIZE) as u64).into(),
+            frame_size: PAGE_SIZE * len,
+        })
     }
 
     unsafe fn mem_clear(&self, mem_frame_info: &MemoryFrameInfo) -> Result<()> {
