@@ -23,12 +23,12 @@ use common::geometry::{Point, Rect, Size};
 static NET_VIS_MAN: NetworkVisualizeManager = NetworkVisualizeManager::new();
 
 const WINDOW_DEFAULT_POS: Point = Point::new(0, 0);
-const WINDOW_SIZE: Size = Size::new(340, 500);
+const WINDOW_SIZE: Size = Size::new(340, 390);
 const CANVAS_SIZE: Size = Size::new(WINDOW_SIZE.width - 8, WINDOW_SIZE.height - 40);
 
 // Layout constants
 const LAYER_COUNT: usize = 3;
-const LAYER_HEIGHT: usize = 100;
+const LAYER_HEIGHT: usize = 70;
 const LAYER_AREA_HEIGHT: usize = LAYER_COUNT * LAYER_HEIGHT;
 const LAYER_LABEL_X: usize = 5;
 const RX_LANE_X: usize = 100;
@@ -37,9 +37,9 @@ const PACKET_SIZE: usize = 10;
 const ANIM_SPEED: usize = 30;
 const PAUSE_FRAMES: usize = 5;
 const MAX_ANIMATED_PACKETS: usize = 32;
-const MAX_LOG_ENTRIES: usize = 8;
+const MAX_LOG_ENTRIES: usize = 6;
 const LOG_AREA_Y: usize = LAYER_AREA_HEIGHT + 10;
-const LOG_LINE_HEIGHT: usize = 16;
+const LOG_LINE_HEIGHT: usize = 14;
 
 // Custom colors
 const COLOR_DARK_GRAY: ColorCode = ColorCode::new_rgb(80, 80, 80);

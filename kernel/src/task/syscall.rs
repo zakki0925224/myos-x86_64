@@ -14,7 +14,7 @@ use crate::{
     kdebug, kerror, kinfo,
     mem::{bitmap, paging::PAGE_SIZE},
     net::{self, socket::*},
-    print,
+    print, syscall_vis,
     task::{self, TaskRequest, TaskResult},
     util,
 };
@@ -106,13 +106,20 @@ extern "sysv64" fn syscall_handler(
 ) -> i64 /* rax */ {
     tty::check_sigint();
 
-    // let args = [arg0, arg1, arg2, arg3, arg4, arg5];
-    // kdebug!(
-    //     "syscall: Called!(syscall num: {}, args: {:?})",
-    //     syscall_num,
-    //     args
-    // )
+    let result = syscall_handler_inner(syscall_num, arg0, arg1, arg2, arg3, arg4, arg5);
+    syscall_vis::hook(syscall_num as u32, result);
+    result
+}
 
+fn syscall_handler_inner(
+    syscall_num: u64,
+    arg0: u64,
+    arg1: u64,
+    arg2: u64,
+    arg3: u64,
+    arg4: u64,
+    arg5: u64,
+) -> i64 {
     match syscall_num as u32 {
         SN_READ => {
             let fd_num = arg0 as i32;

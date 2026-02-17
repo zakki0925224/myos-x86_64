@@ -20,6 +20,7 @@ mod net;
 mod net_vis;
 mod panic;
 mod sync;
+mod syscall_vis;
 mod task;
 mod test;
 mod theme;
@@ -152,6 +153,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     async_task::spawn_with_priority(poll_rtl8139(), Priority::Low).unwrap();
     async_task::spawn_with_priority(poll_net_vis(), Priority::Low).unwrap();
     async_task::spawn_with_priority(poll_mem_vis(), Priority::Low).unwrap();
+    async_task::spawn_with_priority(poll_syscall_vis(), Priority::Low).unwrap();
     async_task::ready().unwrap();
 
     // execute init app
@@ -248,6 +250,13 @@ async fn poll_net_vis() {
 async fn poll_mem_vis() {
     loop {
         let _ = mem_vis::update_render();
+        async_task::exec_yield().await;
+    }
+}
+
+async fn poll_syscall_vis() {
+    loop {
+        let _ = syscall_vis::update_render();
         async_task::exec_yield().await;
     }
 }
