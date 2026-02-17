@@ -105,5 +105,7 @@ pub fn _start() {
     let mut eg_fb = Framebuffer::new(fb as *mut u8, content_w, content_h);
     paint_display_items(&mut eg_fb, &display_items);
 
-    loop {}
+    loop {
+        print!(""); // yield
+    }
 }

@@ -1,6 +1,6 @@
 use crate::graphics::color::ColorCode;
 
-pub const GLOBAL_THEME: Theme = LEGACY_THEME;
+pub const GLOBAL_THEME: Theme = CLASSIC_THEME;
 
 const LEGACY_BLACK: ColorCode = ColorCode::BLACK;
 const LEGACY_DARK_GREEN: ColorCode = ColorCode::new_rgb(0x00, 0x55, 0x00);
@@ -107,11 +107,11 @@ const CLASSIC_THEME: Theme = Theme {
         ],
     },
     log: LogTheme {
-        error: ColorCode::RED,
-        warn: ColorCode::new_rgb(0xe7, 0xe7, 0x00),
-        info: ColorCode::new_rgb(0x00, 0xc0, 0x00),
-        debug: ColorCode::WHITE,
-        trace: ColorCode::WHITE,
+        error: EGA_LIGHT_RED,
+        warn: EGA_YELLOW,
+        info: EGA_LIGHT_GREEN,
+        debug: EGA_LIGHT_CYAN,
+        trace: EGA_LIGHT_GRAY,
     },
     wm: WmTheme {
         component_back: CLASSIC_FORE,

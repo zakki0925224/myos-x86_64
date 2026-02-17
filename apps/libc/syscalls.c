@@ -4,19 +4,14 @@
 
 static uint64_t syscall(uint64_t syscall_number, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6) {
     uint64_t ret_val;
+    register uint64_t _r10 __asm__("r10") = arg4;
+    register uint64_t _r8  __asm__("r8")  = arg5;
+    register uint64_t _r9  __asm__("r9")  = arg6;
     __asm__ volatile(
-        "movq %1, %%rax\n"
-        "movq %2, %%rdi\n"
-        "movq %3, %%rsi\n"
-        "movq %4, %%rdx\n"
-        "movq %5, %%r10\n"
-        "movq %6, %%r8\n"
-        "movq %7, %%r9\n"
         "syscall\n"
-        "movq %%rax, %0\n"
-        : "=r"(ret_val)
-        : "r"(syscall_number), "r"(arg1), "r"(arg2), "r"(arg3), "r"(arg4), "r"(arg5), "r"(arg6)
-        : "rax", "rdi", "rsi", "rdx", "r10", "r8", "r9", "memory");
+        : "=a"(ret_val)
+        : "a"(syscall_number), "D"(arg1), "S"(arg2), "d"(arg3), "r"(_r10), "r"(_r8), "r"(_r9)
+        : "rcx", "r11", "memory");
     return ret_val;
 }
 

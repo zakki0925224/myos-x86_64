@@ -304,8 +304,15 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     panic!("int: BREAKPOINT, {:?}", stack_frame);
 }
 
-extern "x86-interrupt" fn general_protection_fault_handler(stack_frame: InterruptStackFrame) {
-    kerror!("int: GENERAL PROTECTION FAULT, {:?}", stack_frame);
+extern "x86-interrupt" fn general_protection_fault_handler(
+    stack_frame: InterruptStackFrame,
+    error_code: u64,
+) {
+    kerror!(
+        "int: GENERAL PROTECTION FAULT, error_code: 0x{:x}, {:?}",
+        error_code,
+        stack_frame
+    );
 
     let Ok(TaskResult::ExecuteDebugger(res)) =
         task::single_scheduler::request(TaskRequest::ExecuteDebugger)
@@ -346,7 +353,10 @@ extern "x86-interrupt" fn page_fault_handler(
     panic!();
 }
 
-extern "x86-interrupt" fn double_fault_handler(_stack_frame: InterruptStackFrame) {
+extern "x86-interrupt" fn double_fault_handler(
+    _stack_frame: InterruptStackFrame,
+    _error_code: u64,
+) {
     panic!("int: DOUBLE FAULT");
 }
 
@@ -392,7 +402,7 @@ pub fn init_idt() -> Result<()> {
     )?;
     idt.set_handler(
         VEC_GENERAL_PROTECTION,
-        InterruptHandler::General(general_protection_fault_handler),
+        InterruptHandler::WithErrorCode(general_protection_fault_handler),
         GateType::Interrupt,
         true,
     )?;
@@ -404,7 +414,7 @@ pub fn init_idt() -> Result<()> {
     )?;
     idt.set_handler(
         VEC_DOUBLE_FAULT,
-        InterruptHandler::General(double_fault_handler),
+        InterruptHandler::WithErrorCode(double_fault_handler),
         GateType::Interrupt,
         false,
     )?;

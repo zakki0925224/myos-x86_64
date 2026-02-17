@@ -4,6 +4,7 @@ use common::kernel_config::KernelConfig;
 pub struct BootConfig<'a> {
     pub kernel_path: &'a str,
     pub initramfs_path: &'a str,
+    // 640x480, 800x600, 1024x768, 1280x1024, ...
     pub resolution: (usize, usize),
 }
 
@@ -12,7 +13,7 @@ impl Default for BootConfig<'_> {
         Self {
             kernel_path: "\\EFI\\myos\\kernel.elf",
             initramfs_path: "initramfs.img",
-            resolution: (800, 600),
+            resolution: (1280, 1024),
         }
     }
 }

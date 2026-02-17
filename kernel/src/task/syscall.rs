@@ -104,12 +104,14 @@ extern "sysv64" fn syscall_handler(
     arg4: u64,        // (sysv abi) r8
     arg5: u64,        // (sysv abi) r9
 ) -> i64 /* rax */ {
+    tty::check_sigint();
+
     // let args = [arg0, arg1, arg2, arg3, arg4, arg5];
     // kdebug!(
     //     "syscall: Called!(syscall num: {}, args: {:?})",
     //     syscall_num,
     //     args
-    // );
+    // )
 
     match syscall_num as u32 {
         SN_READ => {
@@ -383,6 +385,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
                 let mut input_s = None;
 
                 while input_s.is_none() {
+                    tty::check_sigint();
                     input_s = x86_64::disabled_int(|| tty::get_line()).ok().flatten();
                     x86_64::stihlt();
                 }
@@ -401,6 +404,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
             } else if buf_len == 1 {
                 let mut c = None;
                 while c.is_none() {
+                    tty::check_sigint();
                     c = x86_64::disabled_int(|| tty::get_char()).ok().flatten();
                     if c.is_none() {
                         x86_64::stihlt();
@@ -919,6 +923,7 @@ fn sys_connect(sockfd: i32, addr: *const sockaddr, addrlen: usize) -> Result<()>
     net::send_tcp_syn(socket_id)?;
 
     while !net::is_tcp_established(socket_id)? {
+        tty::check_sigint();
         x86_64::stihlt();
     }
 
@@ -934,6 +939,7 @@ fn sys_accept(sockfd: i32, addr: *const sockaddr, addrlen: *const i32) -> Result
     let socket_id = SocketId::new_val(sockfd)?;
 
     loop {
+        tty::check_sigint();
         match net::accept_tcp_v4(socket_id) {
             Ok(client_socket_id) => return Ok(client_socket_id),
             Err(_) => {

@@ -1,11 +1,15 @@
 use super::{uart, DeviceDriverFunction, DeviceDriverInfo};
-use crate::{error::Result, fs::vfs, graphics::frame_buf_console, kinfo, sync::mutex::Mutex};
+use crate::{error::Result, fs::vfs, graphics::frame_buf_console, kinfo, sync::mutex::Mutex, task};
 use alloc::{string::String, vec::Vec};
-use core::fmt::{self, Write};
+use core::{
+    fmt::{self, Write},
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 const IO_BUF_LEN: usize = 512;
 
 static TTY: Mutex<Tty> = Mutex::new(Tty::new(true));
+static FLAG_SIGINT: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BufferType {
@@ -16,38 +20,64 @@ pub enum BufferType {
 
 struct Buffer<const N: usize> {
     buf: [char; N],
-    len: usize,
+    head: usize,
+    tail: usize,
+    full: bool,
 }
 
 impl<const N: usize> Buffer<N> {
     const fn default() -> Self {
         Self {
             buf: ['\0'; N],
-            len: 0,
+            head: 0,
+            tail: 0,
+            full: false,
         }
     }
 
     fn push(&mut self, c: char) {
-        // reset buffer
-        if self.len == N {
-            self.len = 0;
+        if self.full {
+            self.head = (self.head + 1) % N;
         }
-
-        self.buf[self.len] = c;
-        self.len += 1;
+        self.buf[self.tail] = c;
+        self.tail = (self.tail + 1) % N;
+        self.full = self.tail == self.head;
     }
 
-    fn pop(&mut self) -> Option<char> {
-        if self.len > 0 {
-            let c = self.buf[0];
-            for i in 0..self.len - 1 {
-                self.buf[i] = self.buf[i + 1];
-            }
-            self.len -= 1;
-            Some(c)
-        } else {
-            None
+    fn pop_front(&mut self) -> Option<char> {
+        if !self.full && (self.head == self.tail) {
+            return None;
         }
+        let c = self.buf[self.head];
+        self.head = (self.head + 1) % N;
+        self.full = false;
+        Some(c)
+    }
+
+    fn pop_back(&mut self) -> Option<char> {
+        if !self.full && (self.head == self.tail) {
+            return None;
+        }
+        self.tail = (self.tail + N - 1) % N;
+        let c = self.buf[self.tail];
+        self.full = false;
+        Some(c)
+    }
+
+    fn len(&self) -> usize {
+        if self.full {
+            N
+        } else if self.tail >= self.head {
+            self.tail - self.head
+        } else {
+            N + self.tail - self.head
+        }
+    }
+
+    fn clear(&mut self) {
+        self.head = 0;
+        self.tail = 0;
+        self.full = false;
     }
 }
 
@@ -81,7 +111,7 @@ impl Tty {
 
         match c {
             '\x08' /* backspace */ | '\x7f' /* delete */ => {
-                let _ = buf.pop();
+                let _ = buf.pop_back();
             }
             _ => {
                 buf.push(c);
@@ -121,7 +151,7 @@ impl Tty {
         let mut s = String::new();
 
         loop {
-            if let Some(c) = buf.pop() {
+            if let Some(c) = buf.pop_front() {
                 s.push(c);
             } else {
                 break;
@@ -138,11 +168,16 @@ impl Tty {
             BufferType::ErrorOutput => &mut self.err_output_buf,
         };
 
-        buf.pop()
+        buf.pop_front()
     }
 
     pub fn input_count(&self) -> usize {
-        self.input_buf.len
+        self.input_buf.len()
+    }
+
+    fn clear_input(&mut self) {
+        self.input_buf.clear();
+        self.is_ready_get_line = false;
     }
 }
 
@@ -264,6 +299,13 @@ pub fn write(data: &[u8]) -> Result<()> {
 }
 
 pub fn input(c: char) -> Result<()> {
+    if c == '\x03' {
+        FLAG_SIGINT.store(true, Ordering::Relaxed);
+        let mut tty = TTY.try_lock()?;
+        tty.clear_input();
+        return Ok(());
+    }
+
     let mut c = c;
     if c == '\r' {
         c = '\n';
@@ -278,6 +320,14 @@ pub fn input(c: char) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn check_sigint() {
+    let sigint = FLAG_SIGINT.swap(false, Ordering::Relaxed);
+
+    if sigint {
+        task::single_scheduler::return_task(-1);
+    }
 }
 
 pub fn get_line() -> Result<Option<String>> {

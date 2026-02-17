@@ -193,5 +193,7 @@ pub unsafe fn _start() {
 
     mandelbrot_fixed(&mut eg_fb);
 
-    loop {}
+    loop {
+        print!(""); // yield
+    }
 }
