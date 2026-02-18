@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) {
 
     size_t file_size = file->stat->size;
 
-    char* f_buf = (char*)malloc(file_size);
+    unsigned char* f_buf = (unsigned char*)malloc(file_size);
     if (f_buf == NULL) {
         printf("hexdump: failed to allocate memory\n");
         fclose(file);
@@ -25,37 +25,35 @@ int main(int argc, char* argv[]) {
     fclose(file);
 
     for (int i = 0; i < ((int)file_size + 15) / 16; i++) {
-        int j = i * 16;
-        int j_end = j + 16;
+        int line_start = i * 16;
 
-        if (j_end > (int)file_size) {
-            j_end = (int)file_size;
-        }
+        printf("%08x ", line_start);
 
-        printf("%08x ", i * 16);
+        for (int k = 0; k < 16; k++) {
+            int pos = line_start + k;
 
-        for (; j < j_end; j++) {
-            if (j % 2 == 0) {
+            if (k % 2 == 0) {
                 printf(" ");
             }
 
-            printf("%02x ", f_buf[j]);
-        }
-
-        if (j_end < 16) {
-            for (int k = 0; k < 16 - j_end; k++) {
+            if (pos < (int)file_size) {
+                printf("%02x ", f_buf[pos]);
+            } else {
                 printf("   ");
             }
-            printf(" ");
         }
 
         printf(" |");
-        for (int j = i * 16; j < j_end; j++) {
-            // printable characters
-            if (f_buf[j] >= 0x20 && f_buf[j] <= 0x7e) {
-                printf("%c", f_buf[j]);
-            } else {
-                printf(".");
+        for (int k = 0; k < 16; k++) {
+            int pos = line_start + k;
+
+            if (pos < (int)file_size) {
+                // printable characters
+                if (f_buf[pos] >= 0x20 && f_buf[pos] <= 0x7e) {
+                    printf("%c", f_buf[pos]);
+                } else {
+                    printf(".");
+                }
             }
         }
         printf("|\n");

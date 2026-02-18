@@ -449,12 +449,7 @@ impl NetworkVisualizeManager {
             }
         }
 
-        // draw log area separator
         if LOG_AREA_Y + 2 <= CANVAS_SIZE.height {
-            l.draw_rect(
-                Rect::new(0, LOG_AREA_Y - 2, CANVAS_SIZE.width, 1),
-                COLOR_DARK_GRAY,
-            )?;
             l.draw_string_wrap(
                 Point::new(2, LOG_AREA_Y),
                 "Recent:",
