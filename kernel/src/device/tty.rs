@@ -81,6 +81,13 @@ impl<const N: usize> Buffer<N> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum EscState {
+    Normal,
+    Esc,
+    EscBracket,
+}
+
 struct Tty {
     device_driver_info: DeviceDriverInfo,
     input_buf: Buffer<IO_BUF_LEN>,
@@ -88,6 +95,7 @@ struct Tty {
     err_output_buf: Buffer<IO_BUF_LEN>,
     use_serial_port: bool,
     is_ready_get_line: bool,
+    esc_state: EscState,
 }
 
 impl Tty {
@@ -99,6 +107,7 @@ impl Tty {
             err_output_buf: Buffer::default(),
             use_serial_port,
             is_ready_get_line: false,
+            esc_state: EscState::Normal,
         }
     }
 
@@ -178,6 +187,41 @@ impl Tty {
     fn clear_input(&mut self) {
         self.input_buf.clear();
         self.is_ready_get_line = false;
+    }
+
+    fn input_char(&mut self, c: char) -> Result<()> {
+        match self.esc_state {
+            EscState::Normal => match c {
+                '\x08' | '\x7f' => {
+                    self.input_buf.pop_back();
+                    let _ = self.write('\x08', BufferType::Output);
+                }
+                '\x1b' => {
+                    self.esc_state = EscState::Esc;
+                    // no echo
+                }
+                _ => {
+                    self.input_buf.push(c);
+                    let _ = self.write(c, BufferType::Output);
+                    if c == '\n' {
+                        self.is_ready_get_line = true;
+                    }
+                }
+            },
+            EscState::Esc => match c {
+                '[' => self.esc_state = EscState::EscBracket,
+                _ => self.esc_state = EscState::Normal,
+            },
+            EscState::EscBracket => {
+                self.esc_state = EscState::Normal;
+                match c {
+                    'A' => self.input_buf.push('\x10'), // cursor up
+                    'B' => self.input_buf.push('\x0e'), // cursor down
+                    _ => {}                             // ignore other sequences
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -306,20 +350,10 @@ pub fn input(c: char) -> Result<()> {
         return Ok(());
     }
 
-    let mut c = c;
-    if c == '\r' {
-        c = '\n';
-    }
+    let c = if c == '\r' { '\n' } else { c };
 
     let mut tty = TTY.try_lock()?;
-    tty.write(c, BufferType::Input)?;
-    let _ = tty.write(c, BufferType::Output);
-
-    if c == '\n' {
-        tty.is_ready_get_line = true;
-    }
-
-    Ok(())
+    tty.input_char(c)
 }
 
 pub fn check_sigint() {

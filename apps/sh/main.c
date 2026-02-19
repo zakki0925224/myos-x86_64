@@ -5,12 +5,77 @@
 #include <window.h>
 
 #define BUF_LEN 128
+#define HISTORY_MAX 16
 
 static char buf[BUF_LEN] = {0};
 static char* splitted_buf[BUF_LEN];
 static char cwd_path[BUF_LEN] = {0};
 static char envpath[BUF_LEN] = {0};
 static char filepath_buf[BUF_LEN] = {0};
+
+static char history[HISTORY_MAX][BUF_LEN];
+static int hist_count = 0;
+
+static void history_push(const char* line) {
+    if (strlen(line) == 0) return;
+    if (hist_count > 0 && strcmp(history[(hist_count - 1) % HISTORY_MAX], line) == 0) return;
+    strncpy(history[hist_count % HISTORY_MAX], line, BUF_LEN - 1);
+    history[hist_count % HISTORY_MAX][BUF_LEN - 1] = '\0';
+    hist_count++;
+}
+
+static int sh_readline(char* dst, int dst_len) {
+    int len = 0;
+    int hist_pos = hist_count;
+    char saved_line[BUF_LEN] = {0};
+
+    while (1) {
+        char c;
+        if (sys_read(0, &c, 1) == -1) return -1;
+
+        if (c == '\n') {
+            dst[len] = '\0';
+            break;
+        } else if (c == '\x08' || c == '\x7f') {
+            if (len > 0) {
+                len--;
+                dst[len] = '\0';
+            }
+        } else if (c == '\x10') { /* cursor up: history prev */
+            if (hist_count == 0) continue;
+            if (hist_pos == hist_count) {
+                strncpy(saved_line, dst, BUF_LEN - 1);
+            }
+            if (hist_pos > 0 &&
+                (hist_count <= HISTORY_MAX || hist_pos > hist_count - HISTORY_MAX)) {
+                hist_pos--;
+                for (int i = 0; i < len; i++) sys_write(1, "\x08", 1);
+                strncpy(dst, history[hist_pos % HISTORY_MAX], dst_len - 1);
+                dst[dst_len - 1] = '\0';
+                len = strlen(dst);
+                sys_write(1, dst, len);
+            }
+        } else if (c == '\x0e') { /* cursor down: history next */
+            if (hist_pos >= hist_count) continue;
+            for (int i = 0; i < len; i++) sys_write(1, "\x08", 1);
+            hist_pos++;
+            if (hist_pos == hist_count) {
+                strncpy(dst, saved_line, dst_len - 1);
+            } else {
+                strncpy(dst, history[hist_pos % HISTORY_MAX], dst_len - 1);
+            }
+            dst[dst_len - 1] = '\0';
+            len = strlen(dst);
+            sys_write(1, dst, len);
+        } else {
+            if (len < dst_len - 1) {
+                dst[len++] = c;
+                dst[len] = '\0';
+            }
+        }
+    }
+    return 0;
+}
 
 void exec_cmd(char* cmd) {
     int cmdargs_len = split(cmd, ' ', splitted_buf, BUF_LEN);
@@ -108,13 +173,13 @@ int main(int argc, char const* argv[]) {
         getcwd_ret = sys_getcwd(cwd_path, sizeof(cwd_path));
         printf("\n\e[34m[%s]\e[m$ ", getcwd_ret == -1 ? "UNKNOWN" : cwd_path);
 
-        if (sys_read(0, buf, BUF_LEN) == -1) {
+        if (sh_readline(buf, BUF_LEN) == -1) {
             printf("Failed to read stdin\n");
             return -1;
         }
 
-        replace(buf, '\n', '\0');
         exec_cmd(buf);
+        history_push(buf);
     }
 
     return 0;

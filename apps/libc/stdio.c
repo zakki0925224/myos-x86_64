@@ -15,6 +15,20 @@ static FILE __stdin = {.fd = FDN_STDIN, .stat = &__stdin_stat, .buf = NULL, .pos
 static FILE __stdout = {.fd = FDN_STDOUT, .stat = &__stdout_stat, .buf = NULL, .pos = 0, .flags = 0};
 static FILE __stderr = {.fd = FDN_STDERR, .stat = &__stderr_stat, .buf = NULL, .pos = 0, .flags = 0};
 
+// line buffer for stdin.
+#define STDIN_LINE_BUF_SIZE 512
+static char _stdin_line_buf[STDIN_LINE_BUF_SIZE];
+static int _stdin_line_len = 0;
+static int _stdin_line_pos = 0;
+
+static int stdin_refill(void) {
+    int ret = sys_read(FDN_STDIN, _stdin_line_buf, STDIN_LINE_BUF_SIZE);
+    if (ret <= 0) return 0;
+    _stdin_line_len = (ret > 0 && _stdin_line_buf[ret - 1] == '\0') ? ret - 1 : ret;
+    _stdin_line_pos = 0;
+    return _stdin_line_len;
+}
+
 FILE* stdin = &__stdin;
 FILE* stdout = &__stdout;
 FILE* stderr = &__stderr;
@@ -110,8 +124,7 @@ int putchar(int c) {
 
 char getchar(void) {
     char c;
-    int ret = sys_read(FDN_STDIN, &c, 1);
-    if (ret == -1)
+    if (fread(&c, 1, 1, stdin) != 1)
         return EOF;
     return c;
 }
@@ -129,15 +142,32 @@ size_t fread(void* buf, size_t size, size_t count, FILE* stream) {
         return 0;
 
     if (stream->fd == FDN_STDIN) {
-        int res = sys_read(stream->fd, buf, size * count);
-        if (res == -1) {
-            stream->flags |= _FILE_ERR_FLAG;
-            return 0;
+        size_t total = size * count;
+        size_t read_bytes = 0;
+        char* dst = (char*)buf;
+        while (read_bytes < total) {
+            if (_stdin_line_pos < _stdin_line_len) {
+                dst[read_bytes++] = _stdin_line_buf[_stdin_line_pos++];
+                continue;
+            }
+            f_stat st;
+            int has_input = (sys_stat(FDN_STDIN, &st) == 0 && st.size > 0);
+            if (has_input) {
+                int ret = sys_read(FDN_STDIN, dst + read_bytes, 1);
+                if (ret <= 0) {
+                    stream->flags |= _FILE_EOF_FLAG;
+                    break;
+                }
+                read_bytes += ret;
+            } else {
+                if (stdin_refill() == 0) {
+                    stream->flags |= _FILE_EOF_FLAG;
+                    break;
+                }
+            }
         }
-        if (res == 0) {
-            stream->flags |= _FILE_EOF_FLAG;
-        }
-        return res / size;
+        if (read_bytes == 0) return 0;
+        return read_bytes / size;
     }
 
     size_t f_size = stream->stat->size;

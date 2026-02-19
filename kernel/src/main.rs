@@ -149,7 +149,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     async_task::spawn(poll_ps2_keyboard()).unwrap();
     async_task::spawn(poll_usb_bus()).unwrap();
     async_task::spawn(poll_xhc()).unwrap();
-    async_task::spawn_with_priority(poll_uart(), Priority::Low).unwrap();
+    async_task::spawn(poll_uart()).unwrap();
     async_task::spawn_with_priority(poll_rtl8139(), Priority::Low).unwrap();
     async_task::spawn_with_priority(poll_net_vis(), Priority::Low).unwrap();
     async_task::spawn_with_priority(poll_mem_vis(), Priority::Low).unwrap();
