@@ -41,32 +41,47 @@ static int sh_readline(char* dst, int dst_len) {
                 len--;
                 dst[len] = '\0';
             }
-        } else if (c == '\x10') { /* cursor up: history prev */
+            continue;
+        } else if (c == '\x1b') { /* escape sequence */
+            char c2, c3;
+            if (sys_read(0, &c2, 1) == -1) return -1;
+            if (c2 != '[') continue;
+            if (sys_read(0, &c3, 1) == -1) return -1;
+            c = (c3 == 'A') ? '\x10' : (c3 == 'B') ? '\x0e'
+                                                   : '\0';
+            if (c == '\0') continue;
+        }
+
+        if (c == '\x10') { /* cursor up: history prev */
             if (hist_count == 0) continue;
-            if (hist_pos == hist_count) {
+            if (hist_pos == hist_count)
                 strncpy(saved_line, dst, BUF_LEN - 1);
-            }
             if (hist_pos > 0 &&
                 (hist_count <= HISTORY_MAX || hist_pos > hist_count - HISTORY_MAX)) {
                 hist_pos--;
-                for (int i = 0; i < len; i++) sys_write(1, "\x08", 1);
+                int old_len = len;
                 strncpy(dst, history[hist_pos % HISTORY_MAX], dst_len - 1);
                 dst[dst_len - 1] = '\0';
                 len = strlen(dst);
+                for (int i = 0; i < old_len; i++) sys_write(1, "\x08", 1);
                 sys_write(1, dst, len);
+                for (int i = len; i < old_len; i++) sys_write(1, " ", 1);
+                for (int i = len; i < old_len; i++) sys_write(1, "\x08", 1);
             }
         } else if (c == '\x0e') { /* cursor down: history next */
             if (hist_pos >= hist_count) continue;
-            for (int i = 0; i < len; i++) sys_write(1, "\x08", 1);
+            int old_len = len;
             hist_pos++;
-            if (hist_pos == hist_count) {
+            if (hist_pos == hist_count)
                 strncpy(dst, saved_line, dst_len - 1);
-            } else {
+            else
                 strncpy(dst, history[hist_pos % HISTORY_MAX], dst_len - 1);
-            }
             dst[dst_len - 1] = '\0';
             len = strlen(dst);
+            for (int i = 0; i < old_len; i++) sys_write(1, "\x08", 1);
             sys_write(1, dst, len);
+            for (int i = len; i < old_len; i++) sys_write(1, " ", 1);
+            for (int i = len; i < old_len; i++) sys_write(1, "\x08", 1);
         } else {
             if (len < dst_len - 1) {
                 dst[len++] = c;

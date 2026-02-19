@@ -194,37 +194,47 @@ impl Tty {
     }
 
     fn input_char(&mut self, c: char) -> Result<()> {
-        match self.esc_state {
-            EscState::Normal => match c {
-                '\x08' | '\x7f' => {
-                    self.input_buf.pop_back();
-                    let _ = self.write('\x08', BufferType::Output);
-                }
-                '\x1b' => {
+        match c {
+            '\x08' | '\x7f' => {
+                self.input_buf.pop_back();
+                let _ = self.write('\x08', BufferType::Output);
+                return Ok(());
+            }
+            _ => {}
+        }
+
+        self.input_buf.push(c);
+        if c == '\n' {
+            self.is_ready_get_line = true;
+        }
+
+        let echo = match self.esc_state {
+            EscState::Normal => {
+                if c == '\x1b' {
                     self.esc_state = EscState::Esc;
-                    // no echo
-                }
-                _ => {
-                    self.input_buf.push(c);
-                    let _ = self.write(c, BufferType::Output);
-                    if c == '\n' {
-                        self.is_ready_get_line = true;
-                    }
-                }
-            },
-            EscState::Esc => match c {
-                '[' => self.esc_state = EscState::EscBracket,
-                _ => self.esc_state = EscState::Normal,
-            },
-            EscState::EscBracket => {
-                self.esc_state = EscState::Normal;
-                match c {
-                    'A' => self.input_buf.push('\x10'), // cursor up
-                    'B' => self.input_buf.push('\x0e'), // cursor down
-                    _ => {}                             // ignore other sequences
+                    false
+                } else {
+                    true
                 }
             }
+            EscState::Esc => {
+                self.esc_state = if c == '[' {
+                    EscState::EscBracket
+                } else {
+                    EscState::Normal
+                };
+                false
+            }
+            EscState::EscBracket => {
+                self.esc_state = EscState::Normal;
+                false
+            }
+        };
+
+        if echo {
+            let _ = self.write(c, BufferType::Output);
         }
+
         Ok(())
     }
 }
