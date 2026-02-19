@@ -177,7 +177,11 @@ impl Tty {
             BufferType::ErrorOutput => &mut self.err_output_buf,
         };
 
-        buf.pop_front()
+        let c = buf.pop_front();
+        if buf_type == BufferType::Input && c == Some('\n') {
+            self.is_ready_get_line = false;
+        }
+        c
     }
 
     pub fn input_count(&self) -> usize {
