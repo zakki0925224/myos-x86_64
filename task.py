@@ -37,7 +37,7 @@ QEMU_DEVICES = [
     "-device ahci,id=ahci",
     "-device ide-cd,drive=disk,bus=ahci.0,bootindex=1",
     "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
-    "-audiodev pa,id=speaker -machine pcspk-audiodev=speaker",
+    # "-audiodev pa,id=speaker -machine pcspk-audiodev=speaker",
     "-netdev user,id=net0,hostfwd=tcp::18080-:18080",
     "-device rtl8139,netdev=net0",
     f"-object filter-dump,id=f0,netdev=net0,file={DUMP_DIR}/dump.pcap",

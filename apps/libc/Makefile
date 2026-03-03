@@ -6,7 +6,7 @@ MAIN_OBJ := main.o
 LIB_WITH_MAIN := libc_with_main.a
 
 CC := gcc
-CFLAGS := -Werror -g -m64 -nostdlib -fno-builtin -fno-stack-protector -std=c11
+CFLAGS := -Werror -g -m64 -nostdlib -fno-builtin -fno-stack-protector -std=c11 -mcmodel=large
 
 $(LIB_FILE): $(OBJ_FILES)
 	ar rcs $@ $^
