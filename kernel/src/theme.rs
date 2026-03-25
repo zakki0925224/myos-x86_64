@@ -1,6 +1,6 @@
 use crate::graphics::color::ColorCode;
 
-pub const GLOBAL_THEME: Theme = CLASSIC_THEME;
+pub const GLOBAL_THEME: Theme = LEGACY_THEME;
 
 const LEGACY_BLACK: ColorCode = ColorCode::BLACK;
 const LEGACY_DARK_GREEN: ColorCode = ColorCode::new_rgb(0x00, 0x55, 0x00);
@@ -18,23 +18,6 @@ const LEGACY_MAGENTA: ColorCode = ColorCode::new_rgb(0xff, 0x00, 0xff);
 const LEGACY_BRIGHT_MAGENTA: ColorCode = ColorCode::new_rgb(0xff, 0x55, 0xff);
 const LEGACY_SOFT_MAGENTA: ColorCode = ColorCode::new_rgb(0xff, 0xaa, 0xff);
 const LEGACY_WHITE: ColorCode = ColorCode::WHITE;
-
-const EGA_BLACK: ColorCode = ColorCode::BLACK;
-const EGA_BLUE: ColorCode = ColorCode::new_rgb(0x00, 0x00, 0xaa);
-const EGA_GREEN: ColorCode = ColorCode::new_rgb(0x00, 0xaa, 0x00);
-const EGA_CYAN: ColorCode = ColorCode::new_rgb(0x00, 0xaa, 0xaa);
-const EGA_RED: ColorCode = ColorCode::new_rgb(0xaa, 0x00, 0x00);
-const EGA_MAGENTA: ColorCode = ColorCode::new_rgb(0xaa, 0x00, 0xaa);
-const EGA_BROWN: ColorCode = ColorCode::new_rgb(0xaa, 0x55, 0x00);
-const EGA_LIGHT_GRAY: ColorCode = ColorCode::new_rgb(0xaa, 0xaa, 0xaa);
-const EGA_DARK_GRAY: ColorCode = ColorCode::new_rgb(0x55, 0x55, 0x55);
-const EGA_LIGHT_BLUE: ColorCode = ColorCode::new_rgb(0x55, 0x55, 0xff);
-const EGA_LIGHT_GREEN: ColorCode = ColorCode::new_rgb(0x55, 0xff, 0x55);
-const EGA_LIGHT_CYAN: ColorCode = ColorCode::new_rgb(0x55, 0xff, 0xff);
-const EGA_LIGHT_RED: ColorCode = ColorCode::new_rgb(0xff, 0x55, 0x55);
-const EGA_LIGHT_MAGENTA: ColorCode = ColorCode::new_rgb(0xff, 0x55, 0xff);
-const EGA_YELLOW: ColorCode = ColorCode::new_rgb(0xff, 0xff, 0x55);
-const EGA_WHITE: ColorCode = ColorCode::WHITE;
 
 #[allow(unused)]
 const LEGACY_THEME: Theme = Theme {
@@ -107,11 +90,11 @@ const CLASSIC_THEME: Theme = Theme {
         ],
     },
     log: LogTheme {
-        error: EGA_LIGHT_RED,
-        warn: EGA_YELLOW,
-        info: EGA_LIGHT_GREEN,
-        debug: EGA_LIGHT_CYAN,
-        trace: EGA_LIGHT_GRAY,
+        error: ColorCode::new_rgb(0xff, 0x55, 0x55),
+        warn: ColorCode::new_rgb(0xff, 0xff, 0x55),
+        info: ColorCode::new_rgb(0x55, 0xff, 0x55),
+        debug: ColorCode::new_rgb(0x55, 0xff, 0xff),
+        trace: ColorCode::new_rgb(0xaa, 0xaa, 0xaa),
     },
     wm: WmTheme {
         component_back: CLASSIC_FORE,
@@ -121,48 +104,6 @@ const CLASSIC_THEME: Theme = Theme {
         border_flat: false,
         titlebar_back: ColorCode::new_rgb(0x0a, 0x24, 0x6a),
         titlebar_fore: ColorCode::WHITE,
-    },
-};
-
-#[allow(unused)]
-const EGA_THEME: Theme = Theme {
-    console: ConsoleTheme {
-        back: EGA_BLACK,
-        fore: EGA_CYAN,
-        palette: [
-            EGA_BLACK,
-            EGA_BLUE,
-            EGA_GREEN,
-            EGA_CYAN,
-            EGA_RED,
-            EGA_MAGENTA,
-            EGA_BROWN,
-            EGA_LIGHT_GRAY,
-            EGA_DARK_GRAY,
-            EGA_LIGHT_BLUE,
-            EGA_LIGHT_GREEN,
-            EGA_LIGHT_CYAN,
-            EGA_LIGHT_RED,
-            EGA_LIGHT_MAGENTA,
-            EGA_YELLOW,
-            EGA_WHITE,
-        ],
-    },
-    log: LogTheme {
-        error: EGA_LIGHT_RED,
-        warn: EGA_YELLOW,
-        info: EGA_LIGHT_GREEN,
-        debug: EGA_WHITE,
-        trace: EGA_LIGHT_MAGENTA,
-    },
-    wm: WmTheme {
-        component_back: EGA_BLACK,
-        component_fore: EGA_LIGHT_CYAN,
-        border_color1: EGA_LIGHT_CYAN,
-        border_color2: EGA_LIGHT_CYAN,
-        border_flat: true,
-        titlebar_back: EGA_BLACK,
-        titlebar_fore: EGA_LIGHT_CYAN,
     },
 };
 

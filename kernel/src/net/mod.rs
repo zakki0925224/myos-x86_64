@@ -4,10 +4,9 @@ use crate::{
     error::{Error, Result},
     kinfo, kwarn,
     net::{arp::*, eth::*, icmp::*, ip::*, socket::*, tcp::*, udp::*},
-    net_vis,
     sync::mutex::Mutex,
 };
-use alloc::{collections::btree_map::BTreeMap, format, vec::Vec};
+use alloc::{collections::btree_map::BTreeMap, vec::Vec};
 use core::{net::Ipv4Addr, time::Duration};
 
 pub mod arp;
@@ -400,10 +399,6 @@ impl NetworkManager {
             data.to_vec(),
         );
         packet.calc_checksum_with_ipv4(self.my_ipv4_addr, dst_addr);
-        net_vis::hook(
-            net_vis::FunctionHook::SendTcpPacket,
-            format!(":{}->{} {}", src_port, dst_port, dst_addr),
-        );
 
         let mut ipv4_packet = Ipv4Packet::new_with(
             0x45,
@@ -472,11 +467,6 @@ impl NetworkManager {
     }
 
     fn receive_icmp_packet(&mut self, packet: IcmpPacket) -> Result<Option<IcmpPacket>> {
-        net_vis::hook(
-            net_vis::FunctionHook::ReceiveIcmpPacket,
-            format!("{:?}", packet.ty),
-        );
-
         let ty = packet.ty;
 
         match ty {
@@ -497,11 +487,6 @@ impl NetworkManager {
         packet: TcpPacket,
         remote_addr: Ipv4Addr,
     ) -> Result<Option<TcpPacket>> {
-        net_vis::hook(
-            net_vis::FunctionHook::ReceiveTcpPacket,
-            format!(":{}->{} {}", packet.src_port, packet.dst_port, remote_addr),
-        );
-
         let src_port = packet.src_port;
         let dst_port = packet.dst_port;
         let seq_num = packet.seq_num;
@@ -642,11 +627,6 @@ impl NetworkManager {
     }
 
     fn receive_udp_packet(&mut self, packet: UdpPacket) -> Result<Option<UdpPacket>> {
-        net_vis::hook(
-            net_vis::FunctionHook::ReceiveUdpPacket,
-            format!(":{} {}B", packet.dst_port, packet.data.len()),
-        );
-
         let dst_port = packet.dst_port;
         let socket_mut = self.udp_socket_mut_by_port(dst_port)?;
         socket_mut.receive(&packet.data);
@@ -655,15 +635,6 @@ impl NetworkManager {
     }
 
     fn receive_arp_packet(&mut self, packet: ArpPacket) -> Result<Option<ArpPacket>> {
-        net_vis::hook(
-            net_vis::FunctionHook::ReceiveArpPacket,
-            format!(
-                "{:?} {}",
-                packet.op().unwrap_or(ArpOperation::Request),
-                packet.sender_ipv4_addr
-            ),
-        );
-
         let arp_op = packet.op()?;
         let sender_ipv4_addr = packet.sender_ipv4_addr;
         let sender_mac_addr = packet.sender_eth_addr;
@@ -697,11 +668,6 @@ impl NetworkManager {
     }
 
     fn receive_ipv4_packet(&mut self, packet: Ipv4Packet) -> Result<Option<Ipv4Packet>> {
-        net_vis::hook(
-            net_vis::FunctionHook::ReceiveIpv4Paket,
-            format!("{}->{}", packet.src_addr, packet.dst_addr),
-        );
-
         packet.validate()?;
 
         if packet.dst_addr != self.my_ipv4_addr {
@@ -755,16 +721,6 @@ impl NetworkManager {
     }
 
     fn receive_eth_payload(&mut self, payload: EthernetPayload) -> Result<Option<EthernetPayload>> {
-        let payload_type = match &payload {
-            EthernetPayload::Arp(_) => "ARP",
-            EthernetPayload::Ipv4(_) => "IPv4",
-            EthernetPayload::None => "None",
-        };
-        net_vis::hook(
-            net_vis::FunctionHook::ReceiveEthPayload,
-            format!(">{}", payload_type),
-        );
-
         let mut reply_payload = None;
 
         match payload {
@@ -800,10 +756,6 @@ impl NetworkManager {
             target_ipv4_addr,
         );
 
-        net_vis::hook(
-            net_vis::FunctionHook::SendArpPacket,
-            format!("{:?} {}", op, target_ipv4_addr),
-        );
         self.send_eth_payload(
             EthernetPayload::Arp(packet),
             target_eth_addr,
@@ -839,10 +791,6 @@ impl NetworkManager {
             .resolve_mac_addr(target_ip)?
             .ok_or::<Error>("Failed to resolve MAC address".into())?;
 
-        net_vis::hook(
-            net_vis::FunctionHook::SendUdpPacket,
-            format!(":{}->{} {}", src_port, dst_port, dst_addr),
-        );
         self.send_eth_payload(
             EthernetPayload::Ipv4(ipv4_packet),
             dst_mac_addr,
@@ -860,10 +808,6 @@ impl NetworkManager {
         let src_mac_addr = self.my_mac_addr()?;
         let eth_frame = EthernetFrame::new_with(dst_mac_addr, src_mac_addr, eth_type, &payload_vec);
 
-        net_vis::hook(
-            net_vis::FunctionHook::SendEthPayload,
-            format!("{:?}", eth_type),
-        );
         device::rtl8139::push_eth_frame_to_tx_queue(eth_frame)
     }
 

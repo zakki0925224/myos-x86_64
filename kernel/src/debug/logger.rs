@@ -82,6 +82,7 @@ pub unsafe fn log(level: LogLevel, args: core::fmt::Arguments, file: &str, line:
 #[macro_export]
 macro_rules! kinfo {
     ($($arg:tt)*) => {
+        #[allow(unused_unsafe)]
         unsafe {
             $crate::debug::logger::log(
                 $crate::debug::logger::LogLevel::Info,
@@ -97,6 +98,7 @@ macro_rules! kinfo {
 #[macro_export]
 macro_rules! kdebug {
     ($($arg:tt)*) => {
+        #[allow(unused_unsafe)]
         unsafe {
             $crate::debug::logger::log(
                 $crate::debug::logger::LogLevel::Debug,
@@ -112,6 +114,7 @@ macro_rules! kdebug {
 #[macro_export]
 macro_rules! kwarn {
     ($($arg:tt)*) => {
+        #[allow(unused_unsafe)]
         unsafe {
             $crate::debug::logger::log(
                 $crate::debug::logger::LogLevel::Warn,
@@ -127,6 +130,7 @@ macro_rules! kwarn {
 #[macro_export]
 macro_rules! kerror {
     ($($arg:tt)*) => {
+        #[allow(unused_unsafe)]
         unsafe {
             $crate::debug::logger::log(
                 $crate::debug::logger::LogLevel::Error,
@@ -142,6 +146,7 @@ macro_rules! kerror {
 #[macro_export]
 macro_rules! ktrace {
     ($($arg:tt)*) => {
+        #[allow(unused_unsafe)]
         unsafe {
             $crate::debug::logger::log(
                 $crate::debug::logger::LogLevel::Trace,

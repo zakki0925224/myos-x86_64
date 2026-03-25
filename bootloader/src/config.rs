@@ -13,7 +13,7 @@ impl Default for BootConfig<'_> {
         Self {
             kernel_path: "\\EFI\\myos\\kernel.elf",
             initramfs_path: "initramfs.img",
-            resolution: (1280, 1024),
+            resolution: (800, 600),
         }
     }
 }

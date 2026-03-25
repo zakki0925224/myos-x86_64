@@ -14,7 +14,7 @@ use crate::{
     kdebug, kerror, kinfo,
     mem::{bitmap, paging::PAGE_SIZE},
     net::{self, socket::*},
-    print, syscall_vis,
+    print,
     task::{self, TaskRequest, TaskResult},
     util,
 };
@@ -107,7 +107,6 @@ extern "sysv64" fn syscall_handler(
     tty::check_sigint();
 
     let result = syscall_handler_inner(syscall_num, arg0, arg1, arg2, arg3, arg4, arg5);
-    syscall_vis::hook(syscall_num as u32, result);
     result
 }
 
@@ -516,11 +515,6 @@ fn sys_sbrk(len: usize) -> Result<*const u8> {
     let mem_frame_info = bitmap::alloc_mem_frame((len + PAGE_SIZE).div_ceil(PAGE_SIZE))?;
     mem_frame_info.set_permissions_to_user()?;
     let virt_addr = mem_frame_info.frame_start_virt_addr()?;
-    // kdebug!(
-    //     "syscall: sbrk: allocated {} bytes at 0x{:x}",
-    //     mem_frame_info.frame_size,
-    //     virt_addr.get()
-    // );
 
     let TaskResult::Ok = task::single_scheduler::request(TaskRequest::PushMemory(mem_frame_info))?
     else {
