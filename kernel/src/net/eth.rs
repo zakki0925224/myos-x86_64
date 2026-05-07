@@ -116,9 +116,12 @@ impl Debug for EthernetFrame {
 impl TryFrom<&[u8]> for EthernetFrame {
     type Error = Error;
 
-    fn try_from(value: &[u8]) -> Result<Self> {
+    fn try_from(value: &[u8]) -> core::result::Result<Self, Error> {
         if value.len() < 14 {
-            return Err("Invalid data length".into());
+            return Err(Error::InvalidBufferSize {
+                required: 14,
+                actual: value.len(),
+            });
         }
 
         let dst_mac = &value[0..6];

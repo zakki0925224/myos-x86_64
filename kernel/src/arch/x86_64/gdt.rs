@@ -4,7 +4,6 @@ use crate::{
         registers::*,
         tss::{self, TaskStateSegmentDescriptor},
     },
-    error::Result,
     kinfo,
     sync::mutex::Mutex,
 };
@@ -139,7 +138,7 @@ impl GlobalDescriptorTable {
     }
 }
 
-pub fn init() -> Result<()> {
+pub fn init() {
     let mut gdt1 = SegmentDescriptor::new();
     let mut gdt2 = SegmentDescriptor::new();
     let mut gdt3 = SegmentDescriptor::new();
@@ -153,8 +152,7 @@ pub fn init() -> Result<()> {
     gdt3.set_data_seg(SegmentType::DataReadWrite, 3, 0, 0x000f_ffff);
     gdt4.set_code_seg(SegmentType::CodeExecuteRead, 3, 0, 0x000f_ffff);
 
-    let tss_addr = tss::init()?;
-
+    let tss_addr = tss::init().unwrap();
     {
         let mut gdt = GDT.try_lock().unwrap();
         gdt.set_desc(1, gdt1);
@@ -172,5 +170,4 @@ pub fn init() -> Result<()> {
 
     kinfo!("gdt: Initialized");
     kinfo!("gdt: TSS initialized");
-    Ok(())
 }

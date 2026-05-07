@@ -1,7 +1,7 @@
 use crate::{
     arch::IoPortAddress,
     device::{self, DeviceDriverFunction, DeviceDriverInfo},
-    error::Result,
+    error::{Error, Result},
     fs::vfs,
     kdebug, kinfo,
     net::{self, eth::*},
@@ -112,7 +112,7 @@ impl RxBuffer {
         let rtl8139_len = u16::from_le_bytes([packet[2], packet[3]]);
 
         if rtl8139_status & 0xe03f == 0 {
-            return Err("Invalid packet".into());
+            return Err(Error::InvalidData.with_context("Ethernet frame"));
         }
 
         // 4 bytes aligned
@@ -187,7 +187,7 @@ impl Rtl8139Driver {
     fn io_register(&self) -> Result<&IoRegister> {
         self.io_register
             .as_ref()
-            .ok_or("I/O register is not initialized".into())
+            .ok_or(Error::NotInitialized.with_context("I/O register"))
     }
 
     fn mac_addr(&self) -> Result<EthernetAddress> {
@@ -234,7 +234,9 @@ impl DeviceDriverFunction for Rtl8139Driver {
     }
 
     fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
-        let (bus, device, func) = self.pci_device_bdf.ok_or("Device driver is not probed")?;
+        let (bus, device, func) = self
+            .pci_device_bdf
+            .ok_or(Error::NotFound.with_context("Proved device"))?;
 
         device::pci_bus::configure_device(bus, device, func, |d| {
             // enable PCI bus mastering and disable interrupt
@@ -248,10 +250,10 @@ impl DeviceDriverFunction for Rtl8139Driver {
             let bars = conf_space.get_bars()?;
             let (_, mmio_bar) = bars
                 .get(0)
-                .ok_or("Failed to read MMIO base address register")?;
+                .ok_or(Error::NotFound.with_context("MMIO BAR"))?;
             let io_port_base: IoPortAddress = match mmio_bar {
                 device::pci_bus::conf_space::BaseAddress::MmioAddressSpace(addr) => *addr,
-                _ => return Err("Invalid base address register".into()),
+                _ => return Err(Error::InvalidData.with_context("BAR type")),
             }
             .into();
             self.io_register = Some(IoRegister::new(io_port_base));
@@ -272,11 +274,15 @@ impl DeviceDriverFunction for Rtl8139Driver {
             // set RX buffer address
             let rx_buf_addr = self.rx_buf.buf_ptr() as u64;
             if rx_buf_addr % 16 != 0 {
-                return Err("RX buffer address is not aligned".into());
+                return Err(Error::NotAligned {
+                    value: rx_buf_addr as usize,
+                    align: 16,
+                }
+                .with_context("RX buffer address"));
             }
 
             if rx_buf_addr > u32::MAX as u64 {
-                return Err("RX buffer address is too large".into());
+                return Err(Error::Overflow.with_context("RX buffer address"));
             }
 
             io_register.write_rx_buf_addr(rx_buf_addr as u32);
@@ -310,7 +316,7 @@ impl DeviceDriverFunction for Rtl8139Driver {
 
     fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
         if !self.device_driver_info.attached {
-            return Err("Device driver is not attached".into());
+            return Err(Error::NotInitialized.into());
         }
 
         let name = self.device_driver_info.name;

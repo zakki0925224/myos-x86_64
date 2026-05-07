@@ -1,6 +1,9 @@
 use crate::{
     arch::x86_64::registers::*,
-    device::pci_bus::conf_space::{self, *},
+    device::pci_bus::{
+        conf_space::{self, *},
+        PciError,
+    },
     error::{Error, Result},
 };
 use alloc::vec::Vec;
@@ -85,13 +88,14 @@ impl PciDeviceFunction for PciDevice {
 
     fn read_conf_space_non_bridge_field(&self) -> Result<ConfigurationSpaceNonBridgeField> {
         let (bus, device, func) = self.bdf;
+        let header_type = self.read_conf_space_header()?.get_header_type();
 
-        match self.read_conf_space_header()?.get_header_type() {
+        match header_type {
             ConfigurationSpaceHeaderType::NonBridge
             | ConfigurationSpaceHeaderType::MultiFunction => {
                 ConfigurationSpaceNonBridgeField::read(bus, device, func)
             }
-            _ => Err("Invalid configuration space header type".into()),
+            ty => Err(PciError::InvalidConfigurationSpaceHeaderType(ty).into()),
         }
     }
 
@@ -99,12 +103,13 @@ impl PciDeviceFunction for PciDevice {
         &self,
     ) -> Result<ConfigurationSpacePciToPciBridgeField> {
         let (bus, device, func) = self.bdf;
+        let header_type = self.read_conf_space_header()?.get_header_type();
 
-        match self.read_conf_space_header()?.get_header_type() {
+        match header_type {
             ConfigurationSpaceHeaderType::PciToPciBridge => {
                 ConfigurationSpacePciToPciBridgeField::read(bus, device, func)
             }
-            _ => Err("Invalid configuration space header type".into()),
+            ty => Err(PciError::InvalidConfigurationSpaceHeaderType(ty).into()),
         }
     }
 
@@ -112,12 +117,13 @@ impl PciDeviceFunction for PciDevice {
         &self,
     ) -> Result<ConfigurationSpacePciToCardBusField> {
         let (bus, device, func) = self.bdf;
+        let header_type = self.read_conf_space_header()?.get_header_type();
 
-        match self.read_conf_space_header()?.get_header_type() {
+        match header_type {
             ConfigurationSpaceHeaderType::PciToCardBusBridge => {
                 ConfigurationSpacePciToCardBusField::read(bus, device, func)
             }
-            _ => Err("Invalid configuration space header type".into()),
+            ty => Err(PciError::InvalidConfigurationSpaceHeaderType(ty).into()),
         }
     }
 
@@ -183,7 +189,7 @@ impl PciDeviceFunction for PciDevice {
     ) -> Result<()> {
         let caps_ptr = self
             .read_caps_ptr()
-            .ok_or::<Error>("Failed to read MSI capability fields".into())?;
+            .ok_or::<Error>(PciError::FailedToReadMsiCapabilityFields.into())?;
 
         let mut cap = MsiCapabilityField::default();
         let mut caps_ptr = caps_ptr as usize;
@@ -191,7 +197,7 @@ impl PciDeviceFunction for PciDevice {
         let caps_list_len = caps_list.len();
 
         if caps_list_len == 0 {
-            return Err("MSI capability fields was not found".into());
+            return Err(PciError::MsiCapabilityFieldWasNotFound.into());
         }
 
         for (i, field) in caps_list.iter().enumerate() {
@@ -203,7 +209,7 @@ impl PciDeviceFunction for PciDevice {
             caps_ptr = field.next_ptr as usize;
 
             if i == caps_list_len - 1 {
-                return Err("MSI capability fields was not found".into());
+                return Err(PciError::MsiCapabilityFieldWasNotFound.into());
             }
         }
 

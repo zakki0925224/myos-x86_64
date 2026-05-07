@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::Error;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
@@ -42,9 +42,12 @@ pub struct IcmpPacket {
 impl TryFrom<&[u8]> for IcmpPacket {
     type Error = Error;
 
-    fn try_from(value: &[u8]) -> Result<Self> {
+    fn try_from(value: &[u8]) -> core::result::Result<Self, Error> {
         if value.len() < 8 {
-            return Err("Invalid data length".into());
+            return Err(Error::InvalidBufferSize {
+                required: 8,
+                actual: value.len(),
+            });
         }
 
         let ty = value[0].into();

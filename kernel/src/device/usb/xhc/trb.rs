@@ -93,9 +93,9 @@ impl GenericTrbEntry {
 
     pub fn cmd_result_ok(&self) -> Result<()> {
         if self.trb_type() != TrbType::CommandCompletionEvent as u32 {
-            Err("Not a command completion event TRB".into())
+            Err(Error::InvalidData.with_context("TRB type"))
         } else if self.completion_code() != 1 {
-            Err("Command completion code was not success".into())
+            Err(Error::InvalidData.with_context("command completion code"))
         } else {
             Ok(())
         }
@@ -103,9 +103,9 @@ impl GenericTrbEntry {
 
     pub fn transfer_result_ok(&self) -> Result<()> {
         if self.trb_type() != TrbType::TransferEvent as u32 {
-            Err("Not a transfer event TRB".into())
+            Err(Error::InvalidData.with_context("TRB type"))
         } else if self.completion_code() != 1 && self.completion_code() != 13 {
-            Err("Transfer completion code was not success".into())
+            Err(Error::InvalidData.with_context("transfer completion code"))
         } else {
             Ok(())
         }
@@ -173,7 +173,11 @@ impl TrbRing {
 
             Ok(())
         } else {
-            Err(Error::IndexOutOfBoundsError(index))
+            Err(Error::IndexOutOfBounds {
+                index,
+                len: Some(self.trb.len()),
+            }
+            .into())
         }
     }
 
@@ -187,7 +191,7 @@ impl TrbRing {
 
     pub fn advance_index_notoggle(&mut self, cycle_ours: bool) -> Result<()> {
         if self.current().cycle_state() != cycle_ours {
-            return Err("Invalid cycle state".into());
+            return Err(Error::InvalidData.with_context("TRB cycle state"));
         }
 
         self.index = (self.index + 1) % self.trb.len();
@@ -196,7 +200,7 @@ impl TrbRing {
 
     pub fn advance_index(&mut self, new_cycle: bool) -> Result<()> {
         if self.current().cycle_state() == new_cycle {
-            return Err("Invalid cycle state".into());
+            return Err(Error::InvalidData.with_context("TRB cycle state"));
         }
 
         self.trb[self.index].set_cycle_state(new_cycle);

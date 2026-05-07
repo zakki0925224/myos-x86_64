@@ -1,5 +1,5 @@
 use crate::{
-    error::{Error, Result},
+    error::{Error, Error_, Result},
     net::{icmp::IcmpPacket, tcp::TcpPacket, udp::UdpPacket},
 };
 use alloc::vec::Vec;
@@ -76,11 +76,15 @@ impl Debug for Ipv4Packet {
 }
 
 impl TryFrom<&[u8]> for Ipv4Packet {
-    type Error = Error;
+    type Error = Error_;
 
     fn try_from(value: &[u8]) -> Result<Self> {
         if value.len() < 20 {
-            return Err("Invalid data length".into());
+            return Err(Error::InvalidBufferSize {
+                required: 20,
+                actual: value.len(),
+            }
+            .into());
         }
 
         let version_ihl = value[0];
@@ -96,7 +100,7 @@ impl TryFrom<&[u8]> for Ipv4Packet {
 
         let ihl = (version_ihl & 0x0f) as usize * 4;
         if value.len() < ihl {
-            return Err("Invalid IHL".into());
+            return Err(Error::InvalidData.with_context("IP IHL"));
         }
 
         let payload_len = (len as usize).saturating_sub(ihl);
@@ -180,11 +184,11 @@ impl Ipv4Packet {
         let version = self.version_ihl >> 4;
 
         if version != 4 {
-            return Err("Invalid version".into());
+            return Err(Error::InvalidData.with_context("IP version"));
         }
 
         if self.ttl == 0 {
-            return Err("TTL is 0".into());
+            return Err(Error::InvalidData.with_context("IP TTL"));
         }
 
         Ok(())
@@ -197,7 +201,7 @@ impl Ipv4Packet {
             Protocol::Icmp => Ipv4Payload::Icmp(IcmpPacket::try_from(data_slice)?),
             Protocol::Tcp => Ipv4Payload::Tcp(TcpPacket::try_from(data_slice)?),
             Protocol::Udp => Ipv4Payload::Udp(UdpPacket::try_from(data_slice)?),
-            Protocol::Other(_) => return Err("Unsupported protocol".into()),
+            Protocol::Other(_) => return Err(Error::InvalidData.into()),
         };
 
         Ok(payload)

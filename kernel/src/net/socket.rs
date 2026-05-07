@@ -30,7 +30,7 @@ impl SocketId {
 
     pub fn new_val(value: i32) -> Result<Self> {
         if value < 0 {
-            return Err("Invalid socket file descriptor number".into());
+            return Err(Error::InvalidData.with_context("socket fd"));
         }
 
         Ok(Self(value as usize))
@@ -76,23 +76,23 @@ impl Socket {
 
     pub fn inner_udp_mut(&mut self) -> Result<&mut UdpSocket> {
         if self.type_ != SocketType::Dgram {
-            return Err("Invalid socket type".into());
+            return Err(Error::InvalidData.with_context("socket type"));
         }
 
         match &mut self.inner {
             SocketInner::Udp(socket) => Ok(socket),
-            _ => Err("Invalid socket type".into()),
+            _ => Err(Error::InvalidData.with_context("socket type")),
         }
     }
 
     pub fn inner_tcp_mut(&mut self) -> Result<&mut TcpSocket> {
         if self.type_ != SocketType::Stream {
-            return Err("Invalid socket type".into());
+            return Err(Error::InvalidData.with_context("socket type"));
         }
 
         match &mut self.inner {
             SocketInner::Tcp(socket) => Ok(socket),
-            _ => Err("Invalid socket type".into()),
+            _ => Err(Error::InvalidData.with_context("socket type")),
         }
     }
 }
@@ -117,18 +117,22 @@ impl SocketTable {
     }
 
     pub fn socket_by_id(&self, id: SocketId) -> Result<&Socket> {
-        self.table.get(&id).ok_or("Invalid socket ID".into())
+        self.table
+            .get(&id)
+            .ok_or(Error::NotFound.with_context("socket ID"))
     }
 
     pub fn socket_mut_by_id(&mut self, id: SocketId) -> Result<&mut Socket> {
-        self.table.get_mut(&id).ok_or("Invalid socket ID".into())
+        self.table
+            .get_mut(&id)
+            .ok_or(Error::NotFound.with_context("socket ID"))
     }
 
     pub fn remove_socket(&mut self, id: SocketId) -> Result<()> {
         let socket = self
             .table
             .remove(&id)
-            .ok_or::<Error>("Invalid socket ID".into())?;
+            .ok_or(Error::NotFound.with_context("socket ID"))?;
 
         let port = socket.port();
         if port != 0 {
@@ -149,7 +153,7 @@ impl SocketTable {
             SocketType::Stream => self.tcp_port_socket_id_map.get(&port),
             SocketType::Dgram => self.udp_port_socket_id_map.get(&port),
         }
-        .ok_or::<Error>("Port is not used".into())?;
+        .ok_or(Error::NotFound.with_context("port"))?;
 
         Ok(*socket_id)
     }
@@ -158,14 +162,14 @@ impl SocketTable {
         let inner = match type_ {
             SocketType::Stream => {
                 if protocol != Protocol::Tcp {
-                    return Err("Invalid protocol".into());
+                    return Err(Error::InvalidData.with_context("socket protocol"));
                 }
 
                 SocketInner::Tcp(TcpSocket::new())
             }
             SocketType::Dgram => {
                 if protocol != Protocol::Udp {
-                    return Err("Invalid protocol".into());
+                    return Err(Error::InvalidData.with_context("socket protocol"));
                 }
 
                 SocketInner::Udp(UdpSocket::new())
@@ -199,14 +203,14 @@ impl SocketTable {
             }
 
             if port == 0 {
-                return Err("All ephemeral ports are already in use".into());
+                return Err(Error::BufferFull.into());
             }
         } else {
             if self.tcp_port_socket_id_map.contains_key(&port) {
-                return Err("Port is already in use (TCP)".into());
+                return Err(Error::AlreadyExists.with_context("TCP port"));
             }
             if self.udp_port_socket_id_map.contains_key(&port) {
-                return Err("Port is already in use (UDP)".into());
+                return Err(Error::AlreadyExists.with_context("UDP port"));
             }
         }
 

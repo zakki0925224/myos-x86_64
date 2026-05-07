@@ -294,9 +294,17 @@ impl Elf64SectionHeader {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug)]
 pub enum Elf64Error {
-    InvalidMagicNumberError,
+    InvalidMagicNumber,
+}
+
+impl core::fmt::Display for Elf64Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidMagicNumber => write!(f, "ELF64 error: Invalid magic number"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -309,7 +317,7 @@ impl<'a> Elf64<'a> {
         let header = unsafe { &*(data.as_ptr() as *const Elf64Header) };
 
         if !header.is_valid() {
-            return Err(Elf64Error::InvalidMagicNumberError);
+            return Err(Elf64Error::InvalidMagicNumber);
         }
 
         Ok(Self { data })

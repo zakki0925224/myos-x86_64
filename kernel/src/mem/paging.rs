@@ -176,13 +176,37 @@ pub struct MappingInfo {
     pub pcd: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum PageManagerError {
-    PageNotMappedError,
-    VirtualAddressNotMappedError(VirtualAddress),
-    VirtualAddressNotAllowedToMapError(VirtualAddress),
-    VirtualAddressNotAlignedByPageSizeError(VirtualAddress),
-    PhysicalAddressNotMappedError(PhysicalAddress),
+    PageNotMapped,
+    VirtualAddressNotMapped(VirtualAddress),
+    NullVirtualAddress(VirtualAddress),
+    VirtualAddressNotAlignedByPageSize(VirtualAddress),
+    PhysicalAddressNotMapped(PhysicalAddress),
+}
+
+impl core::fmt::Display for PageManagerError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::PageNotMapped => write!(f, "Page not mapped"),
+            Self::VirtualAddressNotMapped(addr) => {
+                write!(f, "Virtual address not mapped: 0x{:x}", addr.get())
+            }
+            Self::NullVirtualAddress(addr) => {
+                write!(f, "Null virtual address: 0x{:x}", addr.get())
+            }
+            Self::VirtualAddressNotAlignedByPageSize(addr) => {
+                write!(
+                    f,
+                    "Virtual address not aligned by page size: 0x{:x}",
+                    addr.get()
+                )
+            }
+            Self::PhysicalAddressNotMapped(addr) => {
+                write!(f, "Physical address not mapped: 0x{:x}", addr.get())
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -274,7 +298,7 @@ impl PageManager {
             }
         }
 
-        Err(PageManagerError::PhysicalAddressNotMappedError(phys_addr).into())
+        Err(PageManagerError::PhysicalAddressNotMapped(phys_addr).into())
     }
 
     // unsupported 2MB / 1GB pages
@@ -289,14 +313,14 @@ impl PageManager {
         let entry = &pml4_table.entries[pml4e_index];
 
         if !entry.p() {
-            return Err(PageManagerError::VirtualAddressNotMappedError(virt_addr).into());
+            return Err(PageManagerError::VirtualAddressNotMapped(virt_addr).into());
         }
 
         let pml3_table = entry.page_table().unwrap();
         let entry = &pml3_table.entries[pml3e_index];
 
         if !entry.p() {
-            return Err(PageManagerError::VirtualAddressNotMappedError(virt_addr).into());
+            return Err(PageManagerError::VirtualAddressNotMapped(virt_addr).into());
         }
 
         let pml2_table = match entry.page_table() {
@@ -308,7 +332,7 @@ impl PageManager {
         let entry = &pml2_table.entries[pml2e_index];
 
         if !entry.p() {
-            return Err(PageManagerError::VirtualAddressNotMappedError(virt_addr).into());
+            return Err(PageManagerError::VirtualAddressNotMapped(virt_addr).into());
         }
 
         let pml1_table = match entry.page_table() {
@@ -395,9 +419,7 @@ impl PageManager {
 
     pub unsafe fn page_table_entry(&self, virt_addr: VirtualAddress) -> Result<&PageTableEntry> {
         if virt_addr.get() % PAGE_SIZE as u64 != 0 {
-            return Err(
-                PageManagerError::VirtualAddressNotAlignedByPageSizeError(virt_addr).into(),
-            );
+            return Err(PageManagerError::VirtualAddressNotAlignedByPageSize(virt_addr).into());
         }
 
         self.calc_phys_addr(virt_addr)?;
@@ -411,21 +433,21 @@ impl PageManager {
         let entry = &pml4_table.entries[pml4e_index];
 
         if !entry.p() {
-            return Err(PageManagerError::VirtualAddressNotMappedError(virt_addr).into());
+            return Err(PageManagerError::VirtualAddressNotMapped(virt_addr).into());
         }
 
         let pml3_table = entry.page_table().unwrap();
         let entry = &pml3_table.entries[pml3e_index];
 
         if !entry.p() {
-            return Err(PageManagerError::VirtualAddressNotMappedError(virt_addr).into());
+            return Err(PageManagerError::VirtualAddressNotMapped(virt_addr).into());
         }
 
         let pml2_table = entry.page_table().unwrap();
         let entry = &pml2_table.entries[pml2e_index];
 
         if !entry.p() {
-            return Err(PageManagerError::VirtualAddressNotMappedError(virt_addr).into());
+            return Err(PageManagerError::VirtualAddressNotMapped(virt_addr).into());
         }
 
         let pml1_table = entry.page_table().unwrap();
@@ -439,7 +461,7 @@ impl PageManager {
 
     unsafe fn pml4_table(&self) -> Result<&mut PageTable> {
         if !self.is_mapped {
-            return Err(PageManagerError::PageNotMappedError.into());
+            return Err(PageManagerError::PageNotMapped.into());
         }
 
         let ptr = self.cr3().raw() as *mut PageTable;
@@ -482,13 +504,11 @@ impl PageManager {
         disable_cache: bool,
     ) -> Result<()> {
         if virt_addr.get() == 0 {
-            return Err(PageManagerError::VirtualAddressNotAllowedToMapError(virt_addr).into());
+            return Err(PageManagerError::NullVirtualAddress(virt_addr).into());
         }
 
         if virt_addr.get() % PAGE_SIZE as u64 != 0 {
-            return Err(
-                PageManagerError::VirtualAddressNotAlignedByPageSizeError(virt_addr).into(),
-            );
+            return Err(PageManagerError::VirtualAddressNotAlignedByPageSize(virt_addr).into());
         }
 
         let pml4e_index = virt_addr.get_pml4_entry_index();

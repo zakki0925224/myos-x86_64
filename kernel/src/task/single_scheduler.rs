@@ -68,7 +68,7 @@ impl SingleTaskScheduler {
         let has_user = !self.user_tasks.is_empty();
         if has_user {
             self.current_user_task()
-                .ok_or("No current user task")?
+                .ok_or(Error::NotInitialized.with_context("current user task"))?
                 .unmap_virt_addr()?;
         }
 
@@ -82,8 +82,8 @@ impl SingleTaskScheduler {
 
         self.user_tasks.push(user_task);
 
-        let current = self.prev_task().ok_or("No prev task")?;
-        let new_task = self.current_user_task().ok_or("No current user task")?;
+        let current = self.prev_task().ok_or(Error::NotInitialized.with_context("prev task"))?;
+        let new_task = self.current_user_task().ok_or(Error::NotInitialized.with_context("current user task"))?;
         current.switch_to(new_task);
 
         self.with_popped_user_task(|finished_task, sched| {
@@ -96,7 +96,7 @@ impl SingleTaskScheduler {
         let exit_status = self
             .user_exit_status
             .take()
-            .ok_or::<Error>("User exit status not found".into())?;
+            .ok_or(Error::NotFound.with_context("user exit status"))?;
 
         Ok(exit_status)
     }
@@ -105,7 +105,7 @@ impl SingleTaskScheduler {
         &mut self,
         mem_frame_info: MemoryFrameInfo,
     ) -> Result<()> {
-        let user_task = self.current_user_task_mut().ok_or("No current user task")?;
+        let user_task = self.current_user_task_mut().ok_or(Error::NotInitialized.with_context("current user task"))?;
         user_task
             .resource
             .allocated_mem_frame_info
@@ -118,7 +118,7 @@ impl SingleTaskScheduler {
         &mut self,
         virt_addr: VirtualAddress,
     ) -> Result<Option<usize>> {
-        let user_task = self.current_user_task_mut().ok_or("No current user task")?;
+        let user_task = self.current_user_task_mut().ok_or(Error::NotInitialized.with_context("current user task"))?;
 
         for mem_frame_info in &user_task.resource.allocated_mem_frame_info {
             if mem_frame_info.frame_start_virt_addr()? == virt_addr {
@@ -133,27 +133,27 @@ impl SingleTaskScheduler {
         &mut self,
         virt_addr: VirtualAddress,
     ) -> Result<MemoryFrameInfo> {
-        let user_task = self.current_user_task_mut().ok_or("No current user task")?;
+        let user_task = self.current_user_task_mut().ok_or(Error::NotInitialized.with_context("current user task"))?;
         let allocated_mem_frame_info = &mut user_task.resource.allocated_mem_frame_info;
 
         if let Some(index) = allocated_mem_frame_info
             .iter()
-            .position(|info| info.frame_start_virt_addr() == Ok(virt_addr))
+            .position(|info| info.frame_start_virt_addr().ok() == Some(virt_addr))
         {
             return Ok(allocated_mem_frame_info.remove(index));
         }
 
-        Err("Invalid virtual address".into())
+        Err(Error::InvalidData.with_context("virtual address"))
     }
 
     fn push_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
-        let user_task = self.current_user_task_mut().ok_or("No current user task")?;
+        let user_task = self.current_user_task_mut().ok_or(Error::NotInitialized.with_context("current user task"))?;
         user_task.resource.created_layer_ids.push(layer_id);
         Ok(())
     }
 
     fn remove_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
-        let user_task = self.current_user_task_mut().ok_or("No current user task")?;
+        let user_task = self.current_user_task_mut().ok_or(Error::NotInitialized.with_context("current user task"))?;
         user_task
             .resource
             .created_layer_ids
@@ -162,13 +162,13 @@ impl SingleTaskScheduler {
     }
 
     fn push_fd_num(&mut self, fd_num: FileDescriptorNumber) -> Result<()> {
-        let user_task = self.current_user_task_mut().ok_or("No current user task")?;
+        let user_task = self.current_user_task_mut().ok_or(Error::NotInitialized.with_context("current user task"))?;
         user_task.resource.opend_fd_num.push(fd_num);
         Ok(())
     }
 
     fn remove_fd_num(&mut self, fd_num: FileDescriptorNumber) -> Result<()> {
-        let user_task = self.current_user_task_mut().ok_or("No current user task")?;
+        let user_task = self.current_user_task_mut().ok_or(Error::NotInitialized.with_context("current user task"))?;
         user_task.resource.opend_fd_num.retain(|f| *f != fd_num);
         Ok(())
     }

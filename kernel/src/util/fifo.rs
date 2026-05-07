@@ -1,12 +1,5 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use core::sync::atomic::{AtomicUsize, Ordering};
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FifoError {
-    BufferIsLocked,
-    BufferIsFull,
-    BufferIsEmpty,
-}
 
 #[derive(Debug)]
 #[repr(C, align(4096))]
@@ -58,7 +51,7 @@ impl<T: Sized + Copy, const SIZE: usize> Fifo<T, SIZE> {
         let next_write_ptr = (write_ptr + 1) % self.size;
 
         if next_write_ptr == read_ptr {
-            return Err(FifoError::BufferIsFull.into());
+            return Err(Error::BufferFull.into());
         }
 
         if self
@@ -71,7 +64,7 @@ impl<T: Sized + Copy, const SIZE: usize> Fifo<T, SIZE> {
             )
             .is_err()
         {
-            return Err(FifoError::BufferIsLocked.into());
+            return Err(Error::Locked.into());
         }
 
         self.buf.0[write_ptr] = value;
@@ -85,7 +78,7 @@ impl<T: Sized + Copy, const SIZE: usize> Fifo<T, SIZE> {
         let next_read_ptr = (read_ptr + 1) % self.size;
 
         if read_ptr == write_ptr {
-            return Err(FifoError::BufferIsEmpty.into());
+            return Err(Error::BufferEmpty.into());
         }
 
         if self
@@ -98,7 +91,7 @@ impl<T: Sized + Copy, const SIZE: usize> Fifo<T, SIZE> {
             )
             .is_err()
         {
-            return Err(FifoError::BufferIsLocked.into());
+            return Err(Error::Locked.into());
         }
 
         Ok(self.buf.0[read_ptr])

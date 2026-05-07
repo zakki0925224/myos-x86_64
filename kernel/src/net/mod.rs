@@ -65,7 +65,7 @@ impl NetworkManager {
     }
 
     fn my_mac_addr(&self) -> Result<EthernetAddress> {
-        self.my_mac_addr.ok_or("MAC address is not set".into())
+        self.my_mac_addr.ok_or(Error::NotInitialized.with_context("MAC address"))
     }
 
     fn create_new_socket(&mut self, type_: SocketType) -> Result<SocketId> {
@@ -142,7 +142,7 @@ impl NetworkManager {
         {
             let socket = self.socket_table.socket_mut_by_id(socket_id)?;
             if socket.port() != 0 {
-                return Err("Socket already bound".into());
+                return Err(Error::AlreadyExists.into());
             }
         }
 
@@ -187,7 +187,7 @@ impl NetworkManager {
         let port = socket.port();
 
         if port == 0 {
-            return Err("Socket must be bound before listen".into());
+            return Err(Error::InvalidData.with_context("socket not bound"));
         }
 
         let tcp_socket = socket.inner_tcp_mut()?;
@@ -202,7 +202,7 @@ impl NetworkManager {
         let tcp_socket = socket.inner_tcp_mut()?;
 
         if tcp_socket.state() != TcpSocketState::Listen {
-            return Err("Socket is not listening".into());
+            return Err(Error::InvalidData.with_context("socket state"));
         }
 
         let server_port = socket.port();
@@ -211,7 +211,7 @@ impl NetworkManager {
             return Ok(client_socket_id);
         }
 
-        Err("No incoming connection".into())
+        Err(Error::NotFound.with_context("incoming connection"))
     }
 
     fn connect_tcp_v4(
@@ -242,15 +242,15 @@ impl NetworkManager {
         let tcp_socket = socket.inner_tcp_mut()?;
 
         if tcp_socket.state() != TcpSocketState::SynSent {
-            return Err("Socket is not in SynSent state".into());
+            return Err(Error::InvalidData.with_context("socket state"));
         }
 
         let dst_port = tcp_socket
             .dst_port()
-            .ok_or::<Error>("No destination port".into())?;
+            .ok_or(Error::NotFound.with_context("destination port"))?;
         let dst_addr = tcp_socket
             .dst_ipv4_addr()
-            .ok_or::<Error>("No destination address".into())?;
+            .ok_or(Error::NotFound.with_context("destination address"))?;
 
         let mut syn_packet = TcpPacket::new_with(
             src_port,
@@ -280,7 +280,7 @@ impl NetworkManager {
         let target_ip = get_target_ip(self.my_ipv4_addr, dst_addr);
         let dst_mac_addr = self
             .resolve_mac_addr(target_ip)?
-            .ok_or::<Error>("Failed to resolve MAC address".into())?;
+            .ok_or(Error::NotFound.with_context("MAC address"))?;
         self.send_eth_payload(
             EthernetPayload::Ipv4(ipv4_packet),
             dst_mac_addr,
@@ -301,10 +301,10 @@ impl NetworkManager {
 
                 let dst_port = tcp_socket
                     .dst_port()
-                    .ok_or::<Error>("No destination port".into())?;
+                    .ok_or(Error::NotFound.with_context("destination port"))?;
                 let dst_addr = tcp_socket
                     .dst_ipv4_addr()
-                    .ok_or::<Error>("No destination address".into())?;
+                    .ok_or(Error::NotFound.with_context("destination address"))?;
 
                 (
                     src_port,
@@ -346,7 +346,7 @@ impl NetworkManager {
         let target_ip = get_target_ip(self.my_ipv4_addr, dst_addr);
         let dst_mac_addr = self
             .resolve_mac_addr(target_ip)?
-            .ok_or::<Error>("Failed to resolve MAC address".into())?;
+            .ok_or(Error::NotFound.with_context("MAC address"))?;
 
         self.send_eth_payload(
             EthernetPayload::Ipv4(ipv4_packet),
@@ -368,15 +368,15 @@ impl NetworkManager {
             let tcp_socket = socket.inner_tcp_mut()?;
 
             if tcp_socket.state() != TcpSocketState::Established {
-                return Err("Socket is not in Established state".into());
+                return Err(Error::InvalidData.with_context("socket state"));
             }
 
             let dst_port = tcp_socket
                 .dst_port()
-                .ok_or::<Error>("No destination port".into())?;
+                .ok_or(Error::NotFound.with_context("destination port"))?;
             let dst_addr = tcp_socket
                 .dst_ipv4_addr()
-                .ok_or::<Error>("No destination address".into())?;
+                .ok_or(Error::NotFound.with_context("destination address"))?;
 
             (
                 src_port,
@@ -415,7 +415,7 @@ impl NetworkManager {
         let target_ip = get_target_ip(self.my_ipv4_addr, dst_addr);
         let dst_mac_addr = self
             .resolve_mac_addr(target_ip)?
-            .ok_or::<Error>("Failed to resolve MAC address".into())?;
+            .ok_or(Error::NotFound.with_context("MAC address"))?;
 
         self.send_eth_payload(
             EthernetPayload::Ipv4(ipv4_packet),
@@ -446,7 +446,7 @@ impl NetworkManager {
                 | TcpSocketState::LastAck
                 | TcpSocketState::Closing
         ) {
-            return Err("Socket is not in Established/Closing state".into());
+            return Err(Error::InvalidData.with_context("socket state"));
         }
 
         let data = tcp_socket.get_and_reset_buf();
@@ -789,7 +789,7 @@ impl NetworkManager {
 
         let dst_mac_addr = self
             .resolve_mac_addr(target_ip)?
-            .ok_or::<Error>("Failed to resolve MAC address".into())?;
+            .ok_or(Error::NotFound.with_context("MAC address"))?;
 
         self.send_eth_payload(
             EthernetPayload::Ipv4(ipv4_packet),
@@ -930,10 +930,10 @@ pub fn send_tcp_syn(socket_id: SocketId) -> Result<()> {
         (
             tcp_socket
                 .dst_ipv4_addr()
-                .ok_or::<Error>("No destination address".into())?,
+                .ok_or(Error::NotFound.with_context("destination address"))?,
             tcp_socket
                 .dst_port()
-                .ok_or::<Error>("No destination port".into())?,
+                .ok_or(Error::NotFound.with_context("destination port"))?,
         )
     };
 
@@ -953,10 +953,10 @@ pub fn send_tcp_packet(socket_id: SocketId, data: &[u8]) -> Result<()> {
         (
             tcp_socket
                 .dst_ipv4_addr()
-                .ok_or::<Error>("No destination address".into())?,
+                .ok_or(Error::NotFound.with_context("destination address"))?,
             tcp_socket
                 .dst_port()
-                .ok_or::<Error>("No destination port".into())?,
+                .ok_or(Error::NotFound.with_context("destination port"))?,
         )
     };
 

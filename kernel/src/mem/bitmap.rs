@@ -76,7 +76,11 @@ impl Bitmap {
 
     fn get(&self, index: usize) -> Result<bool> {
         if index >= Self::BITMAP_SIZE {
-            return Err(Error::IndexOutOfBoundsError(index));
+            return Err(Error::IndexOutOfBounds {
+                index,
+                len: Some(Self::BITMAP_SIZE),
+            }
+            .into());
         }
 
         Ok(((self.0 >> index) & 0x1) != 0)
@@ -84,7 +88,11 @@ impl Bitmap {
 
     fn set(&mut self, index: usize, value: bool) -> Result<()> {
         if index >= Self::BITMAP_SIZE {
-            return Err(Error::IndexOutOfBoundsError(index));
+            return Err(Error::IndexOutOfBounds {
+                index,
+                len: Some(Self::BITMAP_SIZE),
+            }
+            .into());
         }
 
         self.0 = (self.0 & !(0x1 << index)) | ((value as u8) << index);
@@ -112,12 +120,29 @@ impl From<u8> for Bitmap {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum BitmapMemoryManagerError {
-    FreeMemoryFrameWasNotFoundError,
-    MemoryFrameWasAlreadyAllocatedError(usize), // memory frame index,
-    MemoryFrameWasAlreadyDeallocatedError(usize), // memory frame index,
-    InvalidMemoryFrameLengthError(usize),       // memory frame length
+    FreeMemoryFrameWasNotFound,
+    MemoryFrameWasAlreadyAllocated(usize),
+    MemoryFrameWasAlreadyDeallocated(usize),
+    InvalidMemoryFrameLength(usize),
+}
+
+impl core::fmt::Display for BitmapMemoryManagerError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::FreeMemoryFrameWasNotFound => write!(f, "Free memory frame was not found"),
+            Self::MemoryFrameWasAlreadyAllocated(index) => {
+                write!(f, "Memory frame {} was already allocated", index)
+            }
+            Self::MemoryFrameWasAlreadyDeallocated(index) => {
+                write!(f, "Memory frame {} was already deallocated", index)
+            }
+            Self::InvalidMemoryFrameLength(len) => {
+                write!(f, "Invalid memory frame length: {}", len)
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -143,7 +168,7 @@ impl BitmapMemoryManager {
     }
 
     fn bitmap_phys_addr(&self) -> Result<PhysicalAddress> {
-        self.bitmap_phys_addr.ok_or(Error::NotInitialized)
+        self.bitmap_phys_addr.ok_or(Error::NotInitialized.into())
     }
 
     fn init(&mut self, mem_map: &[MemoryDescriptor]) -> Result<()> {
@@ -258,7 +283,7 @@ impl BitmapMemoryManager {
 
     fn alloc_single_mem_frame(&mut self) -> Result<MemoryFrameInfo> {
         if self.free_frame_len == 0 {
-            return Err(BitmapMemoryManagerError::FreeMemoryFrameWasNotFoundError.into());
+            return Err(BitmapMemoryManagerError::FreeMemoryFrameWasNotFound.into());
         }
 
         for i in 0..self.bitmap_len() {
@@ -283,12 +308,12 @@ impl BitmapMemoryManager {
             }
         }
 
-        Err(BitmapMemoryManagerError::FreeMemoryFrameWasNotFoundError.into())
+        Err(BitmapMemoryManagerError::FreeMemoryFrameWasNotFound.into())
     }
 
     fn alloc_multi_mem_frame(&mut self, len: usize) -> Result<MemoryFrameInfo> {
         if len == 0 {
-            return Err(BitmapMemoryManagerError::InvalidMemoryFrameLengthError(len).into());
+            return Err(BitmapMemoryManagerError::InvalidMemoryFrameLength(len).into());
         }
 
         if len == 1 {
@@ -296,7 +321,7 @@ impl BitmapMemoryManager {
         }
 
         if len > self.free_frame_len {
-            return Err(BitmapMemoryManagerError::FreeMemoryFrameWasNotFoundError.into());
+            return Err(BitmapMemoryManagerError::FreeMemoryFrameWasNotFound.into());
         }
 
         let mut start_frame_index = None;
@@ -333,9 +358,9 @@ impl BitmapMemoryManager {
         }
 
         let start_frame_index =
-            start_frame_index.ok_or(BitmapMemoryManagerError::FreeMemoryFrameWasNotFoundError)?;
+            start_frame_index.ok_or(BitmapMemoryManagerError::FreeMemoryFrameWasNotFound)?;
         if consecutive_count < len {
-            return Err(BitmapMemoryManagerError::FreeMemoryFrameWasNotFoundError.into());
+            return Err(BitmapMemoryManagerError::FreeMemoryFrameWasNotFound.into());
         }
 
         for i in 0..len {
@@ -370,7 +395,11 @@ impl BitmapMemoryManager {
 
     fn bitmap(&self, offset: usize) -> Result<&mut Bitmap> {
         if offset >= self.bitmap_len() {
-            return Err(Error::IndexOutOfBoundsError(offset));
+            return Err(Error::IndexOutOfBounds {
+                index: offset,
+                len: Some(self.bitmap_len()),
+            }
+            .into());
         }
 
         Ok(unsafe { &mut *(self.bitmap_phys_addr()?.offset(offset).get() as *mut Bitmap) })
@@ -383,7 +412,7 @@ impl BitmapMemoryManager {
         // already allocated
         if bitmap.get(bitmap_pos)? {
             return Err(
-                BitmapMemoryManagerError::MemoryFrameWasAlreadyAllocatedError(frame_index).into(),
+                BitmapMemoryManagerError::MemoryFrameWasAlreadyAllocated(frame_index).into(),
             );
         }
 
@@ -407,7 +436,7 @@ impl BitmapMemoryManager {
         // already deallocated
         if !bitmap.get(bitmap_pos)? {
             return Err(
-                BitmapMemoryManagerError::MemoryFrameWasAlreadyDeallocatedError(frame_index).into(),
+                BitmapMemoryManagerError::MemoryFrameWasAlreadyDeallocated(frame_index).into(),
             );
         }
 

@@ -59,10 +59,10 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     mem::init(boot_info.mem_map).unwrap();
 
     // initialize GDT
-    gdt::init().unwrap();
+    gdt::init();
     // initialize PIC and IDT
     idt::init_pic();
-    idt::init_idt().unwrap();
+    idt::init();
 
     // initialize frame buffer, console
     graphics::init(
@@ -82,8 +82,8 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     // initialize ACPI
     acpi::init(boot_info.rsdp_virt_addr.unwrap().into()).unwrap();
 
-    // check TSC
-    tsc::check_available();
+    // initialize TSC
+    tsc::init();
 
     // initialize and start local APIC timer
     device::local_apic_timer::probe_and_attach().unwrap();

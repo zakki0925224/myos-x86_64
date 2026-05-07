@@ -3,12 +3,39 @@ use crate::error::Result;
 use common::geometry::{Point, Rect, Size};
 use common::graphic_info::PixelFormat;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum DrawError {
     SourcePositionOutOfBounds { point: Point },
     DestinationPositionOutOfBounds { point: Point },
     RectSizeOutOfBounds { size: Size },
     InvalidPixelFormat { src: PixelFormat, dst: PixelFormat },
+}
+
+impl core::fmt::Display for DrawError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::SourcePositionOutOfBounds { point } => {
+                write!(
+                    f,
+                    "Source position out of bounds: ({}, {})",
+                    point.x, point.y
+                )
+            }
+            Self::DestinationPositionOutOfBounds { point } => {
+                write!(
+                    f,
+                    "Destination position out of bounds: ({}, {})",
+                    point.x, point.y
+                )
+            }
+            Self::RectSizeOutOfBounds { size } => {
+                write!(f, "Rect size out of bounds: {}x{}", size.width, size.height)
+            }
+            Self::InvalidPixelFormat { src, dst } => {
+                write!(f, "Invalid pixel format: src: {:?}, dst: {:?}", src, dst)
+            }
+        }
+    }
 }
 
 pub trait Draw {

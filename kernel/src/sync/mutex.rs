@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use core::{
     cell::SyncUnsafeCell,
     ops::{Deref, DerefMut},
@@ -27,7 +27,7 @@ impl<T: Sized> Mutex<T> {
             return Ok(unsafe { MutexGuard::new(self, &self.value) });
         }
 
-        Err("Mutex is already locked".into())
+        Err(Error::Locked.into())
     }
 
     pub unsafe fn get_force_mut(&mut self) -> &mut T {

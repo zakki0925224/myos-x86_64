@@ -88,12 +88,27 @@ struct FixedAcpiDescriptionTable {
     reserved2: [u8; 160],
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug)]
 pub enum AcpiError {
-    InvalidSignatureError,
-    InvalidRevisionError(u8),
-    InvalidChecksumError,
+    InvalidSignature,
+    InvalidRevision(u8),
+    InvalidChecksum,
     FixedAcpiDescriptionTableWasNotFound,
+}
+
+impl core::fmt::Display for AcpiError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "ACPI error: ")?;
+
+        match self {
+            Self::InvalidSignature => write!(f, "Invalid signature"),
+            Self::InvalidRevision(r) => write!(f, "Invalid revision: 0x{:x}", r),
+            Self::InvalidChecksum => write!(f, "Invalid checksum"),
+            Self::FixedAcpiDescriptionTableWasNotFound => {
+                write!(f, "Fixed ACPI Description Table was not found")
+            }
+        }
+    }
 }
 
 struct Acpi {
@@ -112,15 +127,15 @@ impl Acpi {
         let rev = rsdp.rev;
 
         if !rsdp.is_valid() {
-            return Err(AcpiError::InvalidSignatureError.into());
+            return Err(AcpiError::InvalidSignature.into());
         }
 
         if rev != 2 {
-            return Err(AcpiError::InvalidRevisionError(rev).into());
+            return Err(AcpiError::InvalidRevision(rev).into());
         }
 
         if !rsdp.is_valid_checksum() {
-            return Err(AcpiError::InvalidChecksumError.into());
+            return Err(AcpiError::InvalidChecksum.into());
         }
 
         self.rsdp_virt_addr = Some(rsdp_virt_addr);
@@ -130,7 +145,7 @@ impl Acpi {
     fn rsdp(&self) -> Result<&RootSystemDescriptorPointer> {
         self.rsdp_virt_addr
             .map(|addr| unsafe { &*(addr.as_ptr() as *const RootSystemDescriptorPointer) })
-            .ok_or(Error::NotInitialized)
+            .ok_or(Error::NotInitialized.into())
     }
 
     // XSDT header, entries
@@ -140,11 +155,11 @@ impl Acpi {
         let xsdt = unsafe { &*(xsdt_virt_addr.as_ptr() as *const DescriptionHeader) };
 
         if !xsdt.is_valid(XSDT_SIGNATURE) {
-            return Err(AcpiError::InvalidSignatureError.into());
+            return Err(AcpiError::InvalidSignature.into());
         }
 
         if !xsdt.is_valid_checksum() {
-            return Err(AcpiError::InvalidChecksumError.into());
+            return Err(AcpiError::InvalidChecksum.into());
         }
 
         // 4 bytes align

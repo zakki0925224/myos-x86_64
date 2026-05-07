@@ -4,7 +4,7 @@ use crate::{
         context::OutputContext,
         trb::{GenericTrbEntry, TrbRing, TrbType},
     },
-    error::{Error, Result},
+    error::{Error, Error_, Result},
     sync::{mutex::Mutex, volatile::Volatile},
     util::mmio::IoBox,
 };
@@ -127,7 +127,7 @@ impl DeviceContextBaseAddressArray {
             self.inner.as_mut().get_unchecked_mut().context[index] =
                 self.context[index]
                     .as_ref()
-                    .ok_or::<Error>("Output context not set".into())?
+                    .ok_or(Error::NotInitialized.with_context("output context"))?
                     .as_ref()
                     .get_ref() as *const _ as u64;
         }
@@ -267,7 +267,10 @@ impl RuntimeRegisters {
         let int_reg_set = self
             .int_reg_set
             .get_mut(index)
-            .ok_or(Error::IndexOutOfBoundsError(index))?;
+            .ok_or(Error::IndexOutOfBounds {
+                index,
+                len: Some(1024),
+            })?;
         int_reg_set.erst_size = 1;
         int_reg_set.erdp = ring.ring_phys_addr();
         int_reg_set.erst_base = ring.erst_phys_addr();
@@ -304,7 +307,7 @@ impl EventRingSegmentTableEntry {
                 .as_ref()
                 .num_trbs()
                 .try_into()
-                .or::<Error>(Err("Too large num trbs".into()))?;
+                .or::<Error_>(Err(Error::Overflow.with_context("num TRBs")))?;
         }
 
         Ok(erst)
@@ -353,7 +356,9 @@ impl EventRing {
         unsafe { self.ring.get_unchecked_mut() }.advance_index_notoggle(self.cycle_state_ours)?;
 
         unsafe {
-            let erdp = self.erdp.ok_or::<Error>("ERDP not set".into())?;
+            let erdp = self
+                .erdp
+                .ok_or(Error::NotInitialized.with_context("ERDP"))?;
             write_volatile(erdp, (trb_ptr as u64) | (*erdp & 0b1111));
         }
 
@@ -399,7 +404,7 @@ impl CommandRing {
     pub fn push(&mut self, mut src: GenericTrbEntry) -> Result<u64> {
         let ring = unsafe { self.ring.get_unchecked_mut() };
         if ring.current().cycle_state() != self.cycle_state_ours {
-            return Err("Command ring is full".into());
+            return Err(Error::BufferFull.with_context("Command ring"));
         }
 
         src.set_cycle_state(self.cycle_state_ours);
@@ -496,7 +501,7 @@ impl PortScEntry {
             UsbMode::FullSpeed | UsbMode::LowSpeed => Ok(8),
             UsbMode::HighSpeed => Ok(64),
             UsbMode::SuperSpeed => Ok(512),
-            _ => Err("Unknown Protocol speed ID".into()),
+            _ => Err(Error::InvalidData.with_context("protocol speed ID")),
         }
     }
 }

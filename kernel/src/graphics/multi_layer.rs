@@ -10,10 +10,27 @@ use core::{
 
 static LAYER_MAN: Mutex<LayerManager> = Mutex::new(LayerManager::new());
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum LayerError {
-    OutsideBufferAreaError { layer_id: usize, point: Point },
-    InvalidLayerIdError(usize),
+    OutsideBufferArea { layer_id: usize, point: Point },
+    InvalidLayerId(usize),
+}
+
+impl core::fmt::Display for LayerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OutsideBufferArea { layer_id, point } => {
+                write!(
+                    f,
+                    "Point {:?} is outside buffer area of layer {}",
+                    point, layer_id
+                )
+            }
+            Self::InvalidLayerId(id) => {
+                write!(f, "Invalid layer ID: {}", id)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -140,7 +157,7 @@ impl LayerManager {
 
     fn remove_layer(&mut self, layer_id: LayerId) -> Result<()> {
         if self.get_layer(layer_id).is_err() {
-            return Err(LayerError::InvalidLayerIdError(layer_id.0).into());
+            return Err(LayerError::InvalidLayerId(layer_id.0).into());
         }
 
         self.layers.retain(|l| l.id != layer_id);
@@ -151,7 +168,7 @@ impl LayerManager {
     fn bring_layer_to_front(&mut self, layer_id: LayerId) -> Result<()> {
         let index = match self.layers.iter().position(|l| l.id == layer_id) {
             Some(i) => i,
-            None => return Err(LayerError::InvalidLayerIdError(layer_id.0).into()),
+            None => return Err(LayerError::InvalidLayerId(layer_id.0).into()),
         };
         let layer = self.layers.remove(index);
 
@@ -177,7 +194,7 @@ impl LayerManager {
         self.layers
             .iter_mut()
             .find(|l| l.id == layer_id)
-            .ok_or(LayerError::InvalidLayerIdError(layer_id.0).into())
+            .ok_or(LayerError::InvalidLayerId(layer_id.0).into())
     }
 
     fn draw_to_frame_buf(&mut self) -> Result<()> {

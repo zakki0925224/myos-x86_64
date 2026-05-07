@@ -4,7 +4,7 @@ use crate::{
         VirtualAddress,
     },
     debug::dwarf::Dwarf,
-    error::Result,
+    error::{Error, Result},
     fs::vfs::{self, *},
     graphics::{multi_layer::LayerId, window_manager},
     kdebug,
@@ -192,11 +192,11 @@ impl Task {
             let header = elf64.header();
 
             if header.elf_type() != elf::Type::Executable {
-                return Err("The file is not an executable file".into());
+                return Err(Error::InvalidData.with_context("ELF type"));
             }
 
             if header.machine() != elf::Machine::X8664 {
-                return Err("Unsupported ISA".into());
+                return Err(Error::InvalidData.with_context("ELF machine"));
             }
 
             for program_header in elf64.program_headers() {

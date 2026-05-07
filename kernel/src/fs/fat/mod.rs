@@ -52,7 +52,7 @@ impl Fat {
         let dir = files
             .iter()
             .find(|f| f.attr == Attribute::Directory && f.name.trim() == dir_name)
-            .ok_or::<Error>("The directory does not exist".into())?;
+            .ok_or(Error::NotFound.with_context("directory"))?;
 
         Ok(dir.target_cluster_num)
     }
@@ -66,7 +66,7 @@ impl Fat {
         let file = files
             .iter()
             .find(|f| f.attr == Attribute::Archive && f.name.trim() == file_name)
-            .ok_or::<Error>("The file does not exist".into())?;
+            .ok_or(Error::NotFound.with_context("file"))?;
 
         let dir_entries = self
             .volume

@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use common::geometry::Size;
 
 //PSF font v2
@@ -129,7 +129,11 @@ impl PsfFont {
         let index = self.unicode_char_to_glyph_index(c);
 
         if index > self.glyphs_len {
-            return Err("Invalid glyph index".into());
+            return Err(Error::IndexOutOfBounds {
+                index,
+                len: Some(self.glyphs_len),
+            }
+            .into());
         }
 
         let offset = self.header_size + self.glyph_size * index;

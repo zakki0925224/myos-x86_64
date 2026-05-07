@@ -9,6 +9,51 @@ mod device;
 
 static PCI_BUS_DRIVER: Mutex<PciBusDriver> = Mutex::new(PciBusDriver::new());
 
+#[derive(Debug)]
+pub enum PciError {
+    DeviceNotFoundByBdf {
+        bus: usize,
+        device: usize,
+        func: usize,
+    },
+    DeviceNotFoundById {
+        vendor_id: u16,
+        device_id: u16,
+    },
+    InvalidConfigurationSpaceHeaderType(ConfigurationSpaceHeaderType),
+    FailedToReadMsiCapabilityFields,
+    MsiCapabilityFieldWasNotFound,
+}
+
+impl core::fmt::Display for PciError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::DeviceNotFoundByBdf { bus, device, func } => write!(
+                f,
+                "Device not found: 0x{:x}:0x{:x}:0x{:x}",
+                bus, device, func
+            ),
+            Self::DeviceNotFoundById {
+                vendor_id,
+                device_id,
+            } => write!(
+                f,
+                "Device not found: vendor: 0x{:x}, device: 0x{:x}",
+                vendor_id, device_id
+            ),
+            Self::InvalidConfigurationSpaceHeaderType(header_type) => write!(
+                f,
+                "Invalid configuration space header type: {:?}",
+                header_type
+            ),
+            Self::FailedToReadMsiCapabilityFields => {
+                write!(f, "Failed to read MSI capability fields")
+            }
+            Self::MsiCapabilityFieldWasNotFound => write!(f, "MSI capability field was not found"),
+        }
+    }
+}
+
 struct PciBusDriver {
     device_driver_info: DeviceDriverInfo,
     pci_devices: Vec<PciDevice>,
@@ -63,7 +108,7 @@ impl PciBusDriver {
         self.pci_devices
             .iter()
             .find(|d| d.bdf() == (bus, device, func))
-            .ok_or("PCI device not found".into())
+            .ok_or(PciError::DeviceNotFoundByBdf { bus, device, func }.into())
     }
 
     fn find_device_mut(
@@ -75,7 +120,7 @@ impl PciBusDriver {
         self.pci_devices
             .iter_mut()
             .find(|d| d.bdf() == (bus, device, func))
-            .ok_or("PCI device not found".into())
+            .ok_or(PciError::DeviceNotFoundByBdf { bus, device, func }.into())
     }
 
     fn find_devices_by_class_mut(
@@ -101,7 +146,13 @@ impl PciBusDriver {
                 let conf_space_header = d.read_conf_space_header().unwrap();
                 conf_space_header.vendor_id == vendor_id && conf_space_header.device_id == device_id
             })
-            .ok_or("PCI device not found".into())
+            .ok_or(
+                PciError::DeviceNotFoundById {
+                    vendor_id,
+                    device_id,
+                }
+                .into(),
+            )
     }
 }
 

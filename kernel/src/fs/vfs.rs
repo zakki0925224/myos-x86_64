@@ -45,7 +45,7 @@ impl FileDescriptorNumber {
 
     pub fn new_val(value: i32) -> Result<Self> {
         if value < 0 {
-            return Err("Invalid file descriptor number".into());
+            return Err(VirtualFileSystemError::InvalidFileDescriptorNumber.into());
         }
 
         Ok(Self(value as usize))
@@ -114,32 +114,74 @@ impl FileInfo {
 
     fn check_integrity(&self) -> Result<()> {
         if self.ty != VfsFileType::Directory && !self.children.is_empty() {
-            return Err("File must be a directory".into());
+            return Err(VirtualFileSystemError::InvalidFileType {
+                ty: self.ty.clone(),
+                path: None,
+            }
+            .into());
         }
 
         if self.fs.is_some() && self.ty != VfsFileType::Directory {
-            return Err("File system mountpoint must be a directory".into());
+            return Err(VirtualFileSystemError::InvalidFileType {
+                ty: self.ty.clone(),
+                path: None,
+            }
+            .into());
         }
 
         if self.name.is_empty() {
-            return Err("File name must not be empty".into());
+            return Err(VirtualFileSystemError::InvalidFileName.into());
         }
 
         if ["", Path::CURRENT_DIR, Path::PARENT_DIR].contains(&self.name.as_str()) {
-            return Err("File name is invalid".into());
+            return Err(VirtualFileSystemError::InvalidFileName.into());
         }
 
         Ok(())
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum VirtualFileSystemError {
-    NoSuchFileOrDirectoryError(Option<Path>),
-    FileOrDirectoryAlreadyExistsError(Path),
-    InvalidFileTypeError((VfsFileType, Option<Path>)),
-    BlockingFileResourceError(FileDescriptorNumber),
-    ReleasedFileResourceError(FileDescriptorNumber),
+    NoSuchFileOrDirectory(Option<Path>),
+    FileOrDirectoryAlreadyExists(Path),
+    InvalidFileType { ty: VfsFileType, path: Option<Path> },
+    BlockingFileResource(FileDescriptorNumber),
+    ReleasedFileResource(FileDescriptorNumber),
+    InvalidFileName,
+    InvalidFileDescriptorNumber,
+}
+
+impl core::fmt::Display for VirtualFileSystemError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoSuchFileOrDirectory(path) => {
+                write!(f, "No such file or directory")?;
+
+                if let Some(p) = path {
+                    write!(f, ": {}", p)?;
+                }
+
+                Ok(())
+            }
+            Self::FileOrDirectoryAlreadyExists(path) => {
+                write!(f, "File or directory already exists: {}", path)
+            }
+            Self::InvalidFileType { ty, path } => {
+                write!(f, "Invalid file type: Type: {:?}", ty)?;
+
+                if let Some(p) = path {
+                    write!(f, ", Path: {}", p)?;
+                }
+
+                Ok(())
+            }
+            Self::BlockingFileResource(fd) => write!(f, "Blocking file reousrce: {}", fd),
+            Self::ReleasedFileResource(fd) => write!(f, "Released file resource: {}", fd),
+            Self::InvalidFileName => write!(f, "Invalid file name"),
+            Self::InvalidFileDescriptorNumber => write!(f, "Invalid file descriptor number"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -249,9 +291,11 @@ impl VirtualFileSystem {
     fn files_by_path(&self, path: &Path) -> Result<Vec<&FileInfo>> {
         let mut files = Vec::new();
 
-        let (_, file_ref) = self.find_file_by_path(&path).ok_or(
-            VirtualFileSystemError::NoSuchFileOrDirectoryError(Some(path.clone())),
-        )?;
+        let (_, file_ref) =
+            self.find_file_by_path(&path)
+                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(Some(
+                    path.clone(),
+                )))?;
 
         for child_id in &file_ref.children {
             if let Some(child_ref) = self.find_file(*child_id) {
@@ -263,14 +307,16 @@ impl VirtualFileSystem {
     }
 
     fn chdir(&mut self, path: &Path) -> Result<()> {
-        let (file_id, file_ref) = self.find_file_by_path(path).ok_or(
-            VirtualFileSystemError::NoSuchFileOrDirectoryError(Some(path.clone())),
-        )?;
+        let (file_id, file_ref) =
+            self.find_file_by_path(path)
+                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(Some(
+                    path.clone(),
+                )))?;
         if file_ref.ty != VfsFileType::Directory {
-            return Err(VirtualFileSystemError::InvalidFileTypeError((
-                file_ref.ty.clone(),
-                Some(path.clone()),
-            ))
+            return Err(VirtualFileSystemError::InvalidFileType {
+                ty: file_ref.ty.clone(),
+                path: Some(path.clone()),
+            }
             .into());
         }
 
@@ -281,18 +327,18 @@ impl VirtualFileSystem {
 
     fn add_file(&mut self, path: &Path, file_ty: VfsFileType) -> Result<()> {
         if self.root_id.is_none() {
-            return Err(Error::NotInitialized);
+            return Err(Error::NotInitialized.into());
         }
 
         let (parent_id, parent_ref) = self.find_file_by_path(&path.parent()).ok_or(
-            VirtualFileSystemError::NoSuchFileOrDirectoryError(Some(path.clone())),
+            VirtualFileSystemError::NoSuchFileOrDirectory(Some(path.clone())),
         )?;
 
         if parent_ref.ty != VfsFileType::Directory {
-            return Err(VirtualFileSystemError::InvalidFileTypeError((
-                parent_ref.ty.clone(),
-                Some(path.clone()),
-            ))
+            return Err(VirtualFileSystemError::InvalidFileType {
+                ty: parent_ref.ty.clone(),
+                path: Some(path.clone()),
+            }
             .into());
         }
 
@@ -302,9 +348,7 @@ impl VirtualFileSystem {
             .iter()
             .any(|id| self.find_file(*id).map_or(false, |f| f.name == file_name))
         {
-            return Err(
-                VirtualFileSystemError::FileOrDirectoryAlreadyExistsError(path.clone()).into(),
-            );
+            return Err(VirtualFileSystemError::FileOrDirectoryAlreadyExists(path.clone()).into());
         }
 
         let file_id = VfsFileId::new();
@@ -330,14 +374,14 @@ impl VirtualFileSystem {
 
     fn mount_fs(&mut self, path: &Path, fs: FileSystem) -> Result<()> {
         let (mp_file_id, mp_file_ref) = self.find_file_by_path_mut(path).ok_or(
-            VirtualFileSystemError::NoSuchFileOrDirectoryError(Some(path.clone())),
+            VirtualFileSystemError::NoSuchFileOrDirectory(Some(path.clone())),
         )?;
 
         if mp_file_ref.ty != VfsFileType::Directory {
-            return Err(VirtualFileSystemError::InvalidFileTypeError((
-                mp_file_ref.ty.clone(),
-                Some(path.clone()),
-            ))
+            return Err(VirtualFileSystemError::InvalidFileType {
+                ty: mp_file_ref.ty.clone(),
+                path: Some(path.clone()),
+            }
             .into());
         }
 
@@ -453,27 +497,25 @@ impl VirtualFileSystem {
         } else if create {
             self.add_file(path, VfsFileType::VirtualFile)?;
             (file_id, file_ref) = self.find_file_by_path(path).ok_or(
-                VirtualFileSystemError::NoSuchFileOrDirectoryError(Some(path.clone())),
+                VirtualFileSystemError::NoSuchFileOrDirectory(Some(path.clone())),
             )?;
         } else {
-            return Err(
-                VirtualFileSystemError::NoSuchFileOrDirectoryError(Some(path.clone())).into(),
-            );
+            return Err(VirtualFileSystemError::NoSuchFileOrDirectory(Some(path.clone())).into());
         }
 
         match &file_ref.ty {
             VfsFileType::VirtualFile | VfsFileType::DeviceFile(_) => (),
             _ => {
-                return Err(VirtualFileSystemError::InvalidFileTypeError((
-                    file_ref.ty.clone(),
-                    Some(path.clone()),
-                ))
+                return Err(VirtualFileSystemError::InvalidFileType {
+                    ty: file_ref.ty.clone(),
+                    path: Some(path.clone()),
+                }
                 .into());
             }
         }
 
         if let Some(fd) = self.fds.iter().find(|fd| fd.file_id == file_id) {
-            return Err(VirtualFileSystemError::BlockingFileResourceError(fd.num).into());
+            return Err(VirtualFileSystemError::BlockingFileResource(fd.num).into());
         }
 
         let fd_num = FileDescriptorNumber::new();
@@ -500,7 +542,7 @@ impl VirtualFileSystem {
             let file_id = self.fds[index].file_id;
             let file_ref = self
                 .find_file(file_id)
-                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectoryError(None))?;
+                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
 
             // device file
             match &file_ref.ty {
@@ -512,7 +554,7 @@ impl VirtualFileSystem {
 
             self.fds.remove(index);
         } else {
-            return Err(VirtualFileSystemError::ReleasedFileResourceError(fd_num).into());
+            return Err(VirtualFileSystemError::ReleasedFileResource(fd_num).into());
         }
 
         Ok(())
@@ -526,15 +568,15 @@ impl VirtualFileSystem {
         {
             fd
         } else {
-            return Err(VirtualFileSystemError::ReleasedFileResourceError(fd_num).into());
+            return Err(VirtualFileSystemError::ReleasedFileResource(fd_num).into());
         };
 
         let file_ref = self
             .find_file(fd.file_id)
-            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectoryError(None))?;
+            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
         let file_path = self
             .abs_path_by_file(file_ref)
-            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectoryError(None))?;
+            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
         match &file_ref.ty {
             VfsFileType::VirtualFile => {
                 if let Some(data) = &file_ref.data {
@@ -551,10 +593,10 @@ impl VirtualFileSystem {
                 }
             }
             VfsFileType::DeviceFile(desc) => (desc.read)(),
-            _ => Err(VirtualFileSystemError::InvalidFileTypeError((
-                file_ref.ty.clone(),
-                Some(file_path),
-            ))
+            _ => Err(VirtualFileSystemError::InvalidFileType {
+                ty: file_ref.ty.clone(),
+                path: Some(file_path),
+            }
             .into()),
         }
     }
@@ -567,7 +609,7 @@ impl VirtualFileSystem {
         {
             fd
         } else {
-            return Err(VirtualFileSystemError::ReleasedFileResourceError(fd_num).into());
+            return Err(VirtualFileSystemError::ReleasedFileResource(fd_num).into());
         };
 
         let file_id = fd.file_id;
@@ -575,15 +617,15 @@ impl VirtualFileSystem {
         {
             let file_ref = self
                 .find_file(file_id)
-                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectoryError(None))?;
+                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
             file_path = self
                 .abs_path_by_file(file_ref)
-                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectoryError(None))?;
+                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
         }
 
         let file_ref_mut = self
             .find_file_mut(file_id)
-            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectoryError(None))?;
+            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
 
         match &mut file_ref_mut.ty {
             VfsFileType::VirtualFile => {
@@ -597,10 +639,10 @@ impl VirtualFileSystem {
             }
             VfsFileType::DeviceFile(desc) => (desc.write)(data)?,
             _ => {
-                return Err(VirtualFileSystemError::InvalidFileTypeError((
-                    file_ref_mut.ty.clone(),
-                    Some(file_path),
-                ))
+                return Err(VirtualFileSystemError::InvalidFileType {
+                    ty: file_ref_mut.ty.clone(),
+                    path: Some(file_path),
+                }
                 .into())
             }
         }
@@ -616,15 +658,15 @@ impl VirtualFileSystem {
         {
             fd
         } else {
-            return Err(VirtualFileSystemError::ReleasedFileResourceError(fd_num).into());
+            return Err(VirtualFileSystemError::ReleasedFileResource(fd_num).into());
         };
 
         let file_ref = self
             .find_file(fd.file_id)
-            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectoryError(None))?;
+            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
         let file_path = self
             .abs_path_by_file(file_ref)
-            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectoryError(None))?;
+            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
         match &file_ref.ty {
             VfsFileType::VirtualFile => {
                 if let Some(data) = &file_ref.data {
@@ -644,10 +686,10 @@ impl VirtualFileSystem {
                 let len = (desc.read)()?.len();
                 Ok(len)
             }
-            _ => Err(VirtualFileSystemError::InvalidFileTypeError((
-                file_ref.ty.clone(),
-                Some(file_path),
-            ))
+            _ => Err(VirtualFileSystemError::InvalidFileType {
+                ty: file_ref.ty.clone(),
+                path: Some(file_path),
+            }
             .into()),
         }
     }

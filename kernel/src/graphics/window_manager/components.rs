@@ -1,6 +1,6 @@
 use crate::{
     arch::VirtualAddress,
-    error::Result,
+    error::{Error, Result},
     fs::file::bitmap::BitmapImage,
     graphics::{
         color::ColorCode,
@@ -149,7 +149,7 @@ impl Image {
         always_on_top: bool,
     ) -> Result<Self> {
         if !bitmap_image.is_valid() {
-            return Err("Invalid bitmap image".into());
+            return Err(Error::InvalidData.with_context("bitmap_image"));
         }
 
         let mut layer = multi_layer::create_layer_from_bitmap_image(pos, bitmap_image)?;
@@ -351,7 +351,7 @@ impl Window {
             self.children.remove(pos);
             Ok(())
         } else {
-            Err("Child component not found".into())
+            Err(Error::NotFound.with_context("Child component"))
         }
     }
 }

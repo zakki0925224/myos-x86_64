@@ -4,23 +4,20 @@ use crate::{
     kdebug,
 };
 
-fn is_available() -> bool {
-    let info = cpu::version_info();
-    info.feature_tsc
-}
-
 fn calc_freq() -> Result<u64> {
-    if !is_available() {
-        return Err("TSC not available".into());
-    }
-
     let start = x86_64::rdtsc();
     acpi::pm_timer_wait_ms(1)?;
     let end = x86_64::rdtsc();
     Ok((end - start) * 1000)
 }
 
-pub fn check_available() {
+pub fn init() {
+    // check TSC available
+    let info = cpu::version_info();
+    if !info.feature_tsc {
+        panic!("TSC not available");
+    }
+
     let tsc_freq = calc_freq().unwrap();
     kdebug!("tsc: Timer frequency: {}Hz (variant)", tsc_freq);
 }

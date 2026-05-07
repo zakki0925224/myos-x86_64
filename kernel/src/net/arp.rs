@@ -1,5 +1,5 @@
 use crate::{
-    error::{Error, Result},
+    error::{Error, Error_, Result},
     net::eth::*,
 };
 use alloc::vec::Vec;
@@ -21,13 +21,13 @@ impl From<ArpOperation> for [u8; 2] {
 }
 
 impl TryFrom<[u8; 2]> for ArpOperation {
-    type Error = Error;
+    type Error = Error_;
 
     fn try_from(value: [u8; 2]) -> Result<Self> {
         match value {
             [0, 1] => Ok(ArpOperation::Request),
             [0, 2] => Ok(ArpOperation::Reply),
-            _ => Err("Invalid ARP operation".into()),
+            _ => Err(Error::InvalidData.into()),
         }
     }
 }
@@ -48,9 +48,12 @@ pub struct ArpPacket {
 impl TryFrom<&[u8]> for ArpPacket {
     type Error = Error;
 
-    fn try_from(data: &[u8]) -> Result<Self> {
+    fn try_from(data: &[u8]) -> core::result::Result<Self, Error> {
         if data.len() < 28 {
-            return Err("Invalid data length".into());
+            return Err(Error::InvalidBufferSize {
+                required: 28,
+                actual: data.len(),
+            });
         }
 
         let hardware_ty = [data[0], data[1]];
@@ -101,7 +104,7 @@ impl ArpPacket {
     }
 
     pub fn op(&self) -> Result<ArpOperation> {
-        ArpOperation::try_from(self.op)
+        Ok(ArpOperation::try_from(self.op)?)
     }
 
     pub fn to_vec(&self) -> Vec<u8> {

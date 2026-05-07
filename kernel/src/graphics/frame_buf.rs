@@ -30,7 +30,7 @@ impl Draw for FrameBuffer {
     }
 
     fn format(&self) -> Result<PixelFormat> {
-        self.format.ok_or_else(|| Error::NotInitialized)
+        self.format.ok_or_else(|| Error::NotInitialized.into())
     }
 
     fn buf_ptr(&self) -> Result<*const u32> {

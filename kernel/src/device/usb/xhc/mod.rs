@@ -32,7 +32,7 @@ pub mod trb;
 
 static XHC_DRIVER: Mutex<XhcDriver> = Mutex::new(XhcDriver::new());
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug)]
 pub enum XhcDriverError {
     InvalidRegisterAddress,
     RegisterNotInitialized,
@@ -42,6 +42,23 @@ pub enum XhcDriverError {
     CommandRingNotInitialized,
     PortScNotInitialized,
     PortNotConnected(usize),
+}
+
+impl core::fmt::Display for XhcDriverError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidRegisterAddress => write!(f, "Invalid register address"),
+            Self::RegisterNotInitialized => write!(f, "Register not initialized"),
+            Self::HostControllerIsNotHalted => write!(f, "Host controller is not halted"),
+            Self::EventRingNotInitialized => write!(f, "Event ring not initialized"),
+            Self::DeviceContextBaseAddressArrayNotInitialized => {
+                write!(f, "Device context base address array not initialized")
+            }
+            Self::CommandRingNotInitialized => write!(f, "Command ring not initialized"),
+            Self::PortScNotInitialized => write!(f, "PortSC not initialized"),
+            Self::PortNotConnected(port) => write!(f, "Port {} not connected", port),
+        }
+    }
 }
 
 pub trait XhcRequestFunction {
@@ -149,7 +166,7 @@ impl XhcDriver {
     fn doorbell(&self, index: usize) -> Result<&Rc<Doorbell>> {
         self.doorbell_regs
             .get(index)
-            .ok_or(Error::IndexOutOfBoundsError(index))
+            .ok_or(Error::IndexOutOfBounds { index, len: None }.into())
     }
 
     fn notify(&self) -> Result<()> {
@@ -299,10 +316,10 @@ impl XhcDriver {
     fn init_port(&mut self, port: usize) -> Result<u8> {
         let driver_name = self.device_driver_info.name;
 
-        let e = self
-            .portsc()?
-            .get(port)
-            .ok_or(Error::IndexOutOfBoundsError(port))?;
+        let e = self.portsc()?.get(port).ok_or(Error::IndexOutOfBounds {
+            index: port,
+            len: None,
+        })?;
         if !e.ccs() {
             return Err(XhcDriverError::PortNotConnected(port).into());
         }
@@ -345,10 +362,10 @@ impl XhcDriver {
         input_context.as_mut().set_root_hub_port_num(port)?;
         input_context.as_mut().set_last_valid_dci(1)?;
 
-        let portsc_e = self
-            .portsc()?
-            .get(port)
-            .ok_or(Error::IndexOutOfBoundsError(port))?;
+        let portsc_e = self.portsc()?.get(port).ok_or(Error::IndexOutOfBounds {
+            index: port,
+            len: None,
+        })?;
         let port_speed = portsc_e.port_speed();
         ktrace!("{:?}", port_speed);
         input_context.as_mut().set_port_speed(port_speed)?;
@@ -858,7 +875,7 @@ impl DeviceDriverFunction for XhcDriver {
 
     fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
         if self.pci_device_bdf.is_none() {
-            return Err("Device driver is not probed".into());
+            return Err(Error::NotFound.with_context("Proved device"));
         }
 
         let driver_name = self.device_driver_info.name;
@@ -928,7 +945,7 @@ impl DeviceDriverFunction for XhcDriver {
 
     fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
         if !self.device_driver_info.attached {
-            return Err("Device driver is not attached".into());
+            return Err(Error::NotInitialized.into());
         }
 
         let driver_name = self.device_driver_info.name;

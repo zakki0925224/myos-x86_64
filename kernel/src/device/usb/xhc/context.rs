@@ -1,4 +1,8 @@
-use crate::{device::usb::xhc::register::UsbMode, error::Result, sync::volatile::Volatile};
+use crate::{
+    device::usb::xhc::register::UsbMode,
+    error::{Error, Result},
+    sync::volatile::Volatile,
+};
 use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,7 +61,7 @@ impl EndpointContext {
             self.data[1] |= error_count << 1;
             Ok(())
         } else {
-            Err("Invalid error count".into())
+            Err(Error::InvalidData.with_context("error count"))
         }
     }
 
@@ -73,7 +77,7 @@ impl EndpointContext {
             self.data[1] |= raw_ep_type << 3;
             Ok(())
         } else {
-            Err("Invalid endpoint type".into())
+            Err(Error::InvalidData.with_context("endpoint type"))
         }
     }
 }
@@ -93,7 +97,11 @@ impl DeviceContext {
             self.slot_context[0] |= mode.psi() << 20;
             Ok(())
         } else {
-            Err("Psi out of range".into())
+            Err(Error::IndexOutOfBounds {
+                index: mode.psi() as usize,
+                len: Some(16),
+            }
+            .into())
         }
     }
 
@@ -103,7 +111,11 @@ impl DeviceContext {
             self.slot_context[0] |= (dci as u32) << 27;
             Ok(())
         } else {
-            Err("DCI out of range".into())
+            Err(Error::IndexOutOfBounds {
+                index: dci,
+                len: Some(32),
+            }
+            .with_context("DCI"))
         }
     }
 
@@ -113,7 +125,12 @@ impl DeviceContext {
             self.slot_context[1] |= (port as u32) << 16;
             Ok(())
         } else {
-            Err("Port number out of range".into())
+            Err(Error::OutOfRange {
+                value: port,
+                min: 1,
+                max: 255,
+            }
+            .with_context("Root hub port"))
         }
     }
 }
@@ -140,7 +157,11 @@ impl InputControlContext {
             self.add_context_bitmap |= 1 << ici;
             Ok(())
         } else {
-            Err("ICI out of range".into())
+            Err(Error::IndexOutOfBounds {
+                index: ici,
+                len: Some(32),
+            }
+            .with_context("ICI"))
         }
     }
 }

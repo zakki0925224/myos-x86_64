@@ -1,7 +1,7 @@
 use crate::{
     arch::{x86_64, IoPortAddress},
     device::{tty, DeviceDriverFunction, DeviceDriverInfo},
-    error::Result,
+    error::{Error, Result},
     kinfo,
     sync::mutex::Mutex,
 };
@@ -73,7 +73,7 @@ impl UartDriver {
     fn io_port_addr(&self) -> Result<&IoPortAddress> {
         self.io_port_addr
             .as_ref()
-            .ok_or("Serial port is not initialized".into())
+            .ok_or(Error::NotInitialized.with_context("io_port_addr"))
     }
 }
 
@@ -104,7 +104,7 @@ impl DeviceDriverFunction for UartDriver {
         io_port_addr.offset(0).out8(0xae); // RBR - test the serial chip (send 0xae)
 
         if io_port_addr.offset(0).in8() != 0xae {
-            return Err("Failed to initialize serial port".into());
+            return Err(Error::InvalidData.with_context("serial port initialization"));
         }
 
         // if serial isn't faulty, set normal mode
@@ -118,7 +118,7 @@ impl DeviceDriverFunction for UartDriver {
 
     fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
         if !self.device_driver_info.attached {
-            return Err("Device driver is not attached".into());
+            return Err(Error::NotInitialized.into());
         }
 
         Ok(self.receive_data())

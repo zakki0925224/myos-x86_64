@@ -4,7 +4,7 @@ use crate::{
         IoPortAddress,
     },
     debug, device,
-    error::Result,
+    error::{Error, Result},
     kerror, kinfo,
     mem::paging,
     sync::mutex::Mutex,
@@ -225,12 +225,16 @@ impl InterruptDescriptorTable {
         allow_in_user_mode: bool,
     ) -> Result<()> {
         if vec_num >= IDT_LEN {
-            return Err("Invalid interrupt vector number".into());
+            return Err(Error::IndexOutOfBounds {
+                index: vec_num,
+                len: Some(IDT_LEN),
+            }
+            .with_context("Interrupt vector number"));
         }
 
         let desc = &mut self.entries[vec_num];
         if !desc.is_null() {
-            return Err("Interrupt handler already set".into());
+            return Err(Error::AlreadyExists.with_context("Interrupt vector"));
         }
         desc.set_handler(handler, gate_type, allow_in_user_mode);
 
@@ -250,7 +254,7 @@ impl InterruptDescriptorTable {
             }
         }
 
-        Err("No available interrupt vector".into())
+        Err(Error::BufferFull.with_context("Interrupt vector"))
     }
 
     fn load(&self) {
@@ -386,54 +390,60 @@ pub fn init_pic() {
     kinfo!("idt: PIC initialized");
 }
 
-pub fn init_idt() -> Result<()> {
-    let mut idt = IDT.try_lock()?;
+pub fn init() {
+    let mut idt = IDT.try_lock().unwrap();
     idt.set_handler(
         VEC_DEBUG,
         InterruptHandler::General(debug_handler),
         GateType::Trap,
         true,
-    )?;
+    )
+    .unwrap();
     idt.set_handler(
         VEC_BREAKPOINT,
         InterruptHandler::General(breakpoint_handler),
         GateType::Trap,
         true,
-    )?;
+    )
+    .unwrap();
     idt.set_handler(
         VEC_GENERAL_PROTECTION,
         InterruptHandler::WithErrorCode(general_protection_fault_handler),
         GateType::Interrupt,
         true,
-    )?;
+    )
+    .unwrap();
     idt.set_handler(
         VEC_PAGE_FAULT,
         InterruptHandler::PageFault(page_fault_handler),
         GateType::Interrupt,
         true,
-    )?;
+    )
+    .unwrap();
     idt.set_handler(
         VEC_DOUBLE_FAULT,
         InterruptHandler::WithErrorCode(double_fault_handler),
         GateType::Interrupt,
         false,
-    )?;
+    )
+    .unwrap();
     idt.set_handler(
         VEC_PS2_KBD,
         InterruptHandler::General(device::ps2_keyboard::poll_int_ps2_kbd_driver),
         GateType::Interrupt,
         false,
-    )?;
+    )
+    .unwrap();
     idt.set_handler(
         VEC_PS2_MOUSE,
         InterruptHandler::General(device::ps2_mouse::poll_int_ps2_mouse_driver),
         GateType::Interrupt,
         false,
-    )?;
+    )
+    .unwrap();
     idt.load();
 
     kinfo!("idt: Initialized");
-    Ok(())
 }
 
 pub fn set_handler(vec_num: usize, handler: InterruptHandler, gate_type: GateType) -> Result<()> {

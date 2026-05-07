@@ -1,6 +1,6 @@
 use crate::{
     arch::x86_64,
-    error::{Error, Result},
+    error::Result,
     mem::{bitmap, paging::PAGE_SIZE},
     sync::mutex::Mutex,
 };
@@ -14,9 +14,25 @@ const HEAP_SIZE: usize = 1024 * 1024 * 128; // 128MiB
 #[global_allocator]
 static mut ALLOCATOR: LinkedListAllocator = LinkedListAllocator::empty();
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum AllocationError {
-    LayoutError(Layout),
+    InvalidLayout(Layout),
+    InvalidNode,
+    NoCursor,
+    NoNextCursor,
+    NullCursor,
+}
+
+impl core::fmt::Display for AllocationError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidLayout(layout) => write!(f, "Invalid layout: {:?}", layout),
+            Self::InvalidNode => write!(f, "Invalid node"),
+            Self::NoCursor => write!(f, "No cursor"),
+            Self::NoNextCursor => write!(f, "No next cursor"),
+            Self::NullCursor => write!(f, "Null cursor"),
+        }
+    }
 }
 
 // reference: https://github.com/rust-osdev/linked-list-allocator
@@ -95,18 +111,18 @@ impl HoleList {
 
     fn alloc_first_fit(&mut self, layout: Layout) -> Result<(NonNull<u8>, Layout)> {
         let aligned_layout = Self::align_layout(layout)?;
-        let mut cursor = self.cursor().ok_or::<Error>("No cursor".into())?;
+        let mut cursor = self.cursor().ok_or(AllocationError::NoCursor)?;
 
         loop {
             match cursor.split_current(aligned_layout) {
                 Ok((ptr, _len)) => {
                     return Ok((
-                        NonNull::new(ptr).ok_or::<Error>("Pointer is null".into())?,
+                        NonNull::new(ptr).ok_or(AllocationError::NullCursor)?,
                         aligned_layout,
                     ));
                 }
                 Err(curs) => {
-                    cursor = curs.next().ok_or::<Error>("No next cursor".into())?;
+                    cursor = curs.next().ok_or(AllocationError::NoNextCursor)?;
                 }
             }
         }
@@ -129,7 +145,7 @@ impl HoleList {
         }
         let size = align_up_size(size, align_of::<Hole>());
         let new_layout = Layout::from_size_align(size, layout.align())
-            .map_err(|_| AllocationError::LayoutError(layout))?;
+            .map_err(|_| AllocationError::InvalidLayout(layout))?;
         Ok(new_layout)
     }
 }
@@ -306,7 +322,7 @@ impl Cursor {
                 let node_u8 = node_u8 as *const u8;
                 assert!(node_u8.wrapping_add(node_size) <= next.as_ptr().cast::<u8>());
             } else {
-                return Err("Invalid node".into());
+                return Err(AllocationError::InvalidNode.into());
             }
         }
 
@@ -505,7 +521,7 @@ fn dealloc(list: &mut HoleList, addr: *mut u8, size: usize) -> Result<()> {
         Ok(cursor) => (cursor, 1),
         Err(mut curosr) => {
             while let Err(_) = curosr.try_insert_after(hole) {
-                curosr = curosr.next().ok_or::<Error>("No next cursor".into())?;
+                curosr = curosr.next().ok_or(AllocationError::NoNextCursor)?;
             }
             (curosr, 2)
         }

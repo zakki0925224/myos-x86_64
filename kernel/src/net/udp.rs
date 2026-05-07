@@ -47,7 +47,10 @@ impl TryFrom<&[u8]> for UdpPacket {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() < 8 {
-            return Err("Invalid data length".into());
+            return Err(Error::InvalidBufferSize {
+                required: 8,
+                actual: value.len(),
+            });
         }
 
         let src_port = u16::from_be_bytes([value[0], value[1]]);

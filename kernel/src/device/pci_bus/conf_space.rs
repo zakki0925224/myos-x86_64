@@ -1,6 +1,6 @@
 use crate::{
     arch::{x86_64::registers::*, IoPortAddress, PhysicalAddress},
-    error::Result,
+    error::{Error, Result},
     mem::paging::{self, *},
 };
 use alloc::vec::Vec;
@@ -9,6 +9,7 @@ use pci_ids::*;
 
 const PCI_PORT_CONF_REG_ADDR: IoPortAddress = IoPortAddress::new(0xcf8);
 const PCI_PORT_CONF_DATA_REG_ADDR: IoPortAddress = IoPortAddress::new(0xcfc);
+const PCI_CONF_SPACE_BASE: u32 = 0x80000000;
 const PCI_DEVICE_NON_EXIST: u16 = 0xffff;
 pub const PCI_DEVICE_BUS_LEN: usize = 256;
 pub const PCI_DEVICE_DEVICE_LEN: usize = 32;
@@ -460,15 +461,42 @@ impl MsiCapabilityField {
 }
 
 pub fn read_conf_space(bus: usize, device: usize, func: usize, byte_offset: usize) -> Result<u32> {
-    if bus >= PCI_DEVICE_BUS_LEN
-        || device >= PCI_DEVICE_DEVICE_LEN
-        || func >= PCI_DEVICE_FUNC_LEN
-        || byte_offset % 4 != 0
-    {
-        return Err("Invalid args".into());
+    if bus >= PCI_DEVICE_BUS_LEN {
+        return Err(Error::OutOfRange {
+            value: bus,
+            min: 0,
+            max: PCI_DEVICE_BUS_LEN - 1,
+        }
+        .with_context("bus"));
     }
 
-    let addr = 0x80000000
+    if device >= PCI_DEVICE_DEVICE_LEN {
+        return Err(Error::OutOfRange {
+            value: device,
+            min: 0,
+            max: PCI_DEVICE_DEVICE_LEN - 1,
+        }
+        .with_context("device"));
+    }
+
+    if func >= PCI_DEVICE_FUNC_LEN {
+        return Err(Error::OutOfRange {
+            value: func,
+            min: 0,
+            max: PCI_DEVICE_FUNC_LEN - 1,
+        }
+        .with_context("func"));
+    }
+
+    if byte_offset % 4 != 0 {
+        return Err(Error::NotAligned {
+            value: byte_offset,
+            align: 4,
+        }
+        .with_context("byte_offset"));
+    }
+
+    let addr = PCI_CONF_SPACE_BASE
         | (bus as u32) << 16
         | (device as u32) << 11
         | (func as u32) << 8
@@ -485,15 +513,42 @@ pub fn write_conf_space(
     byte_offset: usize,
     data: u32,
 ) -> Result<()> {
-    if bus >= PCI_DEVICE_BUS_LEN
-        || device >= PCI_DEVICE_DEVICE_LEN
-        || func >= PCI_DEVICE_FUNC_LEN
-        || byte_offset % 4 != 0
-    {
-        return Err("Invalid args".into());
+    if bus >= PCI_DEVICE_BUS_LEN {
+        return Err(Error::OutOfRange {
+            value: bus,
+            min: 0,
+            max: PCI_DEVICE_BUS_LEN - 1,
+        }
+        .with_context("bus"));
     }
 
-    let addr = 0x80000000
+    if device >= PCI_DEVICE_DEVICE_LEN {
+        return Err(Error::OutOfRange {
+            value: device,
+            min: 0,
+            max: PCI_DEVICE_DEVICE_LEN - 1,
+        }
+        .with_context("device"));
+    }
+
+    if func >= PCI_DEVICE_FUNC_LEN {
+        return Err(Error::OutOfRange {
+            value: func,
+            min: 0,
+            max: PCI_DEVICE_FUNC_LEN - 1,
+        }
+        .with_context("func"));
+    }
+
+    if byte_offset % 4 != 0 {
+        return Err(Error::NotAligned {
+            value: byte_offset,
+            align: 4,
+        }
+        .with_context("byte_offset"));
+    }
+
+    let addr = PCI_CONF_SPACE_BASE
         | (bus as u32) << 16
         | (device as u32) << 11
         | (func as u32) << 8

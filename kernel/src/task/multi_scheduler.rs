@@ -1,7 +1,7 @@
 use crate::{
     arch::{x86_64::context::ContextMode, VirtualAddress},
     debug::dwarf::Dwarf,
-    error::Result,
+    error::{Error, Result},
     fs::vfs::FileDescriptorNumber,
     graphics::multi_layer::LayerId,
     kdebug,
@@ -82,31 +82,31 @@ impl MultiTaskScheduler {
     }
 
     fn push_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or("No running task")?;
+        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.created_layer_ids.push(layer_id);
         Ok(())
     }
 
     fn remove_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or("No running task")?;
+        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.created_layer_ids.retain(|id| *id != layer_id);
         Ok(())
     }
 
     fn push_fd_num(&mut self, fd_num: FileDescriptorNumber) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or("No running task")?;
+        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.opend_fd_num.push(fd_num);
         Ok(())
     }
 
     fn remove_fd_num(&mut self, fd_num: FileDescriptorNumber) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or("No running task")?;
+        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.opend_fd_num.retain(|fd| *fd != fd_num);
         Ok(())
     }
 
     fn push_allocated_mem_frame_info(&mut self, mem_frame_info: MemoryFrameInfo) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or("No running task")?;
+        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.allocated_mem_frame_info.push(mem_frame_info);
         Ok(())
     }
@@ -115,7 +115,7 @@ impl MultiTaskScheduler {
         &mut self,
         virt_addr: VirtualAddress,
     ) -> Result<Option<usize>> {
-        let task = self.running_task.as_mut().ok_or("No running task")?;
+        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
         for mem_frame_info in &task.resource.allocated_mem_frame_info {
             if mem_frame_info.frame_start_virt_addr()? == virt_addr {
                 return Ok(Some(mem_frame_info.frame_size));
@@ -128,17 +128,17 @@ impl MultiTaskScheduler {
         &mut self,
         virt_addr: VirtualAddress,
     ) -> Result<MemoryFrameInfo> {
-        let task = self.running_task.as_mut().ok_or("No running task")?;
+        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
         let allocated_mem_frame_info = &mut task.resource.allocated_mem_frame_info;
 
         if let Some(index) = allocated_mem_frame_info
             .iter()
-            .position(|info| info.frame_start_virt_addr() == Ok(virt_addr))
+            .position(|info| info.frame_start_virt_addr().ok() == Some(virt_addr))
         {
             return Ok(allocated_mem_frame_info.remove(index));
         }
 
-        Err("Invalid virtual address".into())
+        Err(Error::InvalidData.with_context("virtual address"))
     }
 
     fn debug_running_task(&self) -> bool {

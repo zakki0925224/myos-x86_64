@@ -58,7 +58,7 @@ impl IomsgHeaderExt for iomsg_header {
             IOMSG_CMD_REMOVE_COMPONENT => Ok(IomsgCommand::RemoveComponent),
             IOMSG_CMD_CREATE_COMPONENT_WINDOW => Ok(IomsgCommand::CreateComponentWindow),
             IOMSG_CMD_CREATE_COMPONENT_IMAGE => Ok(IomsgCommand::CreateComponentImage),
-            _ => Err("Invalid command ID".into()),
+            _ => Err(Error::InvalidData.with_context("syscall command ID")),
         }
     }
 }
@@ -384,7 +384,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
 
     match fd_num {
         FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => {
-            return Err("fd is not defined".into());
+            return Err(Error::NotFound.with_context("file descriptor"));
         }
         FileDescriptorNumber::STDIN => {
             if buf_len > 1 {
@@ -399,7 +399,11 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
                 let c_s = util::cstring::into_cstring_bytes_with_nul(&input_s.unwrap());
 
                 if buf_len < c_s.len() {
-                    return Err("buffer is too small".into());
+                    return Err(Error::InvalidBufferSize {
+                        required: c_s.len(),
+                        actual: buf_len,
+                    }
+                    .into());
                 }
 
                 unsafe {
@@ -418,7 +422,11 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
                 }
 
                 if buf_len < 1 {
-                    return Err("buffer is too small".into());
+                    return Err(Error::InvalidBufferSize {
+                        required: 1,
+                        actual: buf_len,
+                    }
+                    .into());
                 }
 
                 unsafe {
@@ -434,7 +442,11 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
             let data = vfs::read_file(fd)?;
 
             if buf_len < data.len() {
-                return Err("buffer is too small".into());
+                return Err(Error::InvalidBufferSize {
+                    required: data.len(),
+                    actual: buf_len,
+                }
+                .into());
             }
 
             unsafe {
@@ -457,7 +469,7 @@ fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<usize> {
             Ok(buf_len)
         }
         FileDescriptorNumber::STDIN => {
-            return Err("cannot write data to stdin".into());
+            return Err(Error::InvalidData.with_context("stdin write"));
         }
         fd => {
             vfs::write_file(fd, buf_slice)?;
@@ -500,7 +512,7 @@ fn sys_close(fd_num: i32) -> Result<()> {
         }
     }
 
-    Err("Invalid file descriptor".into())
+    Err(Error::InvalidData.with_context("file descriptor"))
 }
 
 fn sys_exit(status: i32) {
@@ -598,7 +610,11 @@ fn sys_getcwd(buf: *mut u8, buf_len: usize) -> Result<()> {
     let cwd_s = util::cstring::into_cstring_bytes_with_nul(cwd.as_str());
 
     if buf_len < cwd_s.len() {
-        return Err("Buffer is too small".into());
+        return Err(Error::InvalidBufferSize {
+            required: cwd_s.len(),
+            actual: buf_len,
+        }
+        .into());
     }
 
     unsafe {
@@ -639,7 +655,7 @@ fn sys_sbrksz(target: *const u8) -> Result<usize> {
         unreachable!()
     };
 
-    let size = size.ok_or::<Error>("Failed to get memory frame size".into())?;
+    let size = size.ok_or(Error::NotFound.with_context("memory frame size"))?;
     Ok(size)
 }
 
@@ -656,7 +672,11 @@ fn sys_getenames(path: *const u8, buf: *mut u8, buf_len: usize) -> Result<()> {
         .collect();
 
     if buf_len < entry_names_s.len() {
-        return Err("Buffer is too small".into());
+        return Err(Error::InvalidBufferSize {
+            required: entry_names_s.len(),
+            actual: buf_len,
+        }
+        .into());
     }
 
     unsafe {
@@ -677,12 +697,14 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             let layer_id: i32 = unsafe { *(msgbuf.offset(offset as isize) as *const i32) };
             offset += size_of::<i32>();
 
-            if (offset - size_of::<iomsg_header>()) != header.payload_size as usize {
-                return Err("Invalid payload size for RemoveComponent".into());
+            let actual = offset - size_of::<iomsg_header>();
+            let required = header.payload_size as usize;
+            if required != actual {
+                return Err(Error::InvalidBufferSize { required, actual }.into());
             }
 
             if layer_id < 0 {
-                return Err("Invalid layer id".into());
+                return Err(Error::InvalidData.with_context("layer ID"));
             }
 
             let layer_id = LayerId::new_val(layer_id as usize);
@@ -697,7 +719,11 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             // reply
             let reply_header = iomsg_header::new(IomsgCommand::RemoveComponent, 0);
             if replymsgbuf_len < size_of::<iomsg_header>() {
-                return Err("Reply buffer is too small".into());
+                return Err(Error::InvalidBufferSize {
+                    required: size_of::<iomsg_header>(),
+                    actual: replymsgbuf_len,
+                }
+                .into());
             }
 
             unsafe {
@@ -721,8 +747,10 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             let title = unsafe { util::cstring::from_cstring_ptr(title_ptr) };
             offset += title.len() + 1; // null terminator
 
-            if (offset - size_of::<iomsg_header>()) != header.payload_size as usize {
-                return Err("Invalid payload size for CreateComponentWindow".into());
+            let actual = offset - size_of::<iomsg_header>();
+            let required = header.payload_size as usize;
+            if required != actual {
+                return Err(Error::InvalidBufferSize { required, actual }.into());
             }
 
             let layer_id = window_manager::create_window(title, xy, wh)?;
@@ -736,7 +764,11 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             let reply_header =
                 iomsg_header::new(IomsgCommand::CreateComponentWindow, size_of::<u64>() as u32);
             if replymsgbuf_len < size_of::<iomsg_header>() + reply_header.payload_size as usize {
-                return Err("Reply buffer is too small".into());
+                return Err(Error::InvalidBufferSize {
+                    required: size_of::<iomsg_header>() + reply_header.payload_size as usize,
+                    actual: replymsgbuf_len,
+                }
+                .into());
             }
 
             unsafe {
@@ -762,12 +794,14 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
                 unsafe { *(msgbuf.offset(offset as isize) as *const usize) } as *const u8;
             offset += size_of::<usize>();
 
-            if (offset - size_of::<iomsg_header>()) != header.payload_size as usize {
-                return Err("Invalid payload size for CreateComponentImage".into());
+            let actual = offset - size_of::<iomsg_header>();
+            let required = header.payload_size as usize;
+            if actual != required {
+                return Err(Error::InvalidBufferSize { required, actual }.into());
             }
 
             if layer_id < 0 {
-                return Err("Invalid layer id".into());
+                return Err(Error::InvalidData.with_context("layer ID"));
             }
 
             let layer_id = LayerId::new_val(layer_id as usize);
@@ -785,8 +819,14 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             // reply
             let reply_header =
                 iomsg_header::new(IomsgCommand::CreateComponentImage, size_of::<i32>() as u32);
-            if replymsgbuf_len < size_of::<iomsg_header>() + reply_header.payload_size as usize {
-                return Err("Reply buffer is too small".into());
+
+            let required = size_of::<iomsg_header>() + reply_header.payload_size as usize;
+            if replymsgbuf_len < required {
+                return Err(Error::InvalidBufferSize {
+                    required,
+                    actual: replymsgbuf_len,
+                }
+                .into());
             }
 
             unsafe {
@@ -803,13 +843,13 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
 
 fn sys_socket(domain: i32, type_: i32, _protocol: i32) -> Result<SocketId> {
     if (domain as u32) != SOCKET_DOMAIN_AF_INET {
-        return Err("Unsupported domain".into());
+        return Err(Error::InvalidData.with_context("socket domain"));
     }
 
     let socket_type = match type_ as u32 {
         SOCKET_TYPE_SOCK_STREAM => SocketType::Stream,
         SOCKET_TYPE_SOCK_DGRAM => SocketType::Dgram,
-        _ => return Err("Unsupported type".into()),
+        _ => return Err(Error::InvalidData.with_context("socket type")),
     };
 
     net::create_new_socket(socket_type)
@@ -821,12 +861,12 @@ fn sys_bind(sockfd: i32, addr: *const sockaddr, addrlen: usize) -> Result<()> {
     assert_eq!(size_of::<sockaddr_in>(), addrlen);
 
     if addr.sin_family as u32 != SOCKET_DOMAIN_AF_INET {
-        return Err("Address family not supported".into());
+        return Err(Error::InvalidData.with_context("address family"));
     }
 
     let s_addr = addr.sin_addr.s_addr;
     if s_addr != Ipv4Addr::UNSPECIFIED.into() && s_addr != net::my_ipv4_addr()?.into() {
-        return Err("Address not available".into());
+        return Err(Error::InvalidData.with_context("bind address"));
     }
 
     let bound_addr = if s_addr == Ipv4Addr::UNSPECIFIED.into() {
@@ -893,11 +933,11 @@ fn sys_recvfrom(
                         continue;
                     }
                     Ok(false) => return Ok(0),
-                    Err(Error::Failed("Mutex is already locked")) => continue,
+                    Err(e) if e.should_retry() => continue,
                     Err(e) => return Err(e),
                 },
                 Ok(len) => return Ok(len),
-                Err(Error::Failed("Mutex is already locked")) => continue,
+                Err(e) if e.should_retry() => continue,
                 Err(e) => return Err(e),
             }
         }
@@ -915,7 +955,7 @@ fn sys_connect(sockfd: i32, addr: *const sockaddr, addrlen: usize) -> Result<()>
     assert_eq!(size_of::<sockaddr_in>(), addrlen);
 
     if addr.sin_family as u32 != SOCKET_DOMAIN_AF_INET {
-        return Err("Address family not supported".into());
+        return Err(Error::InvalidData.with_context("address family"));
     }
 
     let dst_addr = addr.sin_addr.s_addr.into();

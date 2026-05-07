@@ -26,11 +26,23 @@ pub enum MouseEvent {
     UsbHidMouse(UsbHidMouseEvent),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum WindowManagerError {
     MousePointerLayerWasNotFound,
     TaskbarLayerWasNotFound,
     WindowWasNotFound { layer_id: usize },
+}
+
+impl core::fmt::Display for WindowManagerError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::MousePointerLayerWasNotFound => write!(f, "Mouse pointer layer was not found"),
+            Self::TaskbarLayerWasNotFound => write!(f, "Taskbar layer was not found"),
+            Self::WindowWasNotFound { layer_id } => {
+                write!(f, "Window was not found: layer_id={}", layer_id)
+            }
+        }
+    }
 }
 
 struct WindowManager {
@@ -243,7 +255,7 @@ impl WindowManager {
 
     fn create_window(&mut self, title: String, pos: Point, size: Size) -> Result<LayerId> {
         if self.res.is_none() {
-            return Err(Error::NotInitialized);
+            return Err(Error::NotInitialized.into());
         }
 
         let window = Window::create_and_push(title, pos, size)?;
@@ -259,7 +271,7 @@ impl WindowManager {
         component: Box<dyn Component>,
     ) -> Result<LayerId> {
         if self.res.is_none() {
-            return Err(Error::NotInitialized);
+            return Err(Error::NotInitialized.into());
         }
 
         let window = self
@@ -274,7 +286,7 @@ impl WindowManager {
 
     fn remove_component(&mut self, layer_id: LayerId) -> Result<()> {
         if self.res.is_none() {
-            return Err(Error::NotInitialized);
+            return Err(Error::NotInitialized.into());
         }
 
         // try remove window
@@ -298,7 +310,7 @@ impl WindowManager {
 
     fn flush_taskbar(&mut self) -> Result<()> {
         if self.res.is_none() {
-            return Err(Error::NotInitialized);
+            return Err(Error::NotInitialized.into());
         }
 
         let taskbar = self
@@ -332,7 +344,7 @@ impl WindowManager {
 
     fn flush_components(&mut self) -> Result<()> {
         if self.res.is_none() {
-            return Err(Error::NotInitialized);
+            return Err(Error::NotInitialized.into());
         }
 
         for window in self.windows.iter_mut() {

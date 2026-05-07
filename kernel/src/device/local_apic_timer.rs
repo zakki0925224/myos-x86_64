@@ -1,7 +1,7 @@
 use crate::{
     arch::{x86_64::*, VirtualAddress},
     device::*,
-    error::Result,
+    error::{Error, Result},
     kdebug, kinfo,
     sync::{mutex::Mutex, volatile::Volatile},
     task::async_task,
@@ -94,7 +94,9 @@ impl LocalApicTimerDriver {
     }
 
     fn current_ms(&mut self) -> Result<usize> {
-        let _freq = self.freq.ok_or("Frequency not set")?;
+        let _freq = self
+            .freq
+            .ok_or(Error::NotInitialized.with_context("frequency"))?;
         Ok(self.tick * INT_INTERVAL_MS)
     }
 
