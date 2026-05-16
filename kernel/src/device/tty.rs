@@ -161,7 +161,14 @@ impl Tty {
 
         loop {
             if let Some(c) = buf.pop_front() {
-                s.push(c);
+                match c {
+                    '\x08' | '\x7f' => {
+                        s.pop();
+                    }
+                    _ => {
+                        s.push(c);
+                    }
+                }
             } else {
                 break;
             }
@@ -196,7 +203,7 @@ impl Tty {
     fn input_char(&mut self, c: char) -> Result<()> {
         match c {
             '\x08' | '\x7f' => {
-                self.input_buf.pop_back();
+                self.input_buf.push(c);
                 let _ = self.write('\x08', BufferType::Output);
                 return Ok(());
             }
