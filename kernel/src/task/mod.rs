@@ -22,6 +22,7 @@ use core::{
 };
 
 pub mod async_task;
+pub mod exec;
 pub mod multi_scheduler;
 pub mod single_scheduler;
 pub mod syscall;

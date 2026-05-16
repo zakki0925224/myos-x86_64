@@ -2,14 +2,14 @@ use crate::{
     arch::{x86_64::context::ContextMode, VirtualAddress},
     debug::dwarf::Dwarf,
     error::{Error, Result},
-    fs::vfs::FileDescriptorNumber,
+    fs::{path::Path, vfs::FileDescriptorNumber},
     graphics::multi_layer::LayerId,
     kdebug,
     mem::bitmap::MemoryFrameInfo,
     sync::mutex::Mutex,
     task::*,
 };
-use alloc::{boxed::Box, collections::vec_deque::VecDeque, vec::Vec};
+use alloc::{boxed::Box, collections::vec_deque::VecDeque, string::ToString, vec::Vec};
 
 static MULTI_TASK_SCHED: Mutex<MultiTaskScheduler> = Mutex::new(MultiTaskScheduler::new());
 
@@ -82,31 +82,46 @@ impl MultiTaskScheduler {
     }
 
     fn push_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
+        let task = self
+            .running_task
+            .as_mut()
+            .ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.created_layer_ids.push(layer_id);
         Ok(())
     }
 
     fn remove_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
+        let task = self
+            .running_task
+            .as_mut()
+            .ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.created_layer_ids.retain(|id| *id != layer_id);
         Ok(())
     }
 
     fn push_fd_num(&mut self, fd_num: FileDescriptorNumber) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
+        let task = self
+            .running_task
+            .as_mut()
+            .ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.opend_fd_num.push(fd_num);
         Ok(())
     }
 
     fn remove_fd_num(&mut self, fd_num: FileDescriptorNumber) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
+        let task = self
+            .running_task
+            .as_mut()
+            .ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.opend_fd_num.retain(|fd| *fd != fd_num);
         Ok(())
     }
 
     fn push_allocated_mem_frame_info(&mut self, mem_frame_info: MemoryFrameInfo) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
+        let task = self
+            .running_task
+            .as_mut()
+            .ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.allocated_mem_frame_info.push(mem_frame_info);
         Ok(())
     }
@@ -115,7 +130,10 @@ impl MultiTaskScheduler {
         &mut self,
         virt_addr: VirtualAddress,
     ) -> Result<Option<usize>> {
-        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
+        let task = self
+            .running_task
+            .as_mut()
+            .ok_or(Error::NotInitialized.with_context("running task"))?;
         for mem_frame_info in &task.resource.allocated_mem_frame_info {
             if mem_frame_info.frame_start_virt_addr()? == virt_addr {
                 return Ok(Some(mem_frame_info.frame_size));
@@ -128,7 +146,10 @@ impl MultiTaskScheduler {
         &mut self,
         virt_addr: VirtualAddress,
     ) -> Result<MemoryFrameInfo> {
-        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
+        let task = self
+            .running_task
+            .as_mut()
+            .ok_or(Error::NotInitialized.with_context("running task"))?;
         let allocated_mem_frame_info = &mut task.resource.allocated_mem_frame_info;
 
         if let Some(index) = allocated_mem_frame_info
@@ -161,6 +182,26 @@ pub fn init() -> Result<()> {
 
 pub fn spawn(task: Task) {
     MULTI_TASK_SCHED.spin_lock().spawn(task)
+}
+
+pub fn spawn_user_task(
+    elf64: Elf64,
+    path: &Path,
+    args: &[&str],
+    dwarf: Option<Dwarf>,
+) -> Result<()> {
+    let path_string = path.to_string();
+    let all_args: Vec<&str> = [&[path_string.as_str()], args].concat();
+    let task = Task::new(
+        super::USER_TASK_STACK_SIZE,
+        Some(elf64),
+        Some(&all_args),
+        ContextMode::User,
+        dwarf,
+    )?;
+
+    MULTI_TASK_SCHED.spin_lock().spawn(task);
+    Ok(())
 }
 
 pub fn sched() {

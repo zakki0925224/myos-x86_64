@@ -516,7 +516,7 @@ fn sys_close(fd_num: i32) -> Result<()> {
 }
 
 fn sys_exit(status: i32) {
-    task::single_scheduler::return_task(status)
+    task::multi_scheduler::exit_current(status)
 }
 
 fn sys_sbrk(len: usize) -> Result<*const u8> {
@@ -600,7 +600,7 @@ fn sys_exec(args: *const u8, flags: i32) -> Result<()> {
     let args: Vec<&str> = args.split(' ').collect();
 
     let enable_debug = (flags as u32) & EXEC_FLAG_DEBUG != 0;
-    fs::exec::exec_elf(&args[0].into(), &args[1..], enable_debug)?;
+    task::exec::exec_elf(&args[0].into(), &args[1..], enable_debug)?;
 
     Ok(())
 }
