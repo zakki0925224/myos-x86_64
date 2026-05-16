@@ -117,9 +117,9 @@ fn test_enqueue_dequeue() {
     assert!(fifo.enqueue(3).is_ok());
     assert!(fifo.enqueue(4).is_err());
 
-    assert_eq!(fifo.dequeue(), Ok(1));
-    assert_eq!(fifo.dequeue(), Ok(2));
-    assert_eq!(fifo.dequeue(), Ok(3));
+    assert_eq!(fifo.dequeue().ok(), Some(1));
+    assert_eq!(fifo.dequeue().ok(), Some(2));
+    assert_eq!(fifo.dequeue().ok(), Some(3));
     assert!(fifo.dequeue().is_err());
 }
 
