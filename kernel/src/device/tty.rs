@@ -381,7 +381,7 @@ pub fn check_sigint() {
     let sigint = FLAG_SIGINT.swap(false, Ordering::Relaxed);
 
     if sigint {
-        task::single_scheduler::return_task(-1);
+        task::scheduler::exit_current(-1);
     }
 }
 

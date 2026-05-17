@@ -23,8 +23,7 @@ use core::{
 
 pub mod async_task;
 pub mod exec;
-pub mod multi_scheduler;
-pub mod single_scheduler;
+pub mod scheduler;
 pub mod syscall;
 
 pub const USER_TASK_STACK_SIZE: usize = 1024 * 1024; // 1MiB

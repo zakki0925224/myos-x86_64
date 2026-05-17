@@ -29,5 +29,5 @@ pub fn exec_elf(elf_path: &Path, args: &[&str], enable_debug: bool) -> Result<Ta
         None
     };
 
-    super::multi_scheduler::spawn_user_task(elf64, elf_path, args, dwarf)
+    super::scheduler::spawn_user_task(elf64, elf_path, args, dwarf)
 }

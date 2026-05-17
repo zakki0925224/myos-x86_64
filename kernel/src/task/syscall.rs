@@ -393,7 +393,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
                 while input_s.is_none() {
                     tty::check_sigint();
                     input_s = x86_64::disabled_int(|| tty::get_line()).ok().flatten();
-                    task::multi_scheduler::sched();
+                    task::scheduler::sched();
                     x86_64::stihlt();
                 }
 
@@ -418,7 +418,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
                     tty::check_sigint();
                     c = x86_64::disabled_int(|| tty::get_char()).ok().flatten();
                     if c.is_none() {
-                        task::multi_scheduler::sched();
+                        task::scheduler::sched();
                         x86_64::stihlt();
                     }
                 }
@@ -487,8 +487,7 @@ fn sys_open(filepath: *const u8, flags: i32) -> Result<i32> {
     let create = (flags as u32) & OPEN_FLAG_CREATE != 0;
     let fd_num = vfs::open_file(&filepath, create)?;
 
-    let TaskResult::Ok =
-        task::single_scheduler::request(TaskRequest::PushFileDescriptorNumber(fd_num))?
+    let TaskResult::Ok = task::scheduler::request(TaskRequest::PushFileDescriptorNumber(fd_num))?
     else {
         unreachable!()
     };
@@ -500,7 +499,7 @@ fn sys_close(fd_num: i32) -> Result<()> {
     if let Ok(fd) = FileDescriptorNumber::new_val(fd_num) {
         if vfs::close_file(fd).is_ok() {
             let TaskResult::Ok =
-                task::single_scheduler::request(TaskRequest::RemoveFileDescriptorNumber(fd))?
+                task::scheduler::request(TaskRequest::RemoveFileDescriptorNumber(fd))?
             else {
                 unreachable!()
             };
@@ -518,7 +517,7 @@ fn sys_close(fd_num: i32) -> Result<()> {
 }
 
 fn sys_exit(status: i32) {
-    task::multi_scheduler::exit_current(status)
+    task::scheduler::exit_current(status)
 }
 
 fn sys_sbrk(len: usize) -> Result<*const u8> {
@@ -530,8 +529,7 @@ fn sys_sbrk(len: usize) -> Result<*const u8> {
     mem_frame_info.set_permissions_to_user()?;
     let virt_addr = mem_frame_info.frame_start_virt_addr()?;
 
-    let TaskResult::Ok = task::single_scheduler::request(TaskRequest::PushMemory(mem_frame_info))?
-    else {
+    let TaskResult::Ok = task::scheduler::request(TaskRequest::PushMemory(mem_frame_info))? else {
         unreachable!()
     };
 
@@ -576,7 +574,7 @@ fn sys_uname(buf: *mut utsname) -> Result<()> {
 }
 
 fn sys_break() {
-    let _ = task::single_scheduler::request(TaskRequest::ExecuteDebugger);
+    let _ = task::scheduler::request(TaskRequest::ExecuteDebugger);
     x86_64::int3();
 }
 
@@ -603,7 +601,7 @@ fn sys_exec(args: *const u8, flags: i32) -> Result<()> {
 
     let enable_debug = (flags as u32) & EXEC_FLAG_DEBUG != 0;
     let child_id = task::exec::exec_elf(&args[0].into(), &args[1..], enable_debug)?;
-    task::multi_scheduler::sleep_waiting_for(child_id);
+    task::scheduler::sleep_waiting_for(child_id);
 
     Ok(())
 }
@@ -640,7 +638,7 @@ fn sys_free(ptr: *const u8) -> Result<()> {
     // kdebug!("syscall: free: target memory at 0x{:x}", virt_addr.get());
 
     let TaskResult::PopMemory(mem_frame_info) =
-        task::single_scheduler::request(TaskRequest::PopMemory(virt_addr))?
+        task::scheduler::request(TaskRequest::PopMemory(virt_addr))?
     else {
         unreachable!()
     };
@@ -653,7 +651,7 @@ fn sys_free(ptr: *const u8) -> Result<()> {
 fn sys_sbrksz(target: *const u8) -> Result<usize> {
     let target_virt_addr: VirtualAddress = (target as u64).into();
     let TaskResult::MemoryFrameSize(size) =
-        task::single_scheduler::request(TaskRequest::GetMemoryFrameSize(target_virt_addr))?
+        task::scheduler::request(TaskRequest::GetMemoryFrameSize(target_virt_addr))?
     else {
         unreachable!()
     };
@@ -713,8 +711,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             let layer_id = LayerId::new_val(layer_id as usize);
             window_manager::remove_component(layer_id)?;
 
-            let TaskResult::Ok =
-                task::single_scheduler::request(TaskRequest::RemoveLayerId(layer_id))?
+            let TaskResult::Ok = task::scheduler::request(TaskRequest::RemoveLayerId(layer_id))?
             else {
                 unreachable!()
             };
@@ -758,7 +755,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
 
             let layer_id = window_manager::create_window(title, xy, wh)?;
             let TaskResult::Ok =
-                task::single_scheduler::request(TaskRequest::PushLayerId(layer_id.clone()))?
+                task::scheduler::request(TaskRequest::PushLayerId(layer_id.clone()))?
             else {
                 unreachable!()
             };

@@ -275,8 +275,7 @@ extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
 
     let debugger_result;
 
-    let Ok(TaskResult::Dwarf(dwarf)) = task::single_scheduler::request(TaskRequest::GetDwarf)
-    else {
+    let Ok(TaskResult::Dwarf(dwarf)) = task::scheduler::request(TaskRequest::GetDwarf) else {
         panic!("Failed to get DWARF");
     };
 
@@ -319,13 +318,13 @@ extern "x86-interrupt" fn general_protection_fault_handler(
     );
 
     let Ok(TaskResult::ExecuteDebugger(res)) =
-        task::single_scheduler::request(TaskRequest::ExecuteDebugger)
+        task::scheduler::request(TaskRequest::ExecuteDebugger)
     else {
         panic!("Failed to execute debugger");
     };
 
     if res {
-        task::single_scheduler::return_task(122);
+        task::scheduler::exit_current(122);
     }
 
     panic!();
@@ -345,13 +344,13 @@ extern "x86-interrupt" fn page_fault_handler(
     );
 
     let Ok(TaskResult::ExecuteDebugger(res)) =
-        task::single_scheduler::request(TaskRequest::ExecuteDebugger)
+        task::scheduler::request(TaskRequest::ExecuteDebugger)
     else {
         panic!("Failed to execute debugger");
     };
 
     if res {
-        task::single_scheduler::return_task(122);
+        task::scheduler::exit_current(122);
     }
 
     panic!();

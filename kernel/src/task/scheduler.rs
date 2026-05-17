@@ -11,16 +11,16 @@ use crate::{
 };
 use alloc::{boxed::Box, collections::vec_deque::VecDeque, string::ToString, vec::Vec};
 
-static MULTI_TASK_SCHED: Mutex<MultiTaskScheduler> = Mutex::new(MultiTaskScheduler::new());
+static TASK_SCHED: Mutex<TaskScheduler> = Mutex::new(TaskScheduler::new());
 
-struct MultiTaskScheduler {
+struct TaskScheduler {
     ready_queue: VecDeque<Box<Task>>,
     running_task: Option<Box<Task>>,
     exited_tasks: Vec<Box<Task>>,
     sleeping_tasks: Vec<Box<Task>>,
 }
 
-impl MultiTaskScheduler {
+impl TaskScheduler {
     const fn new() -> Self {
         Self {
             ready_queue: VecDeque::new(),
@@ -69,7 +69,10 @@ impl MultiTaskScheduler {
         }
     }
 
-    fn pick_next_task_on_exit(&mut self, exit_code: i32) -> (*const Task, *const Task) {
+    fn pick_next_task_on_exit(
+        &mut self,
+        exit_code: i32,
+    ) -> (*const Task, *const Task, Vec<Box<Task>>) {
         let mut current = self
             .running_task
             .take()
@@ -80,6 +83,8 @@ impl MultiTaskScheduler {
 
         kdebug!("task: Task exited with code: {}", exit_code);
         current.state = TaskState::Exited(exit_code);
+
+        let old = core::mem::take(&mut self.exited_tasks);
         self.exited_tasks.push(current);
 
         if let Some(i) = self
@@ -104,7 +109,7 @@ impl MultiTaskScheduler {
         let prev_ptr = &**self.exited_tasks.last().unwrap() as *const Task;
         let next_ptr = &**self.running_task.as_ref().unwrap() as *const Task;
 
-        (prev_ptr, next_ptr)
+        (prev_ptr, next_ptr, old)
     }
 
     fn sleep_current_waiting_for(&mut self, child_id: TaskId) -> (*const Task, *const Task) {
@@ -225,11 +230,11 @@ impl MultiTaskScheduler {
 }
 
 pub fn init() -> Result<()> {
-    MULTI_TASK_SCHED.spin_lock().init()
+    TASK_SCHED.spin_lock().init()
 }
 
 pub fn spawn(task: Task) {
-    MULTI_TASK_SCHED.spin_lock().spawn(task)
+    TASK_SCHED.spin_lock().spawn(task)
 }
 
 pub fn spawn_user_task(
@@ -249,21 +254,27 @@ pub fn spawn_user_task(
     )?;
 
     let id = task.id;
-    MULTI_TASK_SCHED.spin_lock().spawn(task);
+    TASK_SCHED.spin_lock().spawn(task);
     Ok(id)
 }
 
 pub fn sleep_waiting_for(child_id: TaskId) {
-    let (prev, next) = MULTI_TASK_SCHED
-        .spin_lock()
-        .sleep_current_waiting_for(child_id);
+    let (prev, next) = TASK_SCHED.spin_lock().sleep_current_waiting_for(child_id);
     unsafe {
         (*prev).switch_to(&*next);
     }
 }
 
 pub fn sched() {
-    let switch_pair = MULTI_TASK_SCHED.spin_lock().pick_next_task();
+    let (switch_pair, stale) = {
+        let mut s = TASK_SCHED.spin_lock();
+        let pair = s.pick_next_task();
+        let stale = core::mem::take(&mut s.exited_tasks);
+        (pair, stale)
+    };
+
+    // drop old exited tasks outside the lock
+    drop(stale);
 
     if let Some((prev, next)) = switch_pair {
         unsafe { (*prev).switch_to(&*next) };
@@ -272,15 +283,15 @@ pub fn sched() {
 
 pub fn current() -> Option<&'static Task> {
     unsafe {
-        let ptr = MULTI_TASK_SCHED.spin_lock().current()? as *const Task;
+        let ptr = TASK_SCHED.spin_lock().current()? as *const Task;
         Some(&*ptr)
     }
 }
 
 pub fn exit_current(exit_code: i32) -> ! {
-    let (prev, next) = MULTI_TASK_SCHED
-        .spin_lock()
-        .pick_next_task_on_exit(exit_code);
+    let (prev, next, old) = TASK_SCHED.spin_lock().pick_next_task_on_exit(exit_code);
+    // drop old exited tasks outside the lock
+    drop(old);
 
     unsafe {
         (*prev).switch_to(&*next);
@@ -290,7 +301,7 @@ pub fn exit_current(exit_code: i32) -> ! {
 }
 
 pub fn request(req: TaskRequest) -> Result<TaskResult> {
-    let mut sched = MULTI_TASK_SCHED.spin_lock();
+    let mut sched = TASK_SCHED.spin_lock();
 
     match req {
         TaskRequest::PushLayerId(layer_id) => {
@@ -334,7 +345,7 @@ pub fn request(req: TaskRequest) -> Result<TaskResult> {
 
 #[test_case]
 fn test_multitask_scheduler_round_robin() {
-    let mut sched = MultiTaskScheduler::new();
+    let mut sched = TaskScheduler::new();
     sched.init().expect("Failed to init scheduler");
 
     // Running: KernelTask(TID: 0)
@@ -391,7 +402,7 @@ fn test_multitask_scheduler_round_robin() {
 
 #[test_case]
 fn test_multitask_scheduler_exit() {
-    let mut sched = MultiTaskScheduler::new();
+    let mut sched = TaskScheduler::new();
     sched.init().unwrap();
 
     let t1 = Task::new(0, None, None, ContextMode::Kernel, None).unwrap();
@@ -406,7 +417,7 @@ fn test_multitask_scheduler_exit() {
         panic!("No running task");
     }
 
-    let (prev_ptr, next_ptr) = sched.pick_next_task_on_exit(123);
+    let (prev_ptr, next_ptr, stale) = sched.pick_next_task_on_exit(123);
 
     unsafe {
         let prev = &*prev_ptr; // T1 (Exited)

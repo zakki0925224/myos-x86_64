@@ -31,7 +31,7 @@ use crate::{
     },
     task::{
         async_task::{self, Priority},
-        exec, multi_scheduler, syscall,
+        exec, scheduler, syscall,
     },
     theme::GLOBAL_THEME,
 };
@@ -151,7 +151,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     async_task::ready().unwrap();
 
     // initialize scheduler
-    multi_scheduler::init().unwrap();
+    scheduler::init().unwrap();
 
     // execute init app
     let init_app_exec_args = boot_info.kernel_config.init_app_exec_args;
@@ -167,7 +167,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     }
 
     loop {
-        multi_scheduler::sched();
+        scheduler::sched();
         x86_64::stihlt();
     }
 }
