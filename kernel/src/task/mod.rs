@@ -1,8 +1,5 @@
 use crate::{
-    arch::{
-        x86_64::context::{Context, ContextMode},
-        VirtualAddress,
-    },
+    arch::x86_64::context::{Context, ContextMode},
     debug::dwarf::Dwarf,
     error::{Error, Result},
     fs::vfs::{self, *},
@@ -46,28 +43,6 @@ impl TaskId {
     pub fn new_val(value: usize) -> Self {
         Self(value)
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum TaskRequest {
-    PushLayerId(LayerId),
-    RemoveLayerId(LayerId),
-    PushFileDescriptorNumber(FileDescriptorNumber),
-    RemoveFileDescriptorNumber(FileDescriptorNumber),
-    PushMemory(MemoryFrameInfo),
-    GetMemoryFrameSize(VirtualAddress),
-    PopMemory(VirtualAddress),
-    ExecuteDebugger,
-    GetDwarf,
-}
-
-#[derive(Debug, Clone)]
-pub enum TaskResult {
-    Ok,
-    MemoryFrameSize(Option<usize>),
-    PopMemory(MemoryFrameInfo),
-    ExecuteDebugger(bool),
-    Dwarf(Option<Dwarf>),
 }
 
 #[derive(Debug, Clone)]
@@ -362,7 +337,7 @@ impl Task {
     }
 }
 
-pub fn debug_task(task: &Task) {
+pub fn show_task_debug(task: &Task) {
     let ctx = &task.context;
     kdebug!("task id: {}", task.id);
 

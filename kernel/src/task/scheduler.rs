@@ -215,9 +215,9 @@ impl TaskScheduler {
         Err(Error::InvalidData.with_context("virtual address"))
     }
 
-    fn debug_running_task(&self) -> bool {
+    fn show_running_task_debug(&self) -> bool {
         if let Some(task) = self.running_task.as_ref() {
-            super::debug_task(task);
+            super::show_task_debug(task);
             true
         } else {
             false
@@ -300,47 +300,46 @@ pub fn exit_current(exit_code: i32) -> ! {
     unreachable!();
 }
 
-pub fn request(req: TaskRequest) -> Result<TaskResult> {
-    let mut sched = TASK_SCHED.spin_lock();
+pub fn push_layer_id(layer_id: LayerId) -> Result<()> {
+    TASK_SCHED.spin_lock().push_layer_id(layer_id)
+}
 
-    match req {
-        TaskRequest::PushLayerId(layer_id) => {
-            sched.push_layer_id(layer_id)?;
-            Ok(TaskResult::Ok)
-        }
-        TaskRequest::RemoveLayerId(layer_id) => {
-            sched.remove_layer_id(layer_id)?;
-            Ok(TaskResult::Ok)
-        }
-        TaskRequest::PushFileDescriptorNumber(fd_num) => {
-            sched.push_fd_num(fd_num)?;
-            Ok(TaskResult::Ok)
-        }
-        TaskRequest::RemoveFileDescriptorNumber(fd_num) => {
-            sched.remove_fd_num(fd_num)?;
-            Ok(TaskResult::Ok)
-        }
-        TaskRequest::PushMemory(mem_frame_info) => {
-            sched.push_allocated_mem_frame_info(mem_frame_info)?;
-            Ok(TaskResult::Ok)
-        }
-        TaskRequest::GetMemoryFrameSize(virt_addr) => {
-            let size = sched.get_memory_frame_size_by_virt_addr(virt_addr)?;
-            Ok(TaskResult::MemoryFrameSize(size))
-        }
-        TaskRequest::PopMemory(virt_addr) => {
-            let info = sched.pop_allocated_memory_by_virt_addr(virt_addr)?;
-            Ok(TaskResult::PopMemory(info))
-        }
-        TaskRequest::ExecuteDebugger => {
-            let res = sched.debug_running_task();
-            Ok(TaskResult::ExecuteDebugger(res))
-        }
-        TaskRequest::GetDwarf => {
-            let dwarf = sched.get_running_task_dwarf();
-            Ok(TaskResult::Dwarf(dwarf))
-        }
-    }
+pub fn remove_layer_id(layer_id: LayerId) -> Result<()> {
+    TASK_SCHED.spin_lock().remove_layer_id(layer_id)
+}
+
+pub fn push_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
+    TASK_SCHED.spin_lock().push_fd_num(fd_num)
+}
+
+pub fn remove_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
+    TASK_SCHED.spin_lock().remove_fd_num(fd_num)
+}
+
+pub fn push_mem_frame_info(mem_frame_info: MemoryFrameInfo) -> Result<()> {
+    TASK_SCHED
+        .spin_lock()
+        .push_allocated_mem_frame_info(mem_frame_info)
+}
+
+pub fn get_mem_frame_size(virt_addr: VirtualAddress) -> Result<Option<usize>> {
+    TASK_SCHED
+        .spin_lock()
+        .get_memory_frame_size_by_virt_addr(virt_addr)
+}
+
+pub fn pop_mem_frame_info(virt_addr: VirtualAddress) -> Result<MemoryFrameInfo> {
+    TASK_SCHED
+        .spin_lock()
+        .pop_allocated_memory_by_virt_addr(virt_addr)
+}
+
+pub fn show_task_debug() -> bool {
+    TASK_SCHED.spin_lock().show_running_task_debug()
+}
+
+pub fn get_dwarf() -> Option<Dwarf> {
+    TASK_SCHED.spin_lock().get_running_task_dwarf()
 }
 
 #[test_case]
