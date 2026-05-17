@@ -34,7 +34,7 @@ impl Register<u64> for Rflags {
     fn read() -> Self {
         let mut value: u64;
         unsafe {
-            asm!("pushfq; pop {}", out(reg) value, options(nomem, nostack));
+            asm!("pushfq; pop {}", out(reg) value);
         }
         Self(value)
     }
@@ -43,7 +43,7 @@ impl Register<u64> for Rflags {
     fn write(&self) {
         let value = self.0;
         unsafe {
-            asm!("push {}; popfq", in(reg) value, options(nomem, nostack));
+            asm!("push {}; popfq", in(reg) value);
         }
     }
 
@@ -83,7 +83,7 @@ impl Rflags {
     pub fn read_with_cli() -> Self {
         let mut value: u64;
         unsafe {
-            asm!("pushfq; pop {}; cli", out(reg) value, options(nomem, nostack));
+            asm!("pushfq; pop {}; cli", out(reg) value);
         }
         Self(value)
     }
