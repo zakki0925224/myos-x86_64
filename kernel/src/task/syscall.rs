@@ -393,6 +393,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
                 while input_s.is_none() {
                     tty::check_sigint();
                     input_s = x86_64::disabled_int(|| tty::get_line()).ok().flatten();
+                    task::multi_scheduler::sched();
                     x86_64::stihlt();
                 }
 
@@ -417,6 +418,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
                     tty::check_sigint();
                     c = x86_64::disabled_int(|| tty::get_char()).ok().flatten();
                     if c.is_none() {
+                        task::multi_scheduler::sched();
                         x86_64::stihlt();
                     }
                 }

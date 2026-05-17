@@ -39,6 +39,11 @@ impl MultiTaskScheduler {
     }
 
     fn spawn(&mut self, task: Task) {
+        task.unmap_virt_addr().unwrap();
+        if let Some(current) = &self.running_task {
+            current.remap_virt_addr().unwrap();
+        }
+
         self.ready_queue.push_back(Box::new(task));
     }
 
@@ -46,6 +51,9 @@ impl MultiTaskScheduler {
         let prev_task = self.running_task.take()?;
 
         if let Some(next_task) = self.ready_queue.pop_front() {
+            prev_task.unmap_virt_addr().unwrap();
+            next_task.remap_virt_addr().unwrap();
+
             self.ready_queue.push_back(prev_task);
             self.running_task = Some(next_task);
 
@@ -65,11 +73,15 @@ impl MultiTaskScheduler {
             .take()
             .expect("task: No running task to exit");
 
+        current.unmap_virt_addr().unwrap();
+
         kdebug!("task: Task exited with code: {}", exit_code);
         current.state = TaskState::Exited(exit_code);
         self.exited_tasks.push(current);
 
         if let Some(next_task) = self.ready_queue.pop_front() {
+            next_task.remap_virt_addr().unwrap();
+
             self.running_task = Some(next_task);
 
             let prev_ptr = &**self.exited_tasks.last().unwrap() as *const Task;

@@ -355,7 +355,7 @@ impl Task {
     }
 
     fn switch_to(&self, next_task: &Task) {
-        kdebug!("task: Switch context tid: {} to {}", self.id, next_task.id);
+        // kdebug!("task: Switch context tid: {} to {}", self.id, next_task.id);
 
         self.context.switch_to(&next_task.context);
     }
