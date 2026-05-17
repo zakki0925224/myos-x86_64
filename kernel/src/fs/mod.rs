@@ -9,7 +9,6 @@ use crate::{
 };
 use common::kernel_config::KernelConfig;
 
-pub mod exec;
 pub mod fat;
 pub mod file;
 pub mod path;

@@ -5,12 +5,6 @@ use core::arch::asm;
 #[repr(transparent)]
 pub struct Rflags(u64);
 
-impl From<u64> for Rflags {
-    fn from(value: u64) -> Self {
-        Self(value | (1 << 1)) // always 1
-    }
-}
-
 impl core::fmt::Debug for Rflags {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Rflags")
@@ -36,19 +30,20 @@ impl core::fmt::Debug for Rflags {
 }
 
 impl Register<u64> for Rflags {
+    #[inline(always)]
     fn read() -> Self {
         let mut value: u64;
         unsafe {
-            asm!("pushfq; pop {}", out(reg) value, options(nomem, nostack));
+            asm!("pushfq; pop {}", out(reg) value);
         }
-        Self::from(value)
+        Self(value)
     }
 
+    #[inline(always)]
     fn write(&self) {
         let value = self.0;
         unsafe {
-            asm!("push {}", in(reg) value, options(nomem, nostack));
-            asm!("popfq", options(nomem, nostack));
+            asm!("push {}; popfq", in(reg) value);
         }
     }
 
@@ -82,6 +77,15 @@ impl Rflags {
 
     pub const fn default() -> Self {
         Self(1 << 1) // always 1
+    }
+
+    #[inline(always)]
+    pub fn read_with_cli() -> Self {
+        let mut value: u64;
+        unsafe {
+            asm!("pushfq; pop {}; cli", out(reg) value);
+        }
+        Self(value)
     }
 
     pub fn cf(&self) -> bool {

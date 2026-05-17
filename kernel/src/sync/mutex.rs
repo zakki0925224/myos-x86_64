@@ -1,4 +1,7 @@
-use crate::error::{Error, Result};
+use crate::{
+    arch::x86_64::registers::{Register, Rflags},
+    error::{Error, Result},
+};
 use core::{
     cell::SyncUnsafeCell,
     ops::{Deref, DerefMut},
@@ -19,13 +22,19 @@ impl<T: Sized> Mutex<T> {
     }
 
     pub fn try_lock(&self) -> Result<MutexGuard<T>> {
+        // save rflags
+        let saved_rflags = Rflags::read_with_cli();
+
         if self
             .locked
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
-            return Ok(unsafe { MutexGuard::new(self, &self.value) });
+            return Ok(unsafe { MutexGuard::new(self, &self.value, saved_rflags) });
         }
+
+        // restore rflags
+        saved_rflags.write();
 
         Err(Error::Locked.into())
     }
@@ -35,13 +44,16 @@ impl<T: Sized> Mutex<T> {
     }
 
     pub fn spin_lock(&self) -> MutexGuard<T> {
+        // save rflags
+        let saved_rflags = Rflags::read_with_cli();
+
         loop {
             if self
                 .locked
                 .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
                 .is_ok()
             {
-                return unsafe { MutexGuard::new(self, &self.value) };
+                return unsafe { MutexGuard::new(self, &self.value, saved_rflags) };
             }
 
             while self.locked.load(Ordering::Relaxed) {
@@ -56,13 +68,15 @@ unsafe impl<T> Sync for Mutex<T> {}
 pub struct MutexGuard<'a, T> {
     mutex: &'a Mutex<T>,
     value: &'a mut T,
+    saved_rflags: Rflags,
 }
 
 impl<'a, T> MutexGuard<'a, T> {
-    unsafe fn new(mutex: &'a Mutex<T>, value: &SyncUnsafeCell<T>) -> Self {
+    unsafe fn new(mutex: &'a Mutex<T>, value: &SyncUnsafeCell<T>, saved_rflags: Rflags) -> Self {
         Self {
             mutex,
             value: &mut *value.get(),
+            saved_rflags,
         }
     }
 }
@@ -86,6 +100,9 @@ impl<'a, T> DerefMut for MutexGuard<'a, T> {
 impl<'a, T> Drop for MutexGuard<'a, T> {
     fn drop(&mut self) {
         self.mutex.locked.store(false, Ordering::Release);
+
+        // restore rflags
+        self.saved_rflags.write();
     }
 }
 

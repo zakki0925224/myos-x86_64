@@ -16,8 +16,7 @@ This is a replacement project for the previous **[myos](https://github.com/zakki
 - [x] Paging
 - [x] Multitasking
     - [x] Simple priority-based executor (for Rust's async runtime)
-    - [x] Stack based single task scheduler (for userland tasks)
-    - [ ] Multi task scheduler (for userland tasks) (WIP)
+    - [x] Multi task scheduler (for userland tasks)
 - Bus support
     - [x] PCI
     - [x] USB (xHCI)

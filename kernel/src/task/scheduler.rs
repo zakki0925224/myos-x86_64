@@ -2,29 +2,31 @@ use crate::{
     arch::{x86_64::context::ContextMode, VirtualAddress},
     debug::dwarf::Dwarf,
     error::{Error, Result},
-    fs::vfs::FileDescriptorNumber,
+    fs::{path::Path, vfs::FileDescriptorNumber},
     graphics::multi_layer::LayerId,
     kdebug,
     mem::bitmap::MemoryFrameInfo,
     sync::mutex::Mutex,
     task::*,
 };
-use alloc::{boxed::Box, collections::vec_deque::VecDeque, vec::Vec};
+use alloc::{boxed::Box, collections::vec_deque::VecDeque, string::ToString, vec::Vec};
 
-static MULTI_TASK_SCHED: Mutex<MultiTaskScheduler> = Mutex::new(MultiTaskScheduler::new());
+static TASK_SCHED: Mutex<TaskScheduler> = Mutex::new(TaskScheduler::new());
 
-struct MultiTaskScheduler {
+struct TaskScheduler {
     ready_queue: VecDeque<Box<Task>>,
     running_task: Option<Box<Task>>,
     exited_tasks: Vec<Box<Task>>,
+    sleeping_tasks: Vec<Box<Task>>,
 }
 
-impl MultiTaskScheduler {
+impl TaskScheduler {
     const fn new() -> Self {
         Self {
             ready_queue: VecDeque::new(),
             running_task: None,
             exited_tasks: Vec::new(),
+            sleeping_tasks: Vec::new(),
         }
     }
 
@@ -39,6 +41,11 @@ impl MultiTaskScheduler {
     }
 
     fn spawn(&mut self, task: Task) {
+        task.unmap_virt_addr().unwrap();
+        if let Some(current) = &self.running_task {
+            current.remap_virt_addr().unwrap();
+        }
+
         self.ready_queue.push_back(Box::new(task));
     }
 
@@ -46,6 +53,9 @@ impl MultiTaskScheduler {
         let prev_task = self.running_task.take()?;
 
         if let Some(next_task) = self.ready_queue.pop_front() {
+            prev_task.unmap_virt_addr().unwrap();
+            next_task.remap_virt_addr().unwrap();
+
             self.ready_queue.push_back(prev_task);
             self.running_task = Some(next_task);
 
@@ -59,54 +69,112 @@ impl MultiTaskScheduler {
         }
     }
 
-    fn pick_next_task_on_exit(&mut self, exit_code: i32) -> (*const Task, *const Task) {
+    fn pick_next_task_on_exit(
+        &mut self,
+        exit_code: i32,
+    ) -> (*const Task, *const Task, Vec<Box<Task>>) {
         let mut current = self
             .running_task
             .take()
             .expect("task: No running task to exit");
+        let exiting_id = current.id;
+
+        current.unmap_virt_addr().unwrap();
 
         kdebug!("task: Task exited with code: {}", exit_code);
         current.state = TaskState::Exited(exit_code);
+
+        let old = core::mem::take(&mut self.exited_tasks);
         self.exited_tasks.push(current);
 
-        if let Some(next_task) = self.ready_queue.pop_front() {
-            self.running_task = Some(next_task);
-
-            let prev_ptr = &**self.exited_tasks.last().unwrap() as *const Task;
-            let next_ptr = &**self.running_task.as_ref().unwrap() as *const Task;
-
-            (prev_ptr, next_ptr)
-        } else {
-            panic!("task: No tasks available to switch to after exit");
+        if let Some(i) = self
+            .sleeping_tasks
+            .iter()
+            .position(|t| t.waiting_for == Some(exiting_id))
+        {
+            let mut waiter = self.sleeping_tasks.remove(i);
+            waiter.state = TaskState::Ready;
+            waiter.waiting_for = None;
+            self.ready_queue.push_front(waiter);
         }
+
+        let next_task = self
+            .ready_queue
+            .pop_front()
+            .expect("No task to run after exit");
+        next_task.remap_virt_addr().unwrap();
+
+        self.running_task = Some(next_task);
+
+        let prev_ptr = &**self.exited_tasks.last().unwrap() as *const Task;
+        let next_ptr = &**self.running_task.as_ref().unwrap() as *const Task;
+
+        (prev_ptr, next_ptr, old)
+    }
+
+    fn sleep_current_waiting_for(&mut self, child_id: TaskId) -> (*const Task, *const Task) {
+        let mut current = self.running_task.take().expect("No running task to sleep");
+        current.waiting_for = Some(child_id);
+        current.state = TaskState::Sleeping;
+        current.unmap_virt_addr().unwrap();
+
+        self.sleeping_tasks.push(current);
+
+        let next_task = self
+            .ready_queue
+            .pop_front()
+            .expect("No task to run after sleep");
+        next_task.remap_virt_addr().unwrap();
+
+        self.running_task = Some(next_task);
+
+        let prev_ptr = &**self.sleeping_tasks.last().unwrap() as *const Task;
+        let next_ptr = &**self.running_task.as_ref().unwrap() as *const Task;
+
+        (prev_ptr, next_ptr)
     }
 
     fn push_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
+        let task = self
+            .running_task
+            .as_mut()
+            .ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.created_layer_ids.push(layer_id);
         Ok(())
     }
 
     fn remove_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
+        let task = self
+            .running_task
+            .as_mut()
+            .ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.created_layer_ids.retain(|id| *id != layer_id);
         Ok(())
     }
 
     fn push_fd_num(&mut self, fd_num: FileDescriptorNumber) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
+        let task = self
+            .running_task
+            .as_mut()
+            .ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.opend_fd_num.push(fd_num);
         Ok(())
     }
 
     fn remove_fd_num(&mut self, fd_num: FileDescriptorNumber) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
+        let task = self
+            .running_task
+            .as_mut()
+            .ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.opend_fd_num.retain(|fd| *fd != fd_num);
         Ok(())
     }
 
     fn push_allocated_mem_frame_info(&mut self, mem_frame_info: MemoryFrameInfo) -> Result<()> {
-        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
+        let task = self
+            .running_task
+            .as_mut()
+            .ok_or(Error::NotInitialized.with_context("running task"))?;
         task.resource.allocated_mem_frame_info.push(mem_frame_info);
         Ok(())
     }
@@ -115,7 +183,10 @@ impl MultiTaskScheduler {
         &mut self,
         virt_addr: VirtualAddress,
     ) -> Result<Option<usize>> {
-        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
+        let task = self
+            .running_task
+            .as_mut()
+            .ok_or(Error::NotInitialized.with_context("running task"))?;
         for mem_frame_info in &task.resource.allocated_mem_frame_info {
             if mem_frame_info.frame_start_virt_addr()? == virt_addr {
                 return Ok(Some(mem_frame_info.frame_size));
@@ -128,7 +199,10 @@ impl MultiTaskScheduler {
         &mut self,
         virt_addr: VirtualAddress,
     ) -> Result<MemoryFrameInfo> {
-        let task = self.running_task.as_mut().ok_or(Error::NotInitialized.with_context("running task"))?;
+        let task = self
+            .running_task
+            .as_mut()
+            .ok_or(Error::NotInitialized.with_context("running task"))?;
         let allocated_mem_frame_info = &mut task.resource.allocated_mem_frame_info;
 
         if let Some(index) = allocated_mem_frame_info
@@ -141,9 +215,9 @@ impl MultiTaskScheduler {
         Err(Error::InvalidData.with_context("virtual address"))
     }
 
-    fn debug_running_task(&self) -> bool {
+    fn show_running_task_debug(&self) -> bool {
         if let Some(task) = self.running_task.as_ref() {
-            super::debug_task(task);
+            super::show_task_debug(task);
             true
         } else {
             false
@@ -156,15 +230,51 @@ impl MultiTaskScheduler {
 }
 
 pub fn init() -> Result<()> {
-    MULTI_TASK_SCHED.spin_lock().init()
+    TASK_SCHED.spin_lock().init()
 }
 
 pub fn spawn(task: Task) {
-    MULTI_TASK_SCHED.spin_lock().spawn(task)
+    TASK_SCHED.spin_lock().spawn(task)
+}
+
+pub fn spawn_user_task(
+    elf64: Elf64,
+    path: &Path,
+    args: &[&str],
+    dwarf: Option<Dwarf>,
+) -> Result<TaskId> {
+    let path_string = path.to_string();
+    let all_args: Vec<&str> = [&[path_string.as_str()], args].concat();
+    let task = Task::new(
+        super::USER_TASK_STACK_SIZE,
+        Some(elf64),
+        Some(&all_args),
+        ContextMode::User,
+        dwarf,
+    )?;
+
+    let id = task.id;
+    TASK_SCHED.spin_lock().spawn(task);
+    Ok(id)
+}
+
+pub fn sleep_waiting_for(child_id: TaskId) {
+    let (prev, next) = TASK_SCHED.spin_lock().sleep_current_waiting_for(child_id);
+    unsafe {
+        (*prev).switch_to(&*next);
+    }
 }
 
 pub fn sched() {
-    let switch_pair = MULTI_TASK_SCHED.spin_lock().pick_next_task();
+    let (switch_pair, stale) = {
+        let mut s = TASK_SCHED.spin_lock();
+        let pair = s.pick_next_task();
+        let stale = core::mem::take(&mut s.exited_tasks);
+        (pair, stale)
+    };
+
+    // drop old exited tasks outside the lock
+    drop(stale);
 
     if let Some((prev, next)) = switch_pair {
         unsafe { (*prev).switch_to(&*next) };
@@ -173,15 +283,15 @@ pub fn sched() {
 
 pub fn current() -> Option<&'static Task> {
     unsafe {
-        let ptr = MULTI_TASK_SCHED.spin_lock().current()? as *const Task;
+        let ptr = TASK_SCHED.spin_lock().current()? as *const Task;
         Some(&*ptr)
     }
 }
 
 pub fn exit_current(exit_code: i32) -> ! {
-    let (prev, next) = MULTI_TASK_SCHED
-        .spin_lock()
-        .pick_next_task_on_exit(exit_code);
+    let (prev, next, old) = TASK_SCHED.spin_lock().pick_next_task_on_exit(exit_code);
+    // drop old exited tasks outside the lock
+    drop(old);
 
     unsafe {
         (*prev).switch_to(&*next);
@@ -190,52 +300,51 @@ pub fn exit_current(exit_code: i32) -> ! {
     unreachable!();
 }
 
-pub fn request(req: TaskRequest) -> Result<TaskResult> {
-    let mut sched = MULTI_TASK_SCHED.spin_lock();
+pub fn push_layer_id(layer_id: LayerId) -> Result<()> {
+    TASK_SCHED.spin_lock().push_layer_id(layer_id)
+}
 
-    match req {
-        TaskRequest::PushLayerId(layer_id) => {
-            sched.push_layer_id(layer_id)?;
-            Ok(TaskResult::Ok)
-        }
-        TaskRequest::RemoveLayerId(layer_id) => {
-            sched.remove_layer_id(layer_id)?;
-            Ok(TaskResult::Ok)
-        }
-        TaskRequest::PushFileDescriptorNumber(fd_num) => {
-            sched.push_fd_num(fd_num)?;
-            Ok(TaskResult::Ok)
-        }
-        TaskRequest::RemoveFileDescriptorNumber(fd_num) => {
-            sched.remove_fd_num(fd_num)?;
-            Ok(TaskResult::Ok)
-        }
-        TaskRequest::PushMemory(mem_frame_info) => {
-            sched.push_allocated_mem_frame_info(mem_frame_info)?;
-            Ok(TaskResult::Ok)
-        }
-        TaskRequest::GetMemoryFrameSize(virt_addr) => {
-            let size = sched.get_memory_frame_size_by_virt_addr(virt_addr)?;
-            Ok(TaskResult::MemoryFrameSize(size))
-        }
-        TaskRequest::PopMemory(virt_addr) => {
-            let info = sched.pop_allocated_memory_by_virt_addr(virt_addr)?;
-            Ok(TaskResult::PopMemory(info))
-        }
-        TaskRequest::ExecuteDebugger => {
-            let res = sched.debug_running_task();
-            Ok(TaskResult::ExecuteDebugger(res))
-        }
-        TaskRequest::GetDwarf => {
-            let dwarf = sched.get_running_task_dwarf();
-            Ok(TaskResult::Dwarf(dwarf))
-        }
-    }
+pub fn remove_layer_id(layer_id: LayerId) -> Result<()> {
+    TASK_SCHED.spin_lock().remove_layer_id(layer_id)
+}
+
+pub fn push_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
+    TASK_SCHED.spin_lock().push_fd_num(fd_num)
+}
+
+pub fn remove_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
+    TASK_SCHED.spin_lock().remove_fd_num(fd_num)
+}
+
+pub fn push_mem_frame_info(mem_frame_info: MemoryFrameInfo) -> Result<()> {
+    TASK_SCHED
+        .spin_lock()
+        .push_allocated_mem_frame_info(mem_frame_info)
+}
+
+pub fn get_mem_frame_size(virt_addr: VirtualAddress) -> Result<Option<usize>> {
+    TASK_SCHED
+        .spin_lock()
+        .get_memory_frame_size_by_virt_addr(virt_addr)
+}
+
+pub fn pop_mem_frame_info(virt_addr: VirtualAddress) -> Result<MemoryFrameInfo> {
+    TASK_SCHED
+        .spin_lock()
+        .pop_allocated_memory_by_virt_addr(virt_addr)
+}
+
+pub fn show_task_debug() -> bool {
+    TASK_SCHED.spin_lock().show_running_task_debug()
+}
+
+pub fn get_dwarf() -> Option<Dwarf> {
+    TASK_SCHED.spin_lock().get_running_task_dwarf()
 }
 
 #[test_case]
 fn test_multitask_scheduler_round_robin() {
-    let mut sched = MultiTaskScheduler::new();
+    let mut sched = TaskScheduler::new();
     sched.init().expect("Failed to init scheduler");
 
     // Running: KernelTask(TID: 0)
@@ -292,7 +401,7 @@ fn test_multitask_scheduler_round_robin() {
 
 #[test_case]
 fn test_multitask_scheduler_exit() {
-    let mut sched = MultiTaskScheduler::new();
+    let mut sched = TaskScheduler::new();
     sched.init().unwrap();
 
     let t1 = Task::new(0, None, None, ContextMode::Kernel, None).unwrap();
@@ -307,7 +416,7 @@ fn test_multitask_scheduler_exit() {
         panic!("No running task");
     }
 
-    let (prev_ptr, next_ptr) = sched.pick_next_task_on_exit(123);
+    let (prev_ptr, next_ptr, stale) = sched.pick_next_task_on_exit(123);
 
     unsafe {
         let prev = &*prev_ptr; // T1 (Exited)

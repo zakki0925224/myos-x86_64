@@ -31,7 +31,7 @@ use crate::{
     },
     task::{
         async_task::{self, Priority},
-        syscall,
+        exec, scheduler, syscall,
     },
     theme::GLOBAL_THEME,
 };
@@ -150,23 +150,24 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     async_task::spawn_with_priority(poll_rtl8139(), Priority::Low).unwrap();
     async_task::ready().unwrap();
 
+    // initialize scheduler
+    scheduler::init().unwrap();
+
     // execute init app
     let init_app_exec_args = boot_info.kernel_config.init_app_exec_args;
+
     if let Some(args) = init_app_exec_args {
         let splited: Vec<&str> = args.split(" ").collect();
 
-        loop {
-            if splited.len() == 0 || splited[0] == "" {
-                kerror!("Invalid init app exec args: {:?}", args);
-                break;
-            } else if let Err(err) = fs::exec::exec_elf(&splited[0].into(), &splited[1..], false) {
-                kerror!("{:?}", err);
-                break;
-            }
+        if splited.is_empty() || splited[0] == "" {
+            kerror!("Invalid init app exec args: {:?}", args);
+        } else if let Err(err) = exec::exec_elf(&splited[0].into(), &splited[1..], false) {
+            kerror!("{:?}", err);
         }
     }
 
     loop {
+        scheduler::sched();
         x86_64::stihlt();
     }
 }

@@ -1,8 +1,5 @@
 use crate::{
-    arch::{
-        x86_64::context::{Context, ContextMode},
-        VirtualAddress,
-    },
+    arch::x86_64::context::{Context, ContextMode},
     debug::dwarf::Dwarf,
     error::{Error, Result},
     fs::vfs::{self, *},
@@ -22,8 +19,8 @@ use core::{
 };
 
 pub mod async_task;
-pub mod multi_scheduler;
-pub mod single_scheduler;
+pub mod exec;
+pub mod scheduler;
 pub mod syscall;
 
 pub const USER_TASK_STACK_SIZE: usize = 1024 * 1024; // 1MiB
@@ -46,28 +43,6 @@ impl TaskId {
     pub fn new_val(value: usize) -> Self {
         Self(value)
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum TaskRequest {
-    PushLayerId(LayerId),
-    RemoveLayerId(LayerId),
-    PushFileDescriptorNumber(FileDescriptorNumber),
-    RemoveFileDescriptorNumber(FileDescriptorNumber),
-    PushMemory(MemoryFrameInfo),
-    GetMemoryFrameSize(VirtualAddress),
-    PopMemory(VirtualAddress),
-    ExecuteDebugger,
-    GetDwarf,
-}
-
-#[derive(Debug, Clone)]
-pub enum TaskResult {
-    Ok,
-    MemoryFrameSize(Option<usize>),
-    PopMemory(MemoryFrameInfo),
-    ExecuteDebugger(bool),
-    Dwarf(Option<Dwarf>),
 }
 
 #[derive(Debug, Clone)]
@@ -169,6 +144,7 @@ struct Task {
     context: Context,
     resource: TaskResource,
     dwarf: Option<Dwarf>,
+    waiting_for: Option<TaskId>,
 }
 
 impl Drop for Task {
@@ -320,6 +296,7 @@ impl Task {
                 program_mem_info,
             ),
             dwarf,
+            waiting_for: None,
         })
     }
 
@@ -354,13 +331,13 @@ impl Task {
     }
 
     fn switch_to(&self, next_task: &Task) {
-        kdebug!("task: Switch context tid: {} to {}", self.id, next_task.id);
+        // kdebug!("task: Switch context tid: {} to {}", self.id, next_task.id);
 
         self.context.switch_to(&next_task.context);
     }
 }
 
-pub fn debug_task(task: &Task) {
+pub fn show_task_debug(task: &Task) {
     let ctx = &task.context;
     kdebug!("task id: {}", task.id);
 
