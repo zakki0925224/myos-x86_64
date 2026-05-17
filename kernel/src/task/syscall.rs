@@ -602,7 +602,8 @@ fn sys_exec(args: *const u8, flags: i32) -> Result<()> {
     let args: Vec<&str> = args.split(' ').collect();
 
     let enable_debug = (flags as u32) & EXEC_FLAG_DEBUG != 0;
-    task::exec::exec_elf(&args[0].into(), &args[1..], enable_debug)?;
+    let child_id = task::exec::exec_elf(&args[0].into(), &args[1..], enable_debug)?;
+    task::multi_scheduler::sleep_waiting_for(child_id);
 
     Ok(())
 }

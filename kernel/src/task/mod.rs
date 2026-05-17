@@ -170,6 +170,7 @@ struct Task {
     context: Context,
     resource: TaskResource,
     dwarf: Option<Dwarf>,
+    waiting_for: Option<TaskId>,
 }
 
 impl Drop for Task {
@@ -321,6 +322,7 @@ impl Task {
                 program_mem_info,
             ),
             dwarf,
+            waiting_for: None,
         })
     }
 

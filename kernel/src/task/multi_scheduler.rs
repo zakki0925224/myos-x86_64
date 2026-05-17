@@ -17,6 +17,7 @@ struct MultiTaskScheduler {
     ready_queue: VecDeque<Box<Task>>,
     running_task: Option<Box<Task>>,
     exited_tasks: Vec<Box<Task>>,
+    sleeping_tasks: Vec<Box<Task>>,
 }
 
 impl MultiTaskScheduler {
@@ -25,6 +26,7 @@ impl MultiTaskScheduler {
             ready_queue: VecDeque::new(),
             running_task: None,
             exited_tasks: Vec::new(),
+            sleeping_tasks: Vec::new(),
         }
     }
 
@@ -72,6 +74,7 @@ impl MultiTaskScheduler {
             .running_task
             .take()
             .expect("task: No running task to exit");
+        let exiting_id = current.id;
 
         current.unmap_virt_addr().unwrap();
 
@@ -79,18 +82,51 @@ impl MultiTaskScheduler {
         current.state = TaskState::Exited(exit_code);
         self.exited_tasks.push(current);
 
-        if let Some(next_task) = self.ready_queue.pop_front() {
-            next_task.remap_virt_addr().unwrap();
-
-            self.running_task = Some(next_task);
-
-            let prev_ptr = &**self.exited_tasks.last().unwrap() as *const Task;
-            let next_ptr = &**self.running_task.as_ref().unwrap() as *const Task;
-
-            (prev_ptr, next_ptr)
-        } else {
-            panic!("task: No tasks available to switch to after exit");
+        if let Some(i) = self
+            .sleeping_tasks
+            .iter()
+            .position(|t| t.waiting_for == Some(exiting_id))
+        {
+            let mut waiter = self.sleeping_tasks.remove(i);
+            waiter.state = TaskState::Ready;
+            waiter.waiting_for = None;
+            self.ready_queue.push_front(waiter);
         }
+
+        let next_task = self
+            .ready_queue
+            .pop_front()
+            .expect("No task to run after exit");
+        next_task.remap_virt_addr().unwrap();
+
+        self.running_task = Some(next_task);
+
+        let prev_ptr = &**self.exited_tasks.last().unwrap() as *const Task;
+        let next_ptr = &**self.running_task.as_ref().unwrap() as *const Task;
+
+        (prev_ptr, next_ptr)
+    }
+
+    fn sleep_current_waiting_for(&mut self, child_id: TaskId) -> (*const Task, *const Task) {
+        let mut current = self.running_task.take().expect("No running task to sleep");
+        current.waiting_for = Some(child_id);
+        current.state = TaskState::Sleeping;
+        current.unmap_virt_addr().unwrap();
+
+        self.sleeping_tasks.push(current);
+
+        let next_task = self
+            .ready_queue
+            .pop_front()
+            .expect("No task to run after sleep");
+        next_task.remap_virt_addr().unwrap();
+
+        self.running_task = Some(next_task);
+
+        let prev_ptr = &**self.sleeping_tasks.last().unwrap() as *const Task;
+        let next_ptr = &**self.running_task.as_ref().unwrap() as *const Task;
+
+        (prev_ptr, next_ptr)
     }
 
     fn push_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
@@ -201,7 +237,7 @@ pub fn spawn_user_task(
     path: &Path,
     args: &[&str],
     dwarf: Option<Dwarf>,
-) -> Result<()> {
+) -> Result<TaskId> {
     let path_string = path.to_string();
     let all_args: Vec<&str> = [&[path_string.as_str()], args].concat();
     let task = Task::new(
@@ -212,8 +248,18 @@ pub fn spawn_user_task(
         dwarf,
     )?;
 
+    let id = task.id;
     MULTI_TASK_SCHED.spin_lock().spawn(task);
-    Ok(())
+    Ok(id)
+}
+
+pub fn sleep_waiting_for(child_id: TaskId) {
+    let (prev, next) = MULTI_TASK_SCHED
+        .spin_lock()
+        .sleep_current_waiting_for(child_id);
+    unsafe {
+        (*prev).switch_to(&*next);
+    }
 }
 
 pub fn sched() {
