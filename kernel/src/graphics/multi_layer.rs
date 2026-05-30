@@ -73,7 +73,7 @@ pub struct Layer {
     pub disabled: bool,
     format: PixelFormat,
     pub always_on_top: bool,
-    dirty: bool,
+    dirty_rect: Option<Rect>,
     pos_moved: bool,
     old_pos: Option<Point>,
 }
@@ -96,11 +96,29 @@ impl Draw for Layer {
     }
 
     fn dirty(&self) -> bool {
-        self.dirty
+        self.dirty_rect.is_some()
     }
 
     fn set_dirty(&mut self, dirty: bool) {
-        self.dirty = dirty;
+        self.dirty_rect = if dirty {
+            Some(Rect::new(0, 0, self.size.width, self.size.height))
+        } else {
+            None
+        };
+    }
+
+    fn extend_dirty_rect(&mut self, rect: Rect) {
+        self.dirty_rect = Some(match self.dirty_rect {
+            Some(curr) => {
+                let min_x = curr.origin.x.min(rect.origin.x);
+                let min_y = curr.origin.y.min(rect.origin.y);
+                let max_x = (curr.origin.x + curr.size.width).max(rect.origin.x + rect.size.width);
+                let max_y =
+                    (curr.origin.y + curr.size.height).max(rect.origin.y + rect.size.height);
+                Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
+            }
+            None => rect,
+        });
     }
 }
 
@@ -114,7 +132,7 @@ impl Layer {
             disabled: false,
             format,
             always_on_top: false,
-            dirty: false,
+            dirty_rect: None,
             pos_moved: false,
             old_pos: None,
         }
@@ -152,7 +170,16 @@ impl LayerManager {
     }
 
     fn push_layer(&mut self, layer: Layer) {
-        self.layers.push(layer);
+        if layer.always_on_top {
+            self.layers.push(layer);
+        } else {
+            let insert_at = self
+                .layers
+                .iter()
+                .position(|l| l.always_on_top)
+                .unwrap_or(self.layers.len());
+            self.layers.insert(insert_at, layer);
+        }
     }
 
     fn remove_layer(&mut self, layer_id: LayerId) -> Result<()> {
@@ -198,9 +225,6 @@ impl LayerManager {
     }
 
     fn draw_to_frame_buf(&mut self) -> Result<()> {
-        self.layers
-            .sort_by(|a, b| a.always_on_top.cmp(&b.always_on_top));
-
         let mut invalid_rect: Option<Rect> = None;
 
         for layer in &self.layers {
@@ -208,9 +232,14 @@ impl LayerManager {
                 continue;
             }
 
-            if layer.dirty() {
-                let rect = Rect::from_point_and_size(layer.pos, layer.size);
-                invalid_rect = merge_rect(invalid_rect, rect);
+            if let Some(local_dirty) = layer.dirty_rect {
+                let screen_rect = Rect::new(
+                    layer.pos.x + local_dirty.origin.x,
+                    layer.pos.y + local_dirty.origin.y,
+                    local_dirty.size.width,
+                    local_dirty.size.height,
+                );
+                invalid_rect = merge_rect(invalid_rect, screen_rect);
             }
 
             if layer.pos_moved {

@@ -1,4 +1,4 @@
-use self::color::ColorCode;
+use self::{color::ColorCode, font::FONT};
 use crate::{error::Result, kinfo};
 use alloc::string::String;
 use common::{
@@ -20,6 +20,7 @@ pub fn init(
     console_fore_color: ColorCode,
 ) -> Result<()> {
     frame_buf::init(graphic_info)?;
+    FONT.init_cache();
     frame_buf_console::init(console_back_color, console_fore_color)?;
 
     kinfo!("graphics: Frame buffer initialized");

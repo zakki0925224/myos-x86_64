@@ -53,6 +53,8 @@ struct WindowManager {
     mouse_pointer_bmp_path: String,
     dragging_window_id: Option<LayerId>,
     dragging_offset: Option<Point>,
+    last_taskbar_uptime: String,
+    last_taskbar_titles: String,
 }
 
 impl WindowManager {
@@ -67,6 +69,8 @@ impl WindowManager {
             mouse_pointer_bmp_path: String::new(),
             dragging_window_id: None,
             dragging_offset: None,
+            last_taskbar_uptime: String::new(),
+            last_taskbar_titles: String::new(),
         }
     }
 
@@ -155,39 +159,38 @@ impl WindowManager {
         // click window event
         if e_left {
             if self.dragging_window_id.is_none() {
-                // when clicked the window, bring it to the front
+                // single pass: check close button (higher priority) and drag start together
                 for i in (0..self.windows.len()).rev() {
-                    let w = &mut self.windows[i];
                     let LayerInfo {
                         pos: w_pos,
                         size: w_size,
                         format: _,
-                    } = w.get_layer_info()?;
+                    } = self.windows[i].get_layer_info()?;
 
-                    // mouse pointer is inside the window
                     let w_rect = Rect::from_point_and_size(w_pos, w_size);
-                    if w_rect.contains(m_pos_after) {
-                        let mut w = self.windows.remove(i);
-                        w.request_bring_to_front = true;
-                        let offset_x = m_pos_after.x - w_pos.x;
-                        let offset_y = m_pos_after.y - w_pos.y;
-                        let id = w.layer_id();
-                        self.windows.push(w);
-                        self.dragging_window_id = Some(id);
-                        self.dragging_offset = Some(Point::new(offset_x, offset_y));
-                        break;
+                    if !w_rect.contains(m_pos_after) {
+                        continue;
                     }
-                }
 
-                // when clicked the close button of a window, remove the window
-                for w in self.windows.iter_mut().rev() {
-                    if w.is_close_button_clickable(m_pos_after)? {
-                        w.is_closed = true;
+                    // close button takes priority over drag
+                    if self.windows[i].is_close_button_clickable(m_pos_after)? {
+                        self.windows[i].is_closed = true;
                         self.windows.retain(|w| !w.is_closed);
                         self.dragging_window_id = None;
                         self.dragging_offset = None;
                         break;
                     }
+
+                    // bring to front and start drag
+                    let mut w = self.windows.remove(i);
+                    w.request_bring_to_front = true;
+                    let offset_x = m_pos_after.x - w_pos.x;
+                    let offset_y = m_pos_after.y - w_pos.y;
+                    let id = w.layer_id();
+                    self.windows.push(w);
+                    self.dragging_window_id = Some(id);
+                    self.dragging_offset = Some(Point::new(offset_x, offset_y));
+                    break;
                 }
             }
 
@@ -318,14 +321,27 @@ impl WindowManager {
             .as_mut()
             .ok_or(WindowManagerError::TaskbarLayerWasNotFound)?;
         let size = taskbar.get_layer_info()?.size;
+
         taskbar.draw_flush()?;
 
-        let window_titles: Vec<&str> = self.windows.iter().map(|w| w.title()).collect();
-        let s = format!("{:?}", window_titles);
-        taskbar.draw_string(Point::new(7, size.height / 2 - 8), &s)?;
+        let (f_w, f_h) = crate::graphics::font::FONT.get_wh();
+        let text_y = size.height / 2 - f_h / 2;
 
+        // window titles
+        let window_titles: Vec<&str> = self.windows.iter().map(|w| w.title()).collect();
+        let new_titles = format!("{:?}", window_titles);
+        if new_titles != self.last_taskbar_titles {
+            let old_w = self.last_taskbar_titles.len() * f_w;
+            if old_w > 0 {
+                taskbar.clear_rect(Rect::new(7, text_y, old_w, f_h))?;
+            }
+            taskbar.draw_string(Point::new(7, text_y), &new_titles)?;
+            self.last_taskbar_titles = new_titles;
+        }
+
+        // uptime
         let uptime = util::time::global_uptime();
-        let s = if uptime.is_zero() {
+        let new_uptime = if uptime.is_zero() {
             "??????.???".to_string()
         } else {
             format!(
@@ -334,10 +350,13 @@ impl WindowManager {
                 uptime.as_millis() % 1000
             )
         };
-        taskbar.draw_string(
-            Point::new(size.width - s.len() * 8, size.height / 2 - 8),
-            &s,
-        )?;
+        if new_uptime != self.last_taskbar_uptime {
+            let uptime_w = new_uptime.len() * f_w;
+            let uptime_x = size.width.saturating_sub(uptime_w + 8);
+            taskbar.clear_rect(Rect::new(uptime_x, text_y, uptime_w, f_h))?;
+            taskbar.draw_string(Point::new(uptime_x, text_y), &new_uptime)?;
+            self.last_taskbar_uptime = new_uptime;
+        }
 
         Ok(())
     }

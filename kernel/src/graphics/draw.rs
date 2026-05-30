@@ -52,6 +52,11 @@ pub trait Draw {
 
     fn set_dirty(&mut self, dirty: bool);
 
+    fn extend_dirty_rect(&mut self, rect: Rect) {
+        let _ = rect;
+        self.set_dirty(true);
+    }
+
     fn draw_pixel(&mut self, point: Point, color: ColorCode) -> Result<()> {
         let res = self.resolution()?;
         let format = self.format()?;
@@ -68,7 +73,7 @@ pub trait Draw {
             pixel_ptr.write(code);
         }
 
-        self.set_dirty(true);
+        self.extend_dirty_rect(Rect::new(x, y, 1, 1));
         Ok(())
     }
 
@@ -103,7 +108,7 @@ pub trait Draw {
             }
         }
 
-        self.set_dirty(true);
+        self.extend_dirty_rect(rect);
         Ok(())
     }
 
@@ -134,7 +139,7 @@ pub trait Draw {
             }
         }
 
-        self.set_dirty(true);
+        self.extend_dirty_rect(Rect::from_point_and_size(dst_point, size));
         Ok(())
     }
 
@@ -157,7 +162,7 @@ pub trait Draw {
             }
         }
 
-        self.set_dirty(true);
+        self.extend_dirty_rect(Rect::new(0, 0, res.width, res.height));
         Ok(())
     }
 
@@ -192,22 +197,23 @@ pub trait Draw {
 
         unsafe {
             let mut ptr = buf_ptr.add(y * res.width + x);
+            let mut row_buf = [0u32; 8];
 
             for h in 0..draw_h {
                 let line = f_glyph[h];
                 for w in 0..draw_w {
-                    let color_code = if (line << w) & 0x80 != 0 {
+                    row_buf[w] = if (line << w) & 0x80 != 0 {
                         fore_code
                     } else {
                         back_code
                     };
-                    ptr.add(w).write(color_code);
                 }
+                core::slice::from_raw_parts_mut(ptr, draw_w).copy_from_slice(&row_buf[..draw_w]);
                 ptr = ptr.add(res.width);
             }
         }
 
-        self.set_dirty(true);
+        self.extend_dirty_rect(Rect::new(x, y, draw_w, draw_h));
         Ok(())
     }
 
@@ -243,35 +249,39 @@ pub trait Draw {
             }
         }
 
-        self.set_dirty(true);
         Ok(())
     }
 
     fn draw_line(&mut self, start: Point, end: Point, color: ColorCode) -> Result<()> {
-        let (mut x0, mut y0) = start.xy();
-        let (x1, y1) = end.xy();
         let res = self.resolution()?;
-
-        // Clipping: Skip if both start and end are completely out of visible area (rough check)
-        // Note: Ideally, we should use line clipping algorithm like Cohen-Sutherland.
-        // For now, allow drawing as long as we check bounds per pixel or allow partial out-of-bounds.
-
         let format = self.format()?;
         let buf_ptr = self.buf_ptr_mut()?;
         let code = color.to_color_code(format);
 
+        let (cx0, cy0, cx1, cy1) = match clip_line(
+            start.x as isize,
+            start.y as isize,
+            end.x as isize,
+            end.y as isize,
+            res.width as isize - 1,
+            res.height as isize - 1,
+        ) {
+            Some(coords) => coords,
+            None => return Ok(()),
+        };
+
+        let (mut x0, mut y0) = (cx0, cy0);
+        let (x1, y1) = (cx1, cy1);
+
         let dx = (x1 as isize - x0 as isize).abs();
         let dy = -(y1 as isize - y0 as isize).abs();
-        let sx = if x0 < x1 { 1 } else { -1 };
-        let sy = if y0 < y1 { 1 } else { -1 };
+        let sx: isize = if x0 < x1 { 1 } else { -1 };
+        let sy: isize = if y0 < y1 { 1 } else { -1 };
         let mut err = dx + dy;
 
         unsafe {
             loop {
-                // Check bounds for each pixel to allow clipping
-                if x0 < res.width && y0 < res.height {
-                    buf_ptr.add(y0 * res.width + x0).write(code);
-                }
+                buf_ptr.add(y0 * res.width + x0).write(code);
 
                 if x0 == x1 && y0 == y1 {
                     break;
@@ -288,7 +298,16 @@ pub trait Draw {
             }
         }
 
-        self.set_dirty(true);
+        let min_x = cx0.min(cx1);
+        let min_y = cy0.min(cy1);
+        let max_x = cx0.max(cx1);
+        let max_y = cy0.max(cy1);
+        self.extend_dirty_rect(Rect::new(
+            min_x,
+            min_y,
+            max_x - min_x + 1,
+            max_y - min_y + 1,
+        ));
         Ok(())
     }
 
@@ -338,13 +357,93 @@ pub trait Draw {
             }
         }
 
-        self.set_dirty(true);
+        self.extend_dirty_rect(Rect::new(clip_dst_x, clip_dst_y, copy_w, copy_h));
         Ok(())
     }
 
     unsafe fn copy_from_slice_u32(&mut self, src: &[u32]) -> Result<()> {
         core::ptr::copy_nonoverlapping(src.as_ptr(), self.buf_ptr_mut()?, src.len());
-        self.set_dirty(true);
+        let res = self.resolution()?;
+        self.extend_dirty_rect(Rect::new(0, 0, res.width, res.height));
         Ok(())
+    }
+}
+
+fn clip_line(
+    mut x0: isize,
+    mut y0: isize,
+    mut x1: isize,
+    mut y1: isize,
+    xmax: isize,
+    ymax: isize,
+) -> Option<(usize, usize, usize, usize)> {
+    const INSIDE: u8 = 0;
+    const LEFT: u8 = 1;
+    const RIGHT: u8 = 2;
+    const TOP: u8 = 4;
+    const BOTTOM: u8 = 8;
+
+    let outcode = |x: isize, y: isize| -> u8 {
+        let mut code = INSIDE;
+        if x < 0 {
+            code |= LEFT;
+        } else if x > xmax {
+            code |= RIGHT;
+        }
+        if y < 0 {
+            code |= TOP;
+        } else if y > ymax {
+            code |= BOTTOM;
+        }
+        code
+    };
+
+    let mut out0 = outcode(x0, y0);
+    let mut out1 = outcode(x1, y1);
+
+    loop {
+        if out0 | out1 == 0 {
+            return Some((x0 as usize, y0 as usize, x1 as usize, y1 as usize));
+        }
+        if out0 & out1 != 0 {
+            return None;
+        }
+
+        let out_clip = if out0 != 0 { out0 } else { out1 };
+        let dx = x1 - x0;
+        let dy = y1 - y0;
+
+        let (x, y) = if out_clip & BOTTOM != 0 {
+            let x = if dy != 0 {
+                x0 + dx * (ymax - y0) / dy
+            } else {
+                x0
+            };
+            (x, ymax)
+        } else if out_clip & TOP != 0 {
+            let x = if dy != 0 { x0 - dx * y0 / dy } else { x0 };
+            (x, 0)
+        } else if out_clip & RIGHT != 0 {
+            let y = if dx != 0 {
+                y0 + dy * (xmax - x0) / dx
+            } else {
+                y0
+            };
+            (xmax, y)
+        } else {
+            // LEFT
+            let y = if dx != 0 { y0 - dy * x0 / dx } else { y0 };
+            (0, y)
+        };
+
+        if out_clip == out0 {
+            x0 = x;
+            y0 = y;
+            out0 = outcode(x0, y0);
+        } else {
+            x1 = x;
+            y1 = y;
+            out1 = outcode(x1, y1);
+        }
     }
 }

@@ -1,5 +1,6 @@
 use crate::error::{Error, Result};
 use common::geometry::Size;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 //PSF font v2
 const FONT_BIN: &[u8] = include_bytes!("../../../third-party/font.psf");
@@ -7,6 +8,9 @@ const FONT_MAGIC_NUM: u32 = 0x864ab572;
 const UNICODE_TABLE_SEPARATOR: u8 = 0xff;
 
 pub static FONT: PsfFont = PsfFont::new();
+
+static GLYPH_CACHE_INITIALIZED: AtomicBool = AtomicBool::new(false);
+static mut GLYPH_CACHE: [u16; 256] = [u16::MAX; 256];
 
 pub struct PsfFont {
     binary_len: usize,
@@ -103,25 +107,58 @@ impl PsfFont {
         self.wh.wh()
     }
 
-    // ascii char only
-    fn unicode_char_to_glyph_index(&self, c: char) -> usize {
-        if !self.has_unicode_table {
-            return c as usize;
+    pub fn init_cache(&self) {
+        if GLYPH_CACHE_INITIALIZED.load(Ordering::Acquire) {
+            return;
         }
 
-        let code_point = c as u8;
-        let mut index = 0;
+        unsafe {
+            if !self.has_unicode_table {
+                for i in 0..256usize {
+                    GLYPH_CACHE[i] = i as u16;
+                }
+            } else {
+                let mut glyph_index = 0usize;
+                let mut i = self.unicode_table_offset;
+                while i < self.binary_len {
+                    let byte = FONT_BIN[i];
+                    if byte == UNICODE_TABLE_SEPARATOR {
+                        glyph_index += 1;
+                    } else if (byte as usize) < 256 {
+                        GLYPH_CACHE[byte as usize] = glyph_index as u16;
+                    }
+                    i += 1;
+                }
+            }
+        }
 
+        GLYPH_CACHE_INITIALIZED.store(true, Ordering::Release);
+    }
+
+    fn unicode_char_to_glyph_index(&self, c: char) -> usize {
+        let code_point = c as u32 as usize;
+
+        if code_point < 256 && GLYPH_CACHE_INITIALIZED.load(Ordering::Acquire) {
+            let idx = unsafe { GLYPH_CACHE[code_point] };
+            if idx != u16::MAX {
+                return idx as usize;
+            }
+        }
+
+        if !self.has_unicode_table {
+            return code_point;
+        }
+
+        let code_point_u8 = c as u8;
+        let mut index = 0;
         for i in self.unicode_table_offset..self.binary_len {
-            if code_point == FONT_BIN[i] {
+            if code_point_u8 == FONT_BIN[i] {
                 break;
             }
-
             if FONT_BIN[i] == UNICODE_TABLE_SEPARATOR {
                 index += 1;
             }
         }
-
         index
     }
 

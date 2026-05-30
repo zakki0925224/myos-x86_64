@@ -147,6 +147,39 @@ impl FrameBuffer {
         Ok(())
     }
 
+    fn flush_rect_to_vram(&self, rect: Rect) -> Result<()> {
+        let shadow_buf = match &self.shadow_buf {
+            Some(buf) => buf,
+            None => return Ok(()),
+        };
+
+        let res = self.resolution()?;
+        let draw_x = rect.origin.x.min(res.width);
+        let draw_y = rect.origin.y.min(res.height);
+        let draw_w = rect.size.width.min(res.width - draw_x);
+        let draw_h = rect.size.height.min(res.height - draw_y);
+
+        if draw_w == 0 || draw_h == 0 {
+            return Ok(());
+        }
+
+        let fb_ptr: *mut u32 = self
+            .frame_buf_virt_addr
+            .ok_or_else(|| Error::NotInitialized)?
+            .as_ptr_mut();
+
+        unsafe {
+            for i in 0..draw_h {
+                let offset = (draw_y + i) * res.width + draw_x;
+                let src_ptr = shadow_buf.as_ptr().add(offset);
+                let dst_ptr = fb_ptr.add(offset);
+                core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, draw_w);
+            }
+        }
+
+        Ok(())
+    }
+
     fn apply_layer_buf(&mut self, layer: &Layer, keep_rect: Option<Rect>) -> Result<()> {
         let layer_info = layer.layer_info();
         let (layer_x, layer_y) = (layer_info.pos.x, layer_info.pos.y);
@@ -245,6 +278,10 @@ pub fn enable_shadow_buf() -> Result<()> {
 pub fn apply_shadow_buf() -> Result<()> {
     let mut fb = FB.try_lock()?;
     fb.apply_shadow_buf()
+}
+
+pub fn flush_rect_to_vram(rect: Rect) -> Result<()> {
+    FB.try_lock()?.flush_rect_to_vram(rect)
 }
 
 pub fn apply_layer_buf(layer: &Layer, keep_rect: Option<Rect>) -> Result<()> {

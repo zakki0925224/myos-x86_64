@@ -26,7 +26,7 @@ mod util;
 use crate::{
     arch::x86_64::{self, *},
     graphics::{
-        frame_buf, multi_layer,
+        multi_layer,
         window_manager::{self, MouseEvent},
     },
     task::{
@@ -179,8 +179,6 @@ async fn graphics() {
         let _ = window_manager::flush_components();
         async_task::exec_yield().await;
         let _ = multi_layer::draw_to_frame_buf();
-        async_task::exec_yield().await;
-        let _ = frame_buf::apply_shadow_buf();
         async_task::exec_yield().await;
     }
 }

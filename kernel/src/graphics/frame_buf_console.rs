@@ -25,6 +25,7 @@ struct FrameBufferConsole {
     target_layer_id: Option<LayerId>,
     ansi_escape_stream: AnsiEscapeStream,
     is_hidden: bool,
+    pending_scroll_lines: usize,
 }
 
 impl FrameBufferConsole {
@@ -39,6 +40,7 @@ impl FrameBufferConsole {
             target_layer_id: None,
             ansi_escape_stream: AnsiEscapeStream::new(),
             is_hidden: false,
+            pending_scroll_lines: 0,
         }
     }
 
@@ -156,9 +158,8 @@ impl FrameBufferConsole {
                             }
                         }
                         CsiSequence::ScrollUp(n) => {
-                            for _ in 0..n {
-                                self.scroll()?;
-                            }
+                            self.pending_scroll_lines += n as usize;
+                            self.flush_scroll()?;
                         }
                         CsiSequence::ScrollDown(_) => {
                             unimplemented!()
@@ -297,6 +298,7 @@ impl FrameBufferConsole {
         }
 
         if !self.is_hidden {
+            self.flush_scroll()?;
             let point = Point::new(self.cursor_x * f_w, self.cursor_y * f_h);
             self.draw_font(point, c, self.fore_color, self.back_color)?;
             self.inc_cursor()?;
@@ -324,7 +326,7 @@ impl FrameBufferConsole {
         }
 
         if self.cursor_y > cursor_max_y {
-            self.scroll()?;
+            self.scroll();
             self.cursor_x = 0;
             self.cursor_y = cursor_max_y;
         }
@@ -362,27 +364,37 @@ impl FrameBufferConsole {
         self.cursor_y += 1;
 
         if self.cursor_y > cursor_max_y {
-            self.scroll()?;
+            self.scroll();
             self.cursor_y = cursor_max_y;
         }
 
         Ok(())
     }
 
-    fn scroll(&self) -> Result<()> {
+    fn scroll(&mut self) {
+        self.pending_scroll_lines += 1;
+    }
+
+    fn flush_scroll(&mut self) -> Result<()> {
+        if self.pending_scroll_lines == 0 {
+            return Ok(());
+        }
+
         let (_, f_h) = FONT.get_wh();
         let (w, h) = self.screen_size()?.wh();
-        // copy
-        let src = Point::new(0, f_h);
-        let dst = Point::default();
-        let copy_size = Size::new(w, h - f_h);
-        self.copy_rect(src, dst, copy_size)?;
+        let scroll_px = self.pending_scroll_lines * f_h;
+        self.pending_scroll_lines = 0;
 
-        // fill last line
-        let rect = Rect::new(0, h - f_h, w, f_h);
-        self.draw_rect(rect, self.back_color)?;
+        if scroll_px >= h {
+            self.fill(self.back_color)
+        } else {
+            let src = Point::new(0, scroll_px);
+            let copy_size = Size::new(w, h - scroll_px);
+            self.copy_rect(src, Point::default(), copy_size)?;
 
-        Ok(())
+            let rect = Rect::new(0, h - scroll_px, w, scroll_px);
+            self.draw_rect(rect, self.back_color)
+        }
     }
 
     fn fill(&self, color: ColorCode) -> Result<()> {

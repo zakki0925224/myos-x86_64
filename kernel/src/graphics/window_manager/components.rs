@@ -194,6 +194,7 @@ pub struct Window {
     contents_base_rel_pos: Point,
     pub is_closed: bool,
     pub request_bring_to_front: bool,
+    content_dirty: bool,
 }
 
 impl Drop for Window {
@@ -222,15 +223,6 @@ impl Component for Window {
     }
 
     fn draw_flush(&mut self) -> Result<()> {
-        let LayerInfo {
-            pos: Point { x: w_x, y: w_y },
-            size: Size {
-                width: w_w,
-                height: w_h,
-            },
-            format: _,
-        } = self.get_layer_info()?;
-
         if self.request_bring_to_front {
             multi_layer::bring_layer_to_front(self.layer_id)?;
             multi_layer::bring_layer_to_front(self.close_button.layer_id())?;
@@ -243,21 +235,34 @@ impl Component for Window {
             self.request_bring_to_front = false;
         }
 
-        multi_layer::draw_layer(self.layer_id, |l| {
-            fill_back_color_and_draw_borders(l, Size::new(w_w, w_h))?;
+        let LayerInfo {
+            pos: Point { x: w_x, y: w_y },
+            size: Size {
+                width: w_w,
+                height: w_h,
+            },
+            format: _,
+        } = self.get_layer_info()?;
 
-            // titlebar
-            l.draw_rect(Rect::new(4, 4, w_w - 8, 18), GLOBAL_THEME.wm.titlebar_back)?;
+        if self.content_dirty {
+            multi_layer::draw_layer(self.layer_id, |l| {
+                fill_back_color_and_draw_borders(l, Size::new(w_w, w_h))?;
 
-            // title
-            l.draw_string_wrap(
-                Point::new(7, 7),
-                &format!("<{}> {}", self.layer_id, self.title),
-                GLOBAL_THEME.wm.titlebar_fore,
-                GLOBAL_THEME.wm.titlebar_back,
-            )?;
-            Ok(())
-        })?;
+                // titlebar
+                l.draw_rect(Rect::new(4, 4, w_w - 8, 18), GLOBAL_THEME.wm.titlebar_back)?;
+
+                // title
+                l.draw_string_wrap(
+                    Point::new(7, 7),
+                    &format!("<{}> {}", self.layer_id, self.title),
+                    GLOBAL_THEME.wm.titlebar_fore,
+                    GLOBAL_THEME.wm.titlebar_back,
+                )?;
+                Ok(())
+            })?;
+
+            self.content_dirty = false;
+        }
 
         self.close_button.draw_flush()?;
         self.resize_button.draw_flush()?;
@@ -322,6 +327,7 @@ impl Window {
             minimize_button,
             contents_base_rel_pos: Point::new(4, 25),
             request_bring_to_front: false,
+            content_dirty: true,
         })
     }
 
@@ -358,6 +364,7 @@ impl Window {
 
 pub struct Panel {
     layer_id: LayerId,
+    content_dirty: bool,
 }
 
 impl Drop for Panel {
@@ -372,9 +379,14 @@ impl Component for Panel {
     }
 
     fn draw_flush(&mut self) -> Result<()> {
-        let size = self.get_layer_info()?.size;
+        if !self.content_dirty {
+            return Ok(());
+        }
 
-        multi_layer::draw_layer(self.layer_id, |l| fill_back_color_and_draw_borders(l, size))
+        let size = self.get_layer_info()?.size;
+        multi_layer::draw_layer(self.layer_id, |l| fill_back_color_and_draw_borders(l, size))?;
+        self.content_dirty = false;
+        Ok(())
     }
 }
 
@@ -383,7 +395,10 @@ impl Panel {
         let layer = multi_layer::create_layer(pos, size)?;
         let layer_id = layer.id;
         multi_layer::push_layer(layer)?;
-        Ok(Self { layer_id })
+        Ok(Self {
+            layer_id,
+            content_dirty: true,
+        })
     }
 
     pub fn draw_string(&self, point: Point, s: &str) -> Result<()> {
@@ -396,11 +411,18 @@ impl Panel {
             )
         })
     }
+
+    pub fn clear_rect(&self, rect: Rect) -> Result<()> {
+        multi_layer::draw_layer(self.layer_id, |l| {
+            l.draw_rect(rect, GLOBAL_THEME.wm.component_back)
+        })
+    }
 }
 
 pub struct Button {
     layer_id: LayerId,
     title: String,
+    content_dirty: bool,
 }
 
 impl Drop for Button {
@@ -415,6 +437,10 @@ impl Component for Button {
     }
 
     fn draw_flush(&mut self) -> Result<()> {
+        if !self.content_dirty {
+            return Ok(());
+        }
+
         let size = self.get_layer_info()?.size;
 
         multi_layer::draw_layer(self.layer_id, |l| {
@@ -433,7 +459,10 @@ impl Component for Button {
             )?;
 
             Ok(())
-        })
+        })?;
+
+        self.content_dirty = false;
+        Ok(())
     }
 }
 
@@ -442,7 +471,11 @@ impl Button {
         let layer = multi_layer::create_layer(pos, size)?;
         let layer_id = layer.id;
         multi_layer::push_layer(layer)?;
-        Ok(Self { layer_id, title })
+        Ok(Self {
+            layer_id,
+            title,
+            content_dirty: true,
+        })
     }
 }
 
@@ -451,6 +484,7 @@ pub struct Label {
     label: String,
     back_color: ColorCode,
     fore_color: ColorCode,
+    content_dirty: bool,
 }
 
 impl Drop for Label {
@@ -465,22 +499,33 @@ impl Component for Label {
     }
 
     fn draw_flush(&mut self) -> Result<()> {
+        if !self.content_dirty {
+            return Ok(());
+        }
+
+        let back_color = self.back_color;
+        let fore_color = self.fore_color;
+        let label = self.label.clone();
+
         multi_layer::draw_layer(self.layer_id, |l| {
             // back color
-            l.fill(self.back_color)?;
+            l.fill(back_color)?;
 
             // label
             let (_, font_h) = FONT.get_wh();
             let c_x = 0;
             let mut c_y = 0;
 
-            for line in self.label.lines() {
-                l.draw_string_wrap(Point::new(c_x, c_y), line, self.fore_color, self.back_color)?;
+            for line in label.lines() {
+                l.draw_string_wrap(Point::new(c_x, c_y), line, fore_color, back_color)?;
                 c_y += font_h;
             }
 
             Ok(())
-        })
+        })?;
+
+        self.content_dirty = false;
+        Ok(())
     }
 }
 
@@ -504,7 +549,15 @@ impl Label {
             label,
             back_color,
             fore_color,
+            content_dirty: true,
         })
+    }
+
+    pub fn set_label(&mut self, label: String) {
+        if self.label != label {
+            self.label = label;
+            self.content_dirty = true;
+        }
     }
 }
 
