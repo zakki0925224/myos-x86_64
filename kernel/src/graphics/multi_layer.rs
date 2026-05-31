@@ -183,11 +183,37 @@ impl LayerManager {
     }
 
     fn remove_layer(&mut self, layer_id: LayerId) -> Result<()> {
-        if self.get_layer(layer_id).is_err() {
-            return Err(LayerError::InvalidLayerId(layer_id.0).into());
-        }
+        let removed = match self.layers.iter().find(|l| l.id == layer_id) {
+            Some(l) => l,
+            None => return Err(LayerError::InvalidLayerId(layer_id.0).into()),
+        };
+
+        let r_x1 = removed.pos.x;
+        let r_y1 = removed.pos.y;
+        let r_x2 = removed.pos.x + removed.size.width;
+        let r_y2 = removed.pos.y + removed.size.height;
 
         self.layers.retain(|l| l.id != layer_id);
+
+        for layer in &mut self.layers {
+            if layer.disabled {
+                continue;
+            }
+
+            let l_x1 = layer.pos.x;
+            let l_y1 = layer.pos.y;
+            let l_x2 = layer.pos.x + layer.size.width;
+            let l_y2 = layer.pos.y + layer.size.height;
+
+            let ix1 = r_x1.max(l_x1);
+            let iy1 = r_y1.max(l_y1);
+            let ix2 = r_x2.min(l_x2);
+            let iy2 = r_y2.min(l_y2);
+
+            if ix2 > ix1 && iy2 > iy1 {
+                layer.extend_dirty_rect(Rect::new(ix1 - l_x1, iy1 - l_y1, ix2 - ix1, iy2 - iy1));
+            }
+        }
 
         Ok(())
     }
