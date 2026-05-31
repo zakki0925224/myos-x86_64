@@ -118,15 +118,18 @@ impl Executor {
             }
 
             if let Some(queue) = self.task_queues.get_mut(&p) {
-                if let Some(mut task) = queue.pop_front() {
-                    let waker = dummy_waker();
-                    let mut context = Context::from_waker(&waker);
-                    match task.poll(&mut context) {
-                        Poll::Ready(()) => {
-                            kdebug!("task: Done (id: {})", task.id);
-                        }
-                        Poll::Pending => {
-                            queue.push_back(task);
+                let count = if p == Priority::High { queue.len() } else { 1 };
+                for _ in 0..count {
+                    if let Some(mut task) = queue.pop_front() {
+                        let waker = dummy_waker();
+                        let mut context = Context::from_waker(&waker);
+                        match task.poll(&mut context) {
+                            Poll::Ready(()) => {
+                                kdebug!("task: Done (id: {})", task.id);
+                            }
+                            Poll::Pending => {
+                                queue.push_back(task);
+                            }
                         }
                     }
                 }

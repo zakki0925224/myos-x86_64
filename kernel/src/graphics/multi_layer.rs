@@ -270,6 +270,7 @@ impl LayerManager {
             layer.old_pos = None;
         }
 
+        frame_buf::flush_rect_to_vram(rect)?;
         Ok(())
     }
 }

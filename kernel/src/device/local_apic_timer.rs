@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 use core::time::Duration;
 
 const DIV_VALUE: DivideValue = DivideValue::By1;
-const INT_INTERVAL_MS: usize = 10; // must be >= 10ms
+const INT_INTERVAL_MS: usize = 10;
 
 #[allow(dead_code)]
 #[derive(Debug)]

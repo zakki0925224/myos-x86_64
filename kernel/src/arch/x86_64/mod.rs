@@ -22,6 +22,10 @@ pub fn stihlt() {
     unsafe { asm!("sti", "hlt", options(nomem, nostack)) }
 }
 
+pub fn sti() {
+    unsafe { asm!("sti", options(nomem, nostack)) }
+}
+
 pub fn disabled_int<F: FnMut() -> R, R>(mut func: F) -> R {
     let rflags = Rflags::read();
     unsafe { asm!("cli", options(nomem, nostack)) };
