@@ -9,7 +9,12 @@ use crate::{
     sync::mutex::Mutex,
     task::*,
 };
-use alloc::{boxed::Box, collections::vec_deque::VecDeque, string::ToString, vec::Vec};
+use alloc::{
+    boxed::Box,
+    collections::{btree_map::BTreeMap, vec_deque::VecDeque},
+    string::ToString,
+    vec::Vec,
+};
 
 static TASK_SCHED: Mutex<TaskScheduler> = Mutex::new(TaskScheduler::new());
 
@@ -18,6 +23,7 @@ struct TaskScheduler {
     running_task: Option<Box<Task>>,
     exited_tasks: Vec<Box<Task>>,
     sleeping_tasks: Vec<Box<Task>>,
+    exit_codes: BTreeMap<TaskId, i32>,
 }
 
 impl TaskScheduler {
@@ -27,6 +33,7 @@ impl TaskScheduler {
             running_task: None,
             exited_tasks: Vec::new(),
             sleeping_tasks: Vec::new(),
+            exit_codes: BTreeMap::new(),
         }
     }
 
@@ -86,6 +93,7 @@ impl TaskScheduler {
 
         let old = core::mem::take(&mut self.exited_tasks);
         self.exited_tasks.push(current);
+        self.exit_codes.insert(exiting_id, exit_code);
 
         if let Some(i) = self
             .sleeping_tasks
@@ -132,6 +140,10 @@ impl TaskScheduler {
         let next_ptr = &**self.running_task.as_ref().unwrap() as *const Task;
 
         (prev_ptr, next_ptr)
+    }
+
+    fn take_exit_code(&mut self, id: TaskId) -> Option<i32> {
+        self.exit_codes.remove(&id)
     }
 
     fn push_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
@@ -298,6 +310,10 @@ pub fn exit_current(exit_code: i32) -> ! {
     }
 
     unreachable!();
+}
+
+pub fn take_exit_code(id: TaskId) -> Option<i32> {
+    TASK_SCHED.spin_lock().take_exit_code(id)
 }
 
 pub fn push_layer_id(layer_id: LayerId) -> Result<()> {

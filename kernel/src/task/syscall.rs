@@ -200,9 +200,13 @@ fn syscall_handler_inner(
         SN_EXEC => {
             let args = arg0 as *const u8;
             let flags = arg1 as i32;
-            if let Err(err) = sys_exec(args, flags) {
-                kerror!("syscall: exec: {:?}", err);
-                return -1;
+
+            match sys_exec(args, flags) {
+                Ok(exit_code) => return exit_code as i64,
+                Err(err) => {
+                    kerror!("syscall: exec: {:?}", err);
+                    return -1;
+                }
             }
         }
         SN_GETCWD => {
@@ -582,7 +586,7 @@ fn sys_uptime() -> i64 {
     util::time::global_uptime().as_millis() as i64
 }
 
-fn sys_exec(args: *const u8, flags: i32) -> Result<()> {
+fn sys_exec(args: *const u8, flags: i32) -> Result<i32> {
     let args = unsafe { util::cstring::from_cstring_ptr(args) };
     let args: Vec<&str> = args.split(' ').collect();
 
@@ -590,7 +594,10 @@ fn sys_exec(args: *const u8, flags: i32) -> Result<()> {
     let child_id = task::exec::exec_elf(&args[0].into(), &args[1..], enable_debug)?;
     task::scheduler::sleep_waiting_for(child_id);
 
-    Ok(())
+    let exit_code = task::scheduler::take_exit_code(child_id)
+        .ok_or(Error::NotFound.with_context("exit code"))?;
+
+    Ok(exit_code)
 }
 
 fn sys_getcwd(buf: *mut u8, buf_len: usize) -> Result<()> {

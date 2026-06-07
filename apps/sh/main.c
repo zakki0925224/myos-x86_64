@@ -137,10 +137,8 @@ void exec_cmd(char* cmd) {
             }
         }
 
-        if (sys_exec(args, EXEC_FLAG_DEBUG) == -1) {
-            printf("sh: exec: failed to execute\n");
-            return;
-        }
+        int exit_code = sys_exec(args, EXEC_FLAG_DEBUG);
+        printf("sh: exit code: %d\n", exit_code);
     } else if (strcmp(splitted_buf[0], "window") == 0) {
         component_descriptor* cdesc = create_component_window("test window", 200, 50, 300, 200);
         if (cdesc == NULL) {
@@ -165,10 +163,8 @@ void exec_cmd(char* cmd) {
             }
         }
 
-        if (sys_exec(args, EXEC_FLAG_NONE) == -1) {
-            printf("sh: exec: failed to execute\n");
-            return;
-        }
+        int exit_code = sys_exec(args, EXEC_FLAG_NONE);
+        printf("sh: exit code: %d\n", exit_code);
     }
     // unreachable
     else {
