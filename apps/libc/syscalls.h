@@ -39,6 +39,7 @@
 #define SN_CONNECT 25
 #define SN_LISTEN 26
 #define SN_ACCEPT 27
+#define SN_PIPE 28
 
 // defined file descriptor numbers
 #define FDN_STDIN 0
@@ -69,7 +70,7 @@ int sys_uname(utsname* buf);
 void sys_break(void);
 int sys_stat(int fd, f_stat* buf);
 uint64_t sys_uptime(void);
-pid_t sys_exec(const char* args, int flags);
+pid_t sys_exec(const char* args, int flags, int stdin_fd, int stdout_fd);
 int sys_getcwd(char* buf, size_t buf_len);
 int sys_chdir(const char* path);
 int sys_free(void* ptr);
@@ -87,5 +88,6 @@ int sys_recv(int sockfd, void* buf, size_t len, int flags);
 int sys_connect(int sockfd, const struct sockaddr* addr, size_t addrlen);
 int sys_listen(int sockfd, int backlog);
 int sys_accept(int sockfd, struct sockaddr* addr, size_t* addrlen);
+int sys_pipe(int pipefd[2]);
 
 #endif

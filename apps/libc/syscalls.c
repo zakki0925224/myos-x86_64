@@ -56,8 +56,8 @@ uint64_t sys_uptime(void) {
     return syscall(SN_UPTIME, 0, 0, 0, 0, 0, 0);
 }
 
-pid_t sys_exec(const char* args, int flags) {
-    return (pid_t)syscall(SN_EXEC, (uint64_t)args, (uint64_t)flags, 0, 0, 0, 0);
+pid_t sys_exec(const char* args, int flags, int stdin_fd, int stdout_fd) {
+    return (pid_t)syscall(SN_EXEC, (uint64_t)args, (uint64_t)flags, (uint64_t)(int64_t)stdin_fd, (uint64_t)(int64_t)stdout_fd, 0, 0);
 }
 
 int sys_getcwd(char* buf, size_t buf_len) {
@@ -126,4 +126,8 @@ int sys_listen(int sockfd, int backlog) {
 
 int sys_accept(int sockfd, struct sockaddr* addr, size_t* addrlen) {
     return (int)syscall(SN_ACCEPT, (uint64_t)sockfd, (uint64_t)addr, (uint64_t)addrlen, 0, 0, 0);
+}
+
+int sys_pipe(int pipefd[2]) {
+    return (int)syscall(SN_PIPE, (uint64_t)pipefd, 0, 0, 0, 0, 0);
 }

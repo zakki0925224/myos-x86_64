@@ -202,8 +202,10 @@ fn syscall_handler_inner(
         SN_EXEC => {
             let args = arg0 as *const u8;
             let flags = arg1 as i32;
+            let stdin_fd = FileDescriptorNumber::new_val(arg2 as i32).ok();
+            let stdout_fd = FileDescriptorNumber::new_val(arg3 as i32).ok();
 
-            match sys_exec(args, flags) {
+            match sys_exec(args, flags, stdin_fd, stdout_fd) {
                 Ok(exit_code) => return exit_code as i64,
                 Err(err) => {
                     kerror!("syscall: exec: {:?}", err);
@@ -391,6 +393,14 @@ fn syscall_handler_inner(
                 }
             }
         }
+        SN_PIPE => {
+            let pipefd = arg0 as *mut i32;
+
+            if let Err(err) = sys_pipe(pipefd) {
+                kerror!("syscall: pipe: {:?}", err);
+                return -1;
+            }
+        }
         num => {
             kerror!("syscall: Syscall number 0x{:x} is not defined", num);
             return -1;
@@ -408,6 +418,14 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
             return Err(Error::NotFound.with_context("file descriptor"));
         }
         FileDescriptorNumber::STDIN => {
+            if let Some(fd_num) = task::scheduler::current_stdin_fd() {
+                let data = vfs::read_file(fd_num)?;
+                unsafe {
+                    buf.copy_from_nonoverlapping(data.as_ptr(), data.len());
+                }
+                return Ok(data.len());
+            }
+
             if buf_len > 1 {
                 let mut input_s = None;
 
@@ -487,6 +505,11 @@ fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<usize> {
 
     match fd_num {
         FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => {
+            if let Some(fd_num) = task::scheduler::current_stdout_fd() {
+                vfs::write_file(fd_num, buf_slice)?;
+                return Ok(buf_len);
+            }
+
             let s = String::from_utf8_lossy(buf_slice).to_string();
             print!("{}", s);
             Ok(buf_len)
@@ -605,12 +628,23 @@ fn sys_uptime() -> i64 {
     util::time::global_uptime().as_millis() as i64
 }
 
-fn sys_exec(args: *const u8, flags: i32) -> Result<pid_t> {
+fn sys_exec(
+    args: *const u8,
+    flags: i32,
+    stdin_fd: Option<FileDescriptorNumber>,
+    stdout_fd: Option<FileDescriptorNumber>,
+) -> Result<pid_t> {
     let args = unsafe { util::cstring::from_cstring_ptr(args) };
     let args: Vec<&str> = args.split(' ').collect();
 
     let enable_debug = (flags as u32) & EXEC_FLAG_DEBUG != 0;
-    let child_id = task::exec::exec_elf(&args[0].into(), &args[1..], enable_debug)?;
+    let child_id = task::exec::exec_elf(
+        &args[0].into(),
+        &args[1..],
+        enable_debug,
+        stdin_fd,
+        stdout_fd,
+    )?;
 
     Ok(child_id.0 as pid_t)
 }
@@ -998,6 +1032,19 @@ fn sys_accept(sockfd: i32, addr: *const sockaddr, addrlen: *const i32) -> Result
             }
         }
     }
+}
+
+fn sys_pipe(pipefd: *mut i32) -> Result<()> {
+    let (read_fd, write_fd) = vfs::create_pipe()?;
+
+    unsafe {
+        pipefd.write(read_fd.get() as i32);
+        pipefd.add(1).write(write_fd.get() as i32);
+    }
+
+    task::scheduler::push_fd_num(read_fd)?;
+    task::scheduler::push_fd_num(write_fd)?;
+    Ok(())
 }
 
 pub fn enable() {

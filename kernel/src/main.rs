@@ -161,7 +161,9 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
 
         if splited.is_empty() || splited[0] == "" {
             kerror!("Invalid init app exec args: {:?}", args);
-        } else if let Err(err) = exec::exec_elf(&splited[0].into(), &splited[1..], false) {
+        } else if let Err(err) =
+            exec::exec_elf(&splited[0].into(), &splited[1..], false, None, None)
+        {
             kerror!("{:?}", err);
         }
     }

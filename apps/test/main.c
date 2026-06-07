@@ -168,7 +168,47 @@ int test_tcp_client() {
     return 0;
 }
 
+int test_pipe() {
+    printf("=== Pipe Test ===\n");
+
+    int pipefd[2];
+    if (sys_pipe(pipefd) < 0) {
+        printf("FAIL: sys_pipe\n");
+        return -1;
+    }
+    printf("pipe created: read_fd=%d, write_fd=%d\n", pipefd[0], pipefd[1]);
+
+    const char* msg = "hello pipe";
+    int written = sys_write(pipefd[1], msg, strlen(msg));
+    if (written < 0) {
+        printf("FAIL: write\n");
+        return -1;
+    }
+    printf("written: %d bytes\n", written);
+
+    char buf[64];
+    memset(buf, 0, sizeof(buf));
+    int read_len = sys_read(pipefd[0], buf, sizeof(buf));
+    if (read_len < 0) {
+        printf("FAIL: read\n");
+        return -1;
+    }
+    printf("read: %d bytes, data=\"%s\"\n", read_len, buf);
+
+    if (strcmp(buf, msg) == 0) {
+        printf("OK\n");
+    } else {
+        printf("FAIL: data mismatch\n");
+        return -1;
+    }
+
+    sys_close(pipefd[0]);
+    sys_close(pipefd[1]);
+    return 0;
+}
+
 int main(int argc, const char* argv[]) {
     // return test_tcp_server();
-    return test_tcp_client();
+    // return test_tcp_client();
+    return test_pipe();
 }

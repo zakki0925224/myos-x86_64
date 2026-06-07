@@ -53,6 +53,8 @@ struct TaskResource {
     allocated_mem_frame_info: Vec<MemoryFrameInfo>,
     created_layer_ids: Vec<LayerId>,
     opend_fd_num: Vec<FileDescriptorNumber>,
+    stdin_fd: Option<FileDescriptorNumber>,
+    stdout_fd: Option<FileDescriptorNumber>,
 }
 
 impl Drop for TaskResource {
@@ -111,6 +113,8 @@ impl TaskResource {
         args_mem_frame_info: Option<MemoryFrameInfo>,
         stack_mem_frame_info: Option<MemoryFrameInfo>,
         program_mem_info: Vec<(MemoryFrameInfo, MappingInfo)>,
+        stdin_fd: Option<FileDescriptorNumber>,
+        stdout_fd: Option<FileDescriptorNumber>,
     ) -> Self {
         Self {
             args_mem_frame_info,
@@ -119,6 +123,8 @@ impl TaskResource {
             allocated_mem_frame_info: Vec::new(),
             created_layer_ids: Vec::new(),
             opend_fd_num: Vec::new(),
+            stdin_fd,
+            stdout_fd,
         }
     }
 }
@@ -160,6 +166,8 @@ impl Task {
         args: Option<&[&str]>, // file name + args
         mode: ContextMode,
         dwarf: Option<Dwarf>,
+        stdin_fd: Option<FileDescriptorNumber>,
+        stdout_fd: Option<FileDescriptorNumber>,
     ) -> Result<Self> {
         // parse ELF
         let mut entry = None;
@@ -294,6 +302,8 @@ impl Task {
                 args_mem_frame_info,
                 stack_mem_frame_info,
                 program_mem_info,
+                stdin_fd,
+                stdout_fd,
             ),
             dwarf,
             waiting_for: None,

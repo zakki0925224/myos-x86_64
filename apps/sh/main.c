@@ -92,7 +92,68 @@ static int sh_readline(char* dst, int dst_len) {
     return 0;
 }
 
+static int build_exec_args(const char* cmd_str, char* out, int out_len) {
+    while (*cmd_str == ' ') cmd_str++;
+    if (*cmd_str == '\0') return -1;
+
+    if (strlen(envpath) > 0) {
+        // find end of command name (first space or end of string)
+        const char* name_end = cmd_str;
+        while (*name_end != ' ' && *name_end != '\0') name_end++;
+
+        // copy command name to temp buffer to avoid %.*s
+        char name_buf[BUF_LEN] = {0};
+        int name_len = name_end - cmd_str;
+        strncpy(name_buf, cmd_str, name_len);
+
+        if (*name_end == '\0') {
+            snprintf(out, out_len, "%s/%s", envpath, name_buf);
+        } else {
+            // name_end points to ' ' followed by args
+            snprintf(out, out_len, "%s/%s%s", envpath, name_buf, name_end);
+        }
+    } else {
+        strncpy(out, cmd_str, out_len - 1);
+        out[out_len - 1] = '\0';
+    }
+    return 0;
+}
+
 void exec_cmd(char* cmd) {
+    char* pipe_pos = strchr(cmd, '|');
+    if (pipe_pos != NULL) {
+        *pipe_pos = '\0';
+        char* left = cmd;
+        char* right = pipe_pos + 1;
+
+        static char left_args[BUF_LEN];
+        static char right_args[BUF_LEN];
+
+        if (build_exec_args(left, left_args, BUF_LEN) < 0 ||
+            build_exec_args(right, right_args, BUF_LEN) < 0) {
+            printf("sh: pipe: invalid command\n");
+            return;
+        }
+
+        int pipefd[2];
+        if (sys_pipe(pipefd) < 0) {
+            printf("sh: pipe: failed\n");
+            return;
+        }
+
+        pid_t pid1 = sys_exec(left_args, EXEC_FLAG_NONE, -1, pipefd[1]);
+        pid_t pid2 = sys_exec(right_args, EXEC_FLAG_NONE, pipefd[0], -1);
+
+        if (pid1 < 0 || pid2 < 0) {
+            printf("sh: pipe: exec failed\n");
+            return;
+        }
+
+        sys_wait(pid1);
+        sys_wait(pid2);
+        return;
+    }
+
     int cmdargs_len = split(cmd, ' ', splitted_buf, BUF_LEN);
 
     if (cmdargs_len < 1) {
@@ -137,7 +198,7 @@ void exec_cmd(char* cmd) {
             }
         }
 
-        pid_t pid = sys_exec(args, EXEC_FLAG_DEBUG);
+        pid_t pid = sys_exec(args, EXEC_FLAG_DEBUG, -1, -1);
         if (pid == -1) {
             printf("sh: exec: failed\n");
             return;
@@ -169,7 +230,7 @@ void exec_cmd(char* cmd) {
             }
         }
 
-        pid_t pid = sys_exec(args, EXEC_FLAG_NONE);
+        pid_t pid = sys_exec(args, EXEC_FLAG_NONE, -1, -1);
         if (pid == -1) {
             printf("sh: exec: failed\n");
             return;

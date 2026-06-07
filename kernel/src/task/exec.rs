@@ -1,13 +1,22 @@
 use crate::{
     debug::dwarf,
     error::Result,
-    fs::{path::Path, vfs},
+    fs::{
+        path::Path,
+        vfs::{self, FileDescriptorNumber},
+    },
     kerror,
     task::TaskId,
 };
 use common::elf::Elf64;
 
-pub fn exec_elf(elf_path: &Path, args: &[&str], enable_debug: bool) -> Result<TaskId> {
+pub fn exec_elf(
+    elf_path: &Path,
+    args: &[&str],
+    enable_debug: bool,
+    stdin_fd: Option<FileDescriptorNumber>,
+    stdout_fd: Option<FileDescriptorNumber>,
+) -> Result<TaskId> {
     let fd_num = vfs::open_file(elf_path, false)?;
     let elf_data = vfs::read_file(fd_num)?;
     let elf64 = match Elf64::new(&elf_data) {
@@ -29,5 +38,5 @@ pub fn exec_elf(elf_path: &Path, args: &[&str], enable_debug: bool) -> Result<Ta
         None
     };
 
-    super::scheduler::spawn_user_task(elf64, elf_path, args, dwarf)
+    super::scheduler::spawn_user_task(elf64, elf_path, args, dwarf, stdin_fd, stdout_fd)
 }

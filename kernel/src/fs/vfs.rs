@@ -6,13 +6,47 @@ use crate::{
     kwarn,
     sync::mutex::Mutex,
 };
-use alloc::{collections::btree_map::BTreeMap, string::String, vec::Vec};
+use alloc::{
+    collections::{btree_map::BTreeMap, vec_deque::VecDeque},
+    string::String,
+    vec::Vec,
+};
 use core::{
     fmt,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
 static VFS: Mutex<VirtualFileSystem> = Mutex::new(VirtualFileSystem::new());
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceFileDescriptor {
+    pub get_device_driver_info: fn() -> Result<DeviceDriverInfo>,
+    pub open: fn() -> Result<()>,
+    pub close: fn() -> Result<()>,
+    pub read: fn() -> Result<Vec<u8>>,
+    pub write: fn(&[u8]) -> Result<()>,
+}
+
+#[derive(Debug)]
+struct PipeBuffer {
+    buf: VecDeque<u8>,
+    write_closed: bool,
+}
+
+impl Default for PipeBuffer {
+    fn default() -> Self {
+        Self {
+            buf: VecDeque::new(),
+            write_closed: false,
+        }
+    }
+}
+
+#[derive(Clone)]
+enum PipeEnd {
+    Read,
+    Write,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VfsFileId(usize);
@@ -62,26 +96,19 @@ enum FileDescriptorStatus {
     Close,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FileDescriptor {
     num: FileDescriptorNumber,
     status: FileDescriptorStatus,
     file_id: VfsFileId,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeviceFileDescriptor {
-    pub get_device_driver_info: fn() -> Result<DeviceDriverInfo>,
-    pub open: fn() -> Result<()>,
-    pub close: fn() -> Result<()>,
-    pub read: fn() -> Result<Vec<u8>>,
-    pub write: fn(&[u8]) -> Result<()>,
+    pipe_end: Option<PipeEnd>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum VfsFileType {
     VirtualFile, // for file system
     DeviceFile(DeviceFileDescriptor),
+    Pipe,
     Directory,
 }
 
@@ -98,6 +125,7 @@ struct FileInfo {
     parent: VfsFileId,
     children: Vec<VfsFileId>,
     data: Option<Vec<u8>>,
+    pipe_buf: Option<PipeBuffer>,
 }
 
 impl FileInfo {
@@ -109,6 +137,7 @@ impl FileInfo {
             parent,
             children: Vec::new(),
             data: None,
+            pipe_buf: None,
         }
     }
 
@@ -184,7 +213,6 @@ impl core::fmt::Display for VirtualFileSystemError {
     }
 }
 
-#[derive(Debug)]
 struct VirtualFileSystem {
     cwd_id: Option<VfsFileId>,
     root_id: Option<VfsFileId>,
@@ -523,6 +551,7 @@ impl VirtualFileSystem {
             num: fd_num,
             status: FileDescriptorStatus::Open,
             file_id,
+            pipe_end: None,
         };
 
         // device file
@@ -552,6 +581,16 @@ impl VirtualFileSystem {
                 _ => (),
             }
 
+            // pipe
+            let pipe_end = self.fds[index].pipe_end.clone();
+            if matches!(pipe_end, Some(PipeEnd::Write)) {
+                if let Some(f) = self.find_file_mut(file_id) {
+                    if let Some(pipe) = f.pipe_buf.as_mut() {
+                        pipe.write_closed = true;
+                    }
+                }
+            }
+
             self.fds.remove(index);
         } else {
             return Err(VirtualFileSystemError::ReleasedFileResource(fd_num).into());
@@ -560,19 +599,31 @@ impl VirtualFileSystem {
         Ok(())
     }
 
-    fn read_file(&self, fd_num: FileDescriptorNumber) -> Result<Vec<u8>> {
-        let fd = if let Some(fd) = self
+    fn read_file(&mut self, fd_num: FileDescriptorNumber) -> Result<Vec<u8>> {
+        let fd = self
             .fds
             .iter()
             .find(|f| f.num == fd_num && f.status == FileDescriptorStatus::Open)
-        {
-            fd
-        } else {
-            return Err(VirtualFileSystemError::ReleasedFileResource(fd_num).into());
-        };
+            .ok_or(VirtualFileSystemError::ReleasedFileResource(fd_num))?;
+        let file_id = fd.file_id;
+
+        if matches!(
+            self.find_file(file_id).map(|f| &f.ty),
+            Some(VfsFileType::Pipe)
+        ) {
+            let file_ref_mut = self
+                .find_file_mut(file_id)
+                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
+            let pipe = file_ref_mut
+                .pipe_buf
+                .as_mut()
+                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
+            let data: Vec<u8> = pipe.buf.drain(..).collect();
+            return Ok(data);
+        }
 
         let file_ref = self
-            .find_file(fd.file_id)
+            .find_file(file_id)
             .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
         let file_path = self
             .abs_path_by_file(file_ref)
@@ -638,6 +689,13 @@ impl VirtualFileSystem {
                 );
             }
             VfsFileType::DeviceFile(desc) => (desc.write)(data)?,
+            VfsFileType::Pipe => {
+                let pipe = file_ref_mut
+                    .pipe_buf
+                    .as_mut()
+                    .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
+                pipe.buf.extend(data);
+            }
             _ => {
                 return Err(VirtualFileSystemError::InvalidFileType {
                     ty: file_ref_mut.ty.clone(),
@@ -693,25 +751,51 @@ impl VirtualFileSystem {
             .into()),
         }
     }
+
+    fn create_pipe(&mut self) -> Result<(FileDescriptor, FileDescriptor)> {
+        let root_id = self.root_id.ok_or(Error::NotInitialized)?;
+
+        let file_id = VfsFileId::new();
+        let mut info = FileInfo::new(VfsFileType::Pipe, format!("pipe:{}", file_id.0), root_id);
+        info.pipe_buf = Some(PipeBuffer::default());
+        self.files.insert(file_id, info);
+
+        let read_fd = FileDescriptor {
+            num: FileDescriptorNumber::new(),
+            status: FileDescriptorStatus::Open,
+            file_id,
+            pipe_end: Some(PipeEnd::Read),
+        };
+        let write_fd = FileDescriptor {
+            num: FileDescriptorNumber::new(),
+            status: FileDescriptorStatus::Open,
+            file_id,
+            pipe_end: Some(PipeEnd::Write),
+        };
+        self.fds.push(read_fd.clone());
+        self.fds.push(write_fd.clone());
+
+        Ok((read_fd, write_fd))
+    }
 }
 
 pub fn init() -> Result<()> {
-    let mut vfs = VFS.try_lock()?;
+    let mut vfs = VFS.spin_lock();
     vfs.init()
 }
 
 pub fn chdir(path: &Path) -> Result<()> {
-    let mut vfs = VFS.try_lock()?;
+    let mut vfs = VFS.spin_lock();
     vfs.chdir(path)
 }
 
 pub fn mount_fs(path: &Path, fs: FileSystem) -> Result<()> {
-    let mut vfs = VFS.try_lock()?;
+    let mut vfs = VFS.spin_lock();
     vfs.mount_fs(path, fs)
 }
 
 pub fn entry_names(path: &Path) -> Result<Vec<String>> {
-    let vfs = VFS.try_lock()?;
+    let vfs = VFS.spin_lock();
     let names = vfs
         .files_by_path(path)?
         .iter()
@@ -721,7 +805,7 @@ pub fn entry_names(path: &Path) -> Result<Vec<String>> {
 }
 
 pub fn cwd_path() -> Result<Path> {
-    let vfs = VFS.try_lock()?;
+    let vfs = VFS.spin_lock();
     let cwd_id = vfs.cwd_id.ok_or(Error::NotInitialized)?;
     let file_ref = vfs.find_file(cwd_id).ok_or(Error::NotInitialized)?;
     let path = vfs
@@ -732,37 +816,43 @@ pub fn cwd_path() -> Result<Path> {
 }
 
 pub fn open_file(path: &Path, create: bool) -> Result<FileDescriptorNumber> {
-    let mut vfs = VFS.try_lock()?;
+    let mut vfs = VFS.spin_lock();
     let fd = vfs.open_file(path, create)?;
     Ok(fd.num)
 }
 
 pub fn close_file(fd_num: FileDescriptorNumber) -> Result<()> {
-    let mut vfs = VFS.try_lock()?;
+    let mut vfs = VFS.spin_lock();
     vfs.close_file(fd_num)
 }
 
 pub fn read_file(fd_num: FileDescriptorNumber) -> Result<Vec<u8>> {
-    let vfs = VFS.try_lock()?;
+    let mut vfs = VFS.spin_lock();
     vfs.read_file(fd_num)
 }
 
 pub fn write_file(fd_num: FileDescriptorNumber, data: &[u8]) -> Result<()> {
-    let mut vfs = VFS.try_lock()?;
+    let mut vfs = VFS.spin_lock();
     vfs.write_file(fd_num, data)
 }
 
 pub fn file_size(fd_num: FileDescriptorNumber) -> Result<usize> {
-    let vfs = VFS.try_lock()?;
+    let vfs = VFS.spin_lock();
     vfs.file_size(fd_num)
 }
 
 pub fn create_file(path: &Path) -> Result<()> {
-    let mut vfs = VFS.try_lock()?;
+    let mut vfs = VFS.spin_lock();
     vfs.add_file(path, VfsFileType::VirtualFile)
 }
 
 pub fn add_dev_file(desc: DeviceFileDescriptor, file_name: &str) -> Result<()> {
-    let mut vfs = VFS.try_lock()?;
+    let mut vfs = VFS.spin_lock();
     vfs.add_dev_file(desc, file_name)
+}
+
+pub fn create_pipe() -> Result<(FileDescriptorNumber, FileDescriptorNumber)> {
+    let mut vfs = VFS.spin_lock();
+    let (read_fd, write_fd) = vfs.create_pipe()?;
+    Ok((read_fd.num, write_fd.num))
 }

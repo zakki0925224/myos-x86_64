@@ -38,7 +38,7 @@ impl TaskScheduler {
     }
 
     fn init(&mut self) -> Result<()> {
-        let kernel_task = Task::new(0, None, None, ContextMode::Kernel, None)?;
+        let kernel_task = Task::new(0, None, None, ContextMode::Kernel, None, None, None)?;
         self.running_task = Some(Box::new(kernel_task));
         Ok(())
     }
@@ -254,6 +254,8 @@ pub fn spawn_user_task(
     path: &Path,
     args: &[&str],
     dwarf: Option<Dwarf>,
+    stdin_fd: Option<FileDescriptorNumber>,
+    stdout_fd: Option<FileDescriptorNumber>,
 ) -> Result<TaskId> {
     let path_string = path.to_string();
     let all_args: Vec<&str> = [&[path_string.as_str()], args].concat();
@@ -263,6 +265,8 @@ pub fn spawn_user_task(
         Some(&all_args),
         ContextMode::User,
         dwarf,
+        stdin_fd,
+        stdout_fd,
     )?;
 
     let id = task.id;
@@ -358,6 +362,22 @@ pub fn get_dwarf() -> Option<Dwarf> {
     TASK_SCHED.spin_lock().get_running_task_dwarf()
 }
 
+pub fn current_stdin_fd() -> Option<FileDescriptorNumber> {
+    TASK_SCHED
+        .spin_lock()
+        .running_task
+        .as_ref()
+        .and_then(|t| t.resource.stdin_fd)
+}
+
+pub fn current_stdout_fd() -> Option<FileDescriptorNumber> {
+    TASK_SCHED
+        .spin_lock()
+        .running_task
+        .as_ref()
+        .and_then(|t| t.resource.stdout_fd)
+}
+
 #[test_case]
 fn test_multitask_scheduler_round_robin() {
     let mut sched = TaskScheduler::new();
@@ -366,11 +386,11 @@ fn test_multitask_scheduler_round_robin() {
     // Running: KernelTask(TID: 0)
     // ReadyQueue: []
 
-    let t1 = Task::new(0, None, None, ContextMode::Kernel, None).unwrap();
+    let t1 = Task::new(0, None, None, ContextMode::Kernel, None, None, None).unwrap();
     let t1_id = t1.id;
     sched.spawn(t1);
 
-    let t2 = Task::new(0, None, None, ContextMode::Kernel, None).unwrap();
+    let t2 = Task::new(0, None, None, ContextMode::Kernel, None, None, None).unwrap();
     let t2_id = t2.id;
     sched.spawn(t2);
 
@@ -420,7 +440,7 @@ fn test_multitask_scheduler_exit() {
     let mut sched = TaskScheduler::new();
     sched.init().unwrap();
 
-    let t1 = Task::new(0, None, None, ContextMode::Kernel, None).unwrap();
+    let t1 = Task::new(0, None, None, ContextMode::Kernel, None, None, None).unwrap();
     let t1_id = t1.id;
     sched.spawn(t1);
 
