@@ -202,10 +202,9 @@ fn syscall_handler_inner(
         SN_EXEC => {
             let args = arg0 as *const u8;
             let flags = arg1 as i32;
-            let stdin_fd = FileDescriptorNumber::new_val(arg2 as i32).ok();
-            let stdout_fd = FileDescriptorNumber::new_val(arg3 as i32).ok();
+            let pipefd = arg2 as *const i32;
 
-            match sys_exec(args, flags, stdin_fd, stdout_fd) {
+            match sys_exec(args, flags, pipefd) {
                 Ok(exit_code) => return exit_code as i64,
                 Err(err) => {
                     kerror!("syscall: exec: {:?}", err);
@@ -418,7 +417,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
             return Err(Error::NotFound.with_context("file descriptor"));
         }
         FileDescriptorNumber::STDIN => {
-            if let Some(fd_num) = task::scheduler::current_stdin_fd() {
+            if let Some(fd_num) = task::scheduler::current_pipe_fd().and_then(|fds| fds[0]) {
                 let data = vfs::read_file(fd_num)?;
                 unsafe {
                     buf.copy_from_nonoverlapping(data.as_ptr(), data.len());
@@ -505,7 +504,7 @@ fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<usize> {
 
     match fd_num {
         FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => {
-            if let Some(fd_num) = task::scheduler::current_stdout_fd() {
+            if let Some(fd_num) = task::scheduler::current_pipe_fd().and_then(|fds| fds[1]) {
                 vfs::write_file(fd_num, buf_slice)?;
                 return Ok(buf_len);
             }
@@ -530,7 +529,7 @@ fn sys_open(filepath: *const u8, flags: i32) -> Result<i32> {
         .into();
     let create = (flags as u32) & OPEN_FLAG_CREATE != 0;
     let fd_num = vfs::open_file(&filepath, create)?;
-    task::scheduler::push_fd_num(fd_num)?;
+    task::scheduler::add_fd_num(fd_num)?;
 
     Ok(fd_num.get() as i32)
 }
@@ -564,7 +563,7 @@ fn sys_sbrk(len: usize) -> Result<*const u8> {
     let mem_frame_info = bitmap::alloc_mem_frame((len + PAGE_SIZE).div_ceil(PAGE_SIZE))?;
     mem_frame_info.set_permissions_to_user()?;
     let virt_addr = mem_frame_info.frame_start_virt_addr()?;
-    task::scheduler::push_mem_frame_info(mem_frame_info)?;
+    task::scheduler::add_mem_frame_info(mem_frame_info)?;
 
     Ok(virt_addr.as_ptr())
 }
@@ -628,23 +627,23 @@ fn sys_uptime() -> i64 {
     util::time::global_uptime().as_millis() as i64
 }
 
-fn sys_exec(
-    args: *const u8,
-    flags: i32,
-    stdin_fd: Option<FileDescriptorNumber>,
-    stdout_fd: Option<FileDescriptorNumber>,
-) -> Result<pid_t> {
+fn sys_exec(args: *const u8, flags: i32, pipefd: *const i32) -> Result<pid_t> {
     let args = unsafe { util::cstring::from_cstring_ptr(args) };
     let args: Vec<&str> = args.split(' ').collect();
 
+    let pipe_fd = if pipefd.is_null() {
+        [None, None, None]
+    } else {
+        let fds = unsafe { core::slice::from_raw_parts(pipefd, 3) };
+        [
+            FileDescriptorNumber::new_val(fds[0]).ok(),
+            FileDescriptorNumber::new_val(fds[1]).ok(),
+            FileDescriptorNumber::new_val(fds[2]).ok(),
+        ]
+    };
+
     let enable_debug = (flags as u32) & EXEC_FLAG_DEBUG != 0;
-    let child_id = task::exec::exec_elf(
-        &args[0].into(),
-        &args[1..],
-        enable_debug,
-        stdin_fd,
-        stdout_fd,
-    )?;
+    let child_id = task::exec::exec_elf(&args[0].into(), &args[1..], enable_debug, pipe_fd)?;
 
     Ok(child_id.0 as pid_t)
 }
@@ -680,7 +679,7 @@ fn sys_free(ptr: *const u8) -> Result<()> {
     let virt_addr: VirtualAddress = (ptr as u64).into();
     // kdebug!("syscall: free: target memory at 0x{:x}", virt_addr.get());
 
-    let mem_frame_info = task::scheduler::pop_mem_frame_info(virt_addr)?;
+    let mem_frame_info = task::scheduler::remove_mem_frame_info(virt_addr)?;
     mem_frame_info.set_permissions_to_supervisor()?;
     bitmap::dealloc_mem_frame(mem_frame_info)?;
 
@@ -699,7 +698,7 @@ fn sys_wait(pid: pid_t) -> Result<i32> {
 
 fn sys_sbrksz(target: *const u8) -> Result<usize> {
     let target_virt_addr: VirtualAddress = (target as u64).into();
-    let size = task::scheduler::get_mem_frame_size(target_virt_addr)?;
+    let size = task::scheduler::mem_frame_size(target_virt_addr)?;
     let size = size.ok_or(Error::NotFound.with_context("memory frame size"))?;
 
     Ok(size)
@@ -802,7 +801,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             }
 
             let layer_id = window_manager::create_window(title, xy, wh)?;
-            task::scheduler::push_layer_id(layer_id.clone())?;
+            task::scheduler::add_layer_id(layer_id.clone())?;
 
             // reply
             let reply_header =
@@ -1042,8 +1041,8 @@ fn sys_pipe(pipefd: *mut i32) -> Result<()> {
         pipefd.add(1).write(write_fd.get() as i32);
     }
 
-    task::scheduler::push_fd_num(read_fd)?;
-    task::scheduler::push_fd_num(write_fd)?;
+    task::scheduler::add_fd_num(read_fd)?;
+    task::scheduler::add_fd_num(write_fd)?;
     Ok(())
 }
 

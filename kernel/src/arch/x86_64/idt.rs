@@ -275,7 +275,7 @@ extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
 
     let debugger_result;
 
-    if let Some(dwarf) = task::scheduler::get_dwarf() {
+    if let Some(dwarf) = task::scheduler::current_dwarf() {
         match debug::user_app_debugger(&stack_frame, &dwarf) {
             Ok(res) => debugger_result = res,
             Err(err) => {

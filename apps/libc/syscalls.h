@@ -54,6 +54,9 @@
 #define EXEC_FLAG_NONE 0x0
 #define EXEC_FLAG_DEBUG 0x1
 
+// sys_exec pipe
+#define EXEC_PIPE_NONE (int[]){-1, -1, -1}
+
 // sys_socket args
 #define SOCKET_DOMAIN_AF_INET 1
 #define SOCKET_TYPE_SOCK_DGRAM 1
@@ -70,7 +73,7 @@ int sys_uname(utsname* buf);
 void sys_break(void);
 int sys_stat(int fd, f_stat* buf);
 uint64_t sys_uptime(void);
-pid_t sys_exec(const char* args, int flags, int stdin_fd, int stdout_fd);
+pid_t sys_exec(const char* args, int flags, int pipefd[3]);
 int sys_getcwd(char* buf, size_t buf_len);
 int sys_chdir(const char* path);
 int sys_free(void* ptr);

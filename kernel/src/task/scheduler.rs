@@ -20,7 +20,7 @@ static TASK_SCHED: Mutex<TaskScheduler> = Mutex::new(TaskScheduler::new());
 
 struct TaskScheduler {
     ready_queue: VecDeque<Box<Task>>,
-    running_task: Option<Box<Task>>,
+    current_task: Option<Box<Task>>,
     exited_tasks: Vec<Box<Task>>,
     sleeping_tasks: Vec<Box<Task>>,
     exit_codes: BTreeMap<TaskId, i32>,
@@ -30,26 +30,23 @@ impl TaskScheduler {
     const fn new() -> Self {
         Self {
             ready_queue: VecDeque::new(),
-            running_task: None,
+            current_task: None,
             exited_tasks: Vec::new(),
             sleeping_tasks: Vec::new(),
             exit_codes: BTreeMap::new(),
         }
     }
 
-    fn init(&mut self) -> Result<()> {
-        let kernel_task = Task::new(0, None, None, ContextMode::Kernel, None, None, None)?;
-        self.running_task = Some(Box::new(kernel_task));
-        Ok(())
-    }
-
-    fn current(&self) -> Option<&Task> {
-        self.running_task.as_deref()
+    fn current_task_mut(&mut self) -> Result<&mut Task> {
+        self.current_task
+            .as_mut()
+            .map(|t| t.as_mut())
+            .ok_or(Error::NotInitialized.with_context("current task"))
     }
 
     fn spawn(&mut self, task: Task) {
         task.unmap_virt_addr().unwrap();
-        if let Some(current) = &self.running_task {
+        if let Some(current) = &self.current_task {
             current.remap_virt_addr().unwrap();
         }
 
@@ -57,21 +54,21 @@ impl TaskScheduler {
     }
 
     fn pick_next_task(&mut self) -> Option<(*const Task, *const Task)> {
-        let prev_task = self.running_task.take()?;
+        let prev_task = self.current_task.take()?;
 
         if let Some(next_task) = self.ready_queue.pop_front() {
             prev_task.unmap_virt_addr().unwrap();
             next_task.remap_virt_addr().unwrap();
 
             self.ready_queue.push_back(prev_task);
-            self.running_task = Some(next_task);
+            self.current_task = Some(next_task);
 
             let prev_ptr = &**self.ready_queue.back().unwrap() as *const Task;
-            let next_ptr = &**self.running_task.as_ref().unwrap() as *const Task;
+            let next_ptr = &**self.current_task.as_ref().unwrap() as *const Task;
 
             Some((prev_ptr, next_ptr))
         } else {
-            self.running_task = Some(prev_task);
+            self.current_task = Some(prev_task);
             None
         }
     }
@@ -81,9 +78,9 @@ impl TaskScheduler {
         exit_code: i32,
     ) -> (*const Task, *const Task, Vec<Box<Task>>) {
         let mut current = self
-            .running_task
+            .current_task
             .take()
-            .expect("task: No running task to exit");
+            .expect("task: No current task to exit");
         let exiting_id = current.id;
 
         current.unmap_virt_addr().unwrap();
@@ -112,16 +109,16 @@ impl TaskScheduler {
             .expect("No task to run after exit");
         next_task.remap_virt_addr().unwrap();
 
-        self.running_task = Some(next_task);
+        self.current_task = Some(next_task);
 
         let prev_ptr = &**self.exited_tasks.last().unwrap() as *const Task;
-        let next_ptr = &**self.running_task.as_ref().unwrap() as *const Task;
+        let next_ptr = &**self.current_task.as_ref().unwrap() as *const Task;
 
         (prev_ptr, next_ptr, old)
     }
 
     fn sleep_current_waiting_for(&mut self, child_id: TaskId) -> (*const Task, *const Task) {
-        let mut current = self.running_task.take().expect("No running task to sleep");
+        let mut current = self.current_task.take().expect("No current task to sleep");
         current.waiting_for = Some(child_id);
         current.state = TaskState::Sleeping;
         current.unmap_virt_addr().unwrap();
@@ -134,115 +131,19 @@ impl TaskScheduler {
             .expect("No task to run after sleep");
         next_task.remap_virt_addr().unwrap();
 
-        self.running_task = Some(next_task);
+        self.current_task = Some(next_task);
 
         let prev_ptr = &**self.sleeping_tasks.last().unwrap() as *const Task;
-        let next_ptr = &**self.running_task.as_ref().unwrap() as *const Task;
+        let next_ptr = &**self.current_task.as_ref().unwrap() as *const Task;
 
         (prev_ptr, next_ptr)
-    }
-
-    fn take_exit_code(&mut self, id: TaskId) -> Option<i32> {
-        self.exit_codes.remove(&id)
-    }
-
-    fn push_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
-        let task = self
-            .running_task
-            .as_mut()
-            .ok_or(Error::NotInitialized.with_context("running task"))?;
-        task.resource.created_layer_ids.push(layer_id);
-        Ok(())
-    }
-
-    fn remove_layer_id(&mut self, layer_id: LayerId) -> Result<()> {
-        let task = self
-            .running_task
-            .as_mut()
-            .ok_or(Error::NotInitialized.with_context("running task"))?;
-        task.resource.created_layer_ids.retain(|id| *id != layer_id);
-        Ok(())
-    }
-
-    fn push_fd_num(&mut self, fd_num: FileDescriptorNumber) -> Result<()> {
-        let task = self
-            .running_task
-            .as_mut()
-            .ok_or(Error::NotInitialized.with_context("running task"))?;
-        task.resource.opend_fd_num.push(fd_num);
-        Ok(())
-    }
-
-    fn remove_fd_num(&mut self, fd_num: FileDescriptorNumber) -> Result<()> {
-        let task = self
-            .running_task
-            .as_mut()
-            .ok_or(Error::NotInitialized.with_context("running task"))?;
-        task.resource.opend_fd_num.retain(|fd| *fd != fd_num);
-        Ok(())
-    }
-
-    fn push_allocated_mem_frame_info(&mut self, mem_frame_info: MemoryFrameInfo) -> Result<()> {
-        let task = self
-            .running_task
-            .as_mut()
-            .ok_or(Error::NotInitialized.with_context("running task"))?;
-        task.resource.allocated_mem_frame_info.push(mem_frame_info);
-        Ok(())
-    }
-
-    fn get_memory_frame_size_by_virt_addr(
-        &mut self,
-        virt_addr: VirtualAddress,
-    ) -> Result<Option<usize>> {
-        let task = self
-            .running_task
-            .as_mut()
-            .ok_or(Error::NotInitialized.with_context("running task"))?;
-        for mem_frame_info in &task.resource.allocated_mem_frame_info {
-            if mem_frame_info.frame_start_virt_addr()? == virt_addr {
-                return Ok(Some(mem_frame_info.frame_size));
-            }
-        }
-        Ok(None)
-    }
-
-    fn pop_allocated_memory_by_virt_addr(
-        &mut self,
-        virt_addr: VirtualAddress,
-    ) -> Result<MemoryFrameInfo> {
-        let task = self
-            .running_task
-            .as_mut()
-            .ok_or(Error::NotInitialized.with_context("running task"))?;
-        let allocated_mem_frame_info = &mut task.resource.allocated_mem_frame_info;
-
-        if let Some(index) = allocated_mem_frame_info
-            .iter()
-            .position(|info| info.frame_start_virt_addr().ok() == Some(virt_addr))
-        {
-            return Ok(allocated_mem_frame_info.remove(index));
-        }
-
-        Err(Error::InvalidData.with_context("virtual address"))
-    }
-
-    fn show_running_task_debug(&self) -> bool {
-        if let Some(task) = self.running_task.as_ref() {
-            super::show_task_debug(task);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn get_running_task_dwarf(&self) -> Option<Dwarf> {
-        self.running_task.as_ref()?.dwarf.clone()
     }
 }
 
 pub fn init() -> Result<()> {
-    TASK_SCHED.spin_lock().init()
+    let kernel_task = Task::new(0, None, None, ContextMode::Kernel, None, [None, None, None])?;
+    TASK_SCHED.spin_lock().current_task = Some(Box::new(kernel_task));
+    Ok(())
 }
 
 pub fn spawn(task: Task) {
@@ -254,8 +155,7 @@ pub fn spawn_user_task(
     path: &Path,
     args: &[&str],
     dwarf: Option<Dwarf>,
-    stdin_fd: Option<FileDescriptorNumber>,
-    stdout_fd: Option<FileDescriptorNumber>,
+    pipe_fd: [Option<FileDescriptorNumber>; 3],
 ) -> Result<TaskId> {
     let path_string = path.to_string();
     let all_args: Vec<&str> = [&[path_string.as_str()], args].concat();
@@ -265,8 +165,7 @@ pub fn spawn_user_task(
         Some(&all_args),
         ContextMode::User,
         dwarf,
-        stdin_fd,
-        stdout_fd,
+        pipe_fd,
     )?;
 
     let id = task.id;
@@ -299,7 +198,7 @@ pub fn sched() {
 
 pub fn current() -> Option<&'static Task> {
     unsafe {
-        let ptr = TASK_SCHED.spin_lock().current()? as *const Task;
+        let ptr = TASK_SCHED.spin_lock().current_task.as_deref()? as *const Task;
         Some(&*ptr)
     }
 }
@@ -317,85 +216,111 @@ pub fn exit_current(exit_code: i32) -> ! {
 }
 
 pub fn take_exit_code(id: TaskId) -> Option<i32> {
-    TASK_SCHED.spin_lock().take_exit_code(id)
+    TASK_SCHED.spin_lock().exit_codes.remove(&id)
 }
 
-pub fn push_layer_id(layer_id: LayerId) -> Result<()> {
-    TASK_SCHED.spin_lock().push_layer_id(layer_id)
+pub fn add_layer_id(layer_id: LayerId) -> Result<()> {
+    let mut s = TASK_SCHED.spin_lock();
+    s.current_task_mut()?.resource.created_layer_ids.push(layer_id);
+    Ok(())
 }
 
 pub fn remove_layer_id(layer_id: LayerId) -> Result<()> {
-    TASK_SCHED.spin_lock().remove_layer_id(layer_id)
+    let mut s = TASK_SCHED.spin_lock();
+    s.current_task_mut()?
+        .resource
+        .created_layer_ids
+        .retain(|id| *id != layer_id);
+    Ok(())
 }
 
-pub fn push_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
-    TASK_SCHED.spin_lock().push_fd_num(fd_num)
+pub fn add_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
+    let mut s = TASK_SCHED.spin_lock();
+    s.current_task_mut()?.resource.opend_fd_num.push(fd_num);
+    Ok(())
 }
 
 pub fn remove_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
-    TASK_SCHED.spin_lock().remove_fd_num(fd_num)
+    let mut s = TASK_SCHED.spin_lock();
+    s.current_task_mut()?
+        .resource
+        .opend_fd_num
+        .retain(|fd| *fd != fd_num);
+    Ok(())
 }
 
-pub fn push_mem_frame_info(mem_frame_info: MemoryFrameInfo) -> Result<()> {
-    TASK_SCHED
-        .spin_lock()
-        .push_allocated_mem_frame_info(mem_frame_info)
+pub fn add_mem_frame_info(mem_frame_info: MemoryFrameInfo) -> Result<()> {
+    let mut s = TASK_SCHED.spin_lock();
+    s.current_task_mut()?
+        .resource
+        .allocated_mem_frame_info
+        .push(mem_frame_info);
+    Ok(())
 }
 
-pub fn get_mem_frame_size(virt_addr: VirtualAddress) -> Result<Option<usize>> {
-    TASK_SCHED
-        .spin_lock()
-        .get_memory_frame_size_by_virt_addr(virt_addr)
+pub fn mem_frame_size(virt_addr: VirtualAddress) -> Result<Option<usize>> {
+    let mut s = TASK_SCHED.spin_lock();
+    let task = s.current_task_mut()?;
+    for mem_frame_info in &task.resource.allocated_mem_frame_info {
+        if mem_frame_info.frame_start_virt_addr()? == virt_addr {
+            return Ok(Some(mem_frame_info.frame_size));
+        }
+    }
+    Ok(None)
 }
 
-pub fn pop_mem_frame_info(virt_addr: VirtualAddress) -> Result<MemoryFrameInfo> {
-    TASK_SCHED
-        .spin_lock()
-        .pop_allocated_memory_by_virt_addr(virt_addr)
+pub fn remove_mem_frame_info(virt_addr: VirtualAddress) -> Result<MemoryFrameInfo> {
+    let mut s = TASK_SCHED.spin_lock();
+    let allocated = &mut s.current_task_mut()?.resource.allocated_mem_frame_info;
+    if let Some(index) = allocated
+        .iter()
+        .position(|info| info.frame_start_virt_addr().ok() == Some(virt_addr))
+    {
+        return Ok(allocated.remove(index));
+    }
+    Err(Error::InvalidData.with_context("virtual address"))
 }
 
 pub fn show_task_debug() -> bool {
-    TASK_SCHED.spin_lock().show_running_task_debug()
+    let s = TASK_SCHED.spin_lock();
+    if let Some(task) = s.current_task.as_ref() {
+        super::show_task_debug(task);
+        true
+    } else {
+        false
+    }
 }
 
-pub fn get_dwarf() -> Option<Dwarf> {
-    TASK_SCHED.spin_lock().get_running_task_dwarf()
+pub fn current_dwarf() -> Option<Dwarf> {
+    TASK_SCHED.spin_lock().current_task.as_ref()?.dwarf.clone()
 }
 
-pub fn current_stdin_fd() -> Option<FileDescriptorNumber> {
-    TASK_SCHED
-        .spin_lock()
-        .running_task
-        .as_ref()
-        .and_then(|t| t.resource.stdin_fd)
-}
-
-pub fn current_stdout_fd() -> Option<FileDescriptorNumber> {
-    TASK_SCHED
-        .spin_lock()
-        .running_task
-        .as_ref()
-        .and_then(|t| t.resource.stdout_fd)
+pub fn current_pipe_fd() -> Option<[Option<FileDescriptorNumber>; 3]> {
+    let sched = TASK_SCHED.spin_lock();
+    let task = sched.current_task.as_ref()?;
+    Some(task.resource.pipe_fd)
 }
 
 #[test_case]
 fn test_multitask_scheduler_round_robin() {
     let mut sched = TaskScheduler::new();
-    sched.init().expect("Failed to init scheduler");
+    let kernel_task =
+        Task::new(0, None, None, ContextMode::Kernel, None, [None, None, None]).unwrap();
+    sched.current_task = Some(Box::new(kernel_task));
 
-    // Running: KernelTask(TID: 0)
+    // current: KernelTask(TID: 0)
     // ReadyQueue: []
 
-    let t1 = Task::new(0, None, None, ContextMode::Kernel, None, None, None).unwrap();
+    let t1 = Task::new(0, None, None, ContextMode::Kernel, None, [None, None, None]).unwrap();
     let t1_id = t1.id;
     sched.spawn(t1);
 
-    let t2 = Task::new(0, None, None, ContextMode::Kernel, None, None, None).unwrap();
+    let t2 = Task::new(0, None, None, ContextMode::Kernel, None, [None, None, None]).unwrap();
     let t2_id = t2.id;
     sched.spawn(t2);
 
     // ReadyQueue: [T1, T2]
-    // Running: KernelTask
+    // current: KernelTask
 
     let (prev_ptr, next_ptr) = sched.pick_next_task().expect("Sched 1 failed");
 
@@ -408,7 +333,7 @@ fn test_multitask_scheduler_round_robin() {
     }
 
     // ReadyQueue: [T2, KernelTask]
-    // Running: T1
+    // current: T1
 
     let (prev_ptr, next_ptr) = sched.pick_next_task().expect("Sched 2 failed");
 
@@ -421,7 +346,7 @@ fn test_multitask_scheduler_round_robin() {
     }
 
     // ReadyQueue: [KernelTask, T1]
-    // Running: T2
+    // current: T2
 
     let (prev_ptr, next_ptr) = sched.pick_next_task().expect("Sched 3 failed");
 
@@ -438,18 +363,20 @@ fn test_multitask_scheduler_round_robin() {
 #[test_case]
 fn test_multitask_scheduler_exit() {
     let mut sched = TaskScheduler::new();
-    sched.init().unwrap();
+    let kernel_task =
+        Task::new(0, None, None, ContextMode::Kernel, None, [None, None, None]).unwrap();
+    sched.current_task = Some(Box::new(kernel_task));
 
-    let t1 = Task::new(0, None, None, ContextMode::Kernel, None, None, None).unwrap();
+    let t1 = Task::new(0, None, None, ContextMode::Kernel, None, [None, None, None]).unwrap();
     let t1_id = t1.id;
     sched.spawn(t1);
 
     sched.pick_next_task();
 
-    if let Some(running) = &sched.running_task {
-        assert_eq!(running.id, t1_id);
+    if let Some(current) = &sched.current_task {
+        assert_eq!(current.id, t1_id);
     } else {
-        panic!("No running task");
+        panic!("No current task");
     }
 
     let (prev_ptr, next_ptr, stale) = sched.pick_next_task_on_exit(123);

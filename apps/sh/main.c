@@ -141,8 +141,8 @@ void exec_cmd(char* cmd) {
             return;
         }
 
-        pid_t pid1 = sys_exec(left_args, EXEC_FLAG_NONE, -1, pipefd[1]);
-        pid_t pid2 = sys_exec(right_args, EXEC_FLAG_NONE, pipefd[0], -1);
+        pid_t pid1 = sys_exec(left_args, EXEC_FLAG_NONE, (int[]){-1, pipefd[1], -1});
+        pid_t pid2 = sys_exec(right_args, EXEC_FLAG_NONE, (int[]){pipefd[0], -1, -1});
 
         if (pid1 < 0 || pid2 < 0) {
             printf("sh: pipe: exec failed\n");
@@ -198,7 +198,7 @@ void exec_cmd(char* cmd) {
             }
         }
 
-        pid_t pid = sys_exec(args, EXEC_FLAG_DEBUG, -1, -1);
+        pid_t pid = sys_exec(args, EXEC_FLAG_DEBUG, EXEC_PIPE_NONE);
         if (pid == -1) {
             printf("sh: exec: failed\n");
             return;
@@ -230,7 +230,7 @@ void exec_cmd(char* cmd) {
             }
         }
 
-        pid_t pid = sys_exec(args, EXEC_FLAG_NONE, -1, -1);
+        pid_t pid = sys_exec(args, EXEC_FLAG_NONE, EXEC_PIPE_NONE);
         if (pid == -1) {
             printf("sh: exec: failed\n");
             return;

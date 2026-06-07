@@ -14,8 +14,7 @@ pub fn exec_elf(
     elf_path: &Path,
     args: &[&str],
     enable_debug: bool,
-    stdin_fd: Option<FileDescriptorNumber>,
-    stdout_fd: Option<FileDescriptorNumber>,
+    pipe_fd: [Option<FileDescriptorNumber>; 3],
 ) -> Result<TaskId> {
     let fd_num = vfs::open_file(elf_path, false)?;
     let elf_data = vfs::read_file(fd_num)?;
@@ -38,5 +37,5 @@ pub fn exec_elf(
         None
     };
 
-    super::scheduler::spawn_user_task(elf64, elf_path, args, dwarf, stdin_fd, stdout_fd)
+    super::scheduler::spawn_user_task(elf64, elf_path, args, dwarf, pipe_fd)
 }
