@@ -367,14 +367,11 @@ impl<'a> Elf64<'a> {
         let section_headers = self.section_headers();
         section_headers
             .iter()
-            .find(|sh| self.get_section_name_from_string_table(sh) == name)
+            .find(|sh| self.section_name_from_string_table(sh) == name)
             .copied()
     }
 
-    pub fn get_section_name_from_string_table(
-        &self,
-        section_header: &Elf64SectionHeader,
-    ) -> String {
+    pub fn section_name_from_string_table(&self, section_header: &Elf64SectionHeader) -> String {
         let no_name = "<NO NAME>".to_string();
 
         let name_offset = section_header.name as usize;

@@ -174,8 +174,8 @@ pub trait Draw {
         back_color: ColorCode,
     ) -> Result<()> {
         let res = self.resolution()?;
-        let (f_w, f_h) = FONT.get_wh();
-        let f_glyph = FONT.get_glyph(c)?;
+        let (f_w, f_h) = FONT.wh();
+        let f_glyph = FONT.glyph(c)?;
         let (x, y) = point.xy();
 
         if x >= res.width || y >= res.height {
@@ -226,7 +226,7 @@ pub trait Draw {
     ) -> Result<()> {
         let res = self.resolution()?;
         let (mut x, mut y) = point.xy();
-        let (f_w, f_h) = FONT.get_wh();
+        let (f_w, f_h) = FONT.wh();
 
         for c in s.chars() {
             match c {

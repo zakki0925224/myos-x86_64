@@ -4,7 +4,7 @@ use crate::{
     renderer::{
         css::cssom::StyleSheet,
         dom::{
-            api::get_tagret_element_node,
+            api::tagret_element_node,
             node::{ElementKind, Node},
         },
         layout::layout_object::*,
@@ -20,7 +20,7 @@ pub struct LayoutView {
 
 impl LayoutView {
     pub fn new(root: Rc<RefCell<Node>>, cssom: &StyleSheet) -> Self {
-        let body_root = get_tagret_element_node(Some(root), ElementKind::Body);
+        let body_root = tagret_element_node(Some(root), ElementKind::Body);
 
         let mut tree = Self {
             root: build_layout_tree(&body_root, &None, cssom),

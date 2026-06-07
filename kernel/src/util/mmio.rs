@@ -82,7 +82,7 @@ impl<T: Sized> IoBox<T> {
         paging::update_mapping(&MappingInfo {
             start,
             end: start.offset(size_of::<T>().div_ceil(PAGE_SIZE)),
-            phys_addr: start.get_phys_addr().unwrap(),
+            phys_addr: start.phys_addr().unwrap(),
             rw: ReadWrite::Write,
             us: EntryMode::Supervisor,
             pwt: PageWriteThroughLevel::WriteThrough,

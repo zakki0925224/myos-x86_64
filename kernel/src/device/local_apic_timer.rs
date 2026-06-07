@@ -142,7 +142,7 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
     type PollNormalOutput = ();
     type PollInterruptOutput = ();
 
-    fn get_device_driver_info(&self) -> Result<DeviceDriverInfo> {
+    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
         Ok(self.device_driver_info.clone())
     }
 
@@ -240,9 +240,9 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
     }
 }
 
-pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
+pub fn device_driver_info() -> Result<DeviceDriverInfo> {
     let driver = unsafe { LOCAL_APIC_TIMER_DRIVER.try_lock() }?;
-    driver.get_device_driver_info()
+    driver.device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {

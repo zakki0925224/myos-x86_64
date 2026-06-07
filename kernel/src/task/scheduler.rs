@@ -236,7 +236,7 @@ pub fn remove_layer_id(layer_id: LayerId) -> Result<()> {
 
 pub fn add_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
     let mut s = TASK_SCHED.spin_lock();
-    s.current_task_mut()?.resource.opend_fd_num.push(fd_num);
+    s.current_task_mut()?.resource.fd_nums.push(fd_num);
     Ok(())
 }
 
@@ -244,7 +244,7 @@ pub fn remove_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
     let mut s = TASK_SCHED.spin_lock();
     s.current_task_mut()?
         .resource
-        .opend_fd_num
+        .fd_nums
         .retain(|fd| *fd != fd_num);
     Ok(())
 }
@@ -253,7 +253,7 @@ pub fn add_mem_frame_info(mem_frame_info: MemoryFrameInfo) -> Result<()> {
     let mut s = TASK_SCHED.spin_lock();
     s.current_task_mut()?
         .resource
-        .allocated_mem_frame_info
+        .alloc_frames
         .push(mem_frame_info);
     Ok(())
 }
@@ -261,7 +261,7 @@ pub fn add_mem_frame_info(mem_frame_info: MemoryFrameInfo) -> Result<()> {
 pub fn mem_frame_size(virt_addr: VirtualAddress) -> Result<Option<usize>> {
     let mut s = TASK_SCHED.spin_lock();
     let task = s.current_task_mut()?;
-    for mem_frame_info in &task.resource.allocated_mem_frame_info {
+    for mem_frame_info in &task.resource.alloc_frames {
         if mem_frame_info.frame_start_virt_addr()? == virt_addr {
             return Ok(Some(mem_frame_info.frame_size));
         }
@@ -271,7 +271,7 @@ pub fn mem_frame_size(virt_addr: VirtualAddress) -> Result<Option<usize>> {
 
 pub fn remove_mem_frame_info(virt_addr: VirtualAddress) -> Result<MemoryFrameInfo> {
     let mut s = TASK_SCHED.spin_lock();
-    let allocated = &mut s.current_task_mut()?.resource.allocated_mem_frame_info;
+    let allocated = &mut s.current_task_mut()?.resource.alloc_frames;
     if let Some(index) = allocated
         .iter()
         .position(|info| info.frame_start_virt_addr().ok() == Some(virt_addr))

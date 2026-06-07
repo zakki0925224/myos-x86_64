@@ -23,7 +23,7 @@ impl PhysicalAddress {
         Self::new(self.0 + offset as u64)
     }
 
-    pub fn get_virt_addr(&self) -> Result<VirtualAddress> {
+    pub fn virt_addr(&self) -> Result<VirtualAddress> {
         paging::calc_virt_addr(*self)
     }
 }
@@ -55,27 +55,27 @@ impl VirtualAddress {
         Self::new(self.0 + offset as u64)
     }
 
-    pub fn get_phys_addr(&self) -> Result<PhysicalAddress> {
+    pub fn phys_addr(&self) -> Result<PhysicalAddress> {
         paging::calc_phys_addr(*self)
     }
 
-    pub fn get_pml4_entry_index(&self) -> usize {
+    pub fn pml4_entry_index(&self) -> usize {
         ((self.0 >> 39) & 0x1ff) as usize
     }
 
-    pub fn get_pml3_entry_index(&self) -> usize {
+    pub fn pml3_entry_index(&self) -> usize {
         ((self.0 >> 30) & 0x1ff) as usize
     }
 
-    pub fn get_pml2_entry_index(&self) -> usize {
+    pub fn pml2_entry_index(&self) -> usize {
         ((self.0 >> 21) & 0x1ff) as usize
     }
 
-    pub fn get_pml1_entry_index(&self) -> usize {
+    pub fn pml1_entry_index(&self) -> usize {
         ((self.0 >> 12) & 0x1ff) as usize
     }
 
-    pub fn get_page_offset(&self) -> usize {
+    pub fn page_offset(&self) -> usize {
         (self.0 & 0xfff) as usize
     }
 

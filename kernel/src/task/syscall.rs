@@ -410,7 +410,7 @@ fn syscall_handler_inner(
 }
 
 fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
-    let fd_num = FileDescriptorNumber::new_val(fd_num)?;
+    let fd_num = FileDescriptorNumber::try_new(fd_num)?;
 
     match fd_num {
         FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => {
@@ -430,7 +430,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
 
                 while input_s.is_none() {
                     tty::check_sigint();
-                    input_s = x86_64::disabled_int(|| tty::get_line()).ok().flatten();
+                    input_s = x86_64::disabled_int(|| tty::line()).ok().flatten();
                     task::scheduler::sched();
                     x86_64::stihlt();
                 }
@@ -454,7 +454,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
                 let mut c = None;
                 while c.is_none() {
                     tty::check_sigint();
-                    c = x86_64::disabled_int(|| tty::get_char()).ok().flatten();
+                    c = x86_64::disabled_int(|| tty::char()).ok().flatten();
                     if c.is_none() {
                         task::scheduler::sched();
                         x86_64::stihlt();
@@ -499,7 +499,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
 }
 
 fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<usize> {
-    let fd_num = FileDescriptorNumber::new_val(fd_num)?;
+    let fd_num = FileDescriptorNumber::try_new(fd_num)?;
     let buf_slice = unsafe { slice::from_raw_parts(buf, buf_len) };
 
     match fd_num {
@@ -535,14 +535,14 @@ fn sys_open(filepath: *const u8, flags: i32) -> Result<i32> {
 }
 
 fn sys_close(fd_num: i32) -> Result<()> {
-    if let Ok(fd) = FileDescriptorNumber::new_val(fd_num) {
+    if let Ok(fd) = FileDescriptorNumber::try_new(fd_num) {
         if vfs::close_file(fd).is_ok() {
             task::scheduler::remove_fd_num(fd)?;
             return Ok(());
         }
     }
 
-    if let Ok(socket_id) = SocketId::new_val(fd_num) {
+    if let Ok(socket_id) = SocketId::try_new(fd_num) {
         if net::close_socket(socket_id).is_ok() {
             return Ok(());
         }
@@ -611,7 +611,7 @@ fn sys_break() {
 }
 
 fn sys_stat(fd_num: i32, buf: *mut f_stat) -> Result<()> {
-    let fd_num = FileDescriptorNumber::new_val(fd_num)?;
+    let fd_num = FileDescriptorNumber::try_new(fd_num)?;
     let stat_mut = unsafe { &mut *buf };
 
     let size = match fd_num {
@@ -636,9 +636,9 @@ fn sys_exec(args: *const u8, flags: i32, pipefd: *const i32) -> Result<pid_t> {
     } else {
         let fds = unsafe { core::slice::from_raw_parts(pipefd, 3) };
         [
-            FileDescriptorNumber::new_val(fds[0]).ok(),
-            FileDescriptorNumber::new_val(fds[1]).ok(),
-            FileDescriptorNumber::new_val(fds[2]).ok(),
+            FileDescriptorNumber::try_new(fds[0]).ok(),
+            FileDescriptorNumber::try_new(fds[1]).ok(),
+            FileDescriptorNumber::try_new(fds[2]).ok(),
         ]
     };
 
@@ -687,7 +687,7 @@ fn sys_free(ptr: *const u8) -> Result<()> {
 }
 
 fn sys_wait(pid: pid_t) -> Result<i32> {
-    let task_id = TaskId::new_val(pid as usize);
+    let task_id = TaskId::from(pid as usize);
     task::scheduler::sleep_waiting_for(task_id);
 
     let exit_code = task::scheduler::take_exit_code(task_id)
@@ -759,7 +759,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
                 return Err(Error::InvalidData.with_context("layer ID"));
             }
 
-            let layer_id = LayerId::new_val(layer_id as usize);
+            let layer_id = LayerId::from(layer_id as usize);
             window_manager::remove_component(layer_id)?;
             task::scheduler::remove_layer_id(layer_id)?;
 
@@ -847,7 +847,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
                 return Err(Error::InvalidData.with_context("layer ID"));
             }
 
-            let layer_id = LayerId::new_val(layer_id as usize);
+            let layer_id = LayerId::from(layer_id as usize);
             let wh = Size::new(image_width, image_height);
             let framebuf_virt_addr: VirtualAddress = (framebuf_ptr as u64).into();
 
@@ -899,7 +899,7 @@ fn sys_socket(domain: i32, type_: i32, _protocol: i32) -> Result<SocketId> {
 }
 
 fn sys_bind(sockfd: i32, addr: *const sockaddr, addrlen: usize) -> Result<()> {
-    let socket_id = SocketId::new_val(sockfd)?;
+    let socket_id = SocketId::try_new(sockfd)?;
     let addr = unsafe { *(addr as *const sockaddr_in) };
     assert_eq!(size_of::<sockaddr_in>(), addrlen);
 
@@ -935,7 +935,7 @@ fn sys_sendto(
     dest_addr: *const sockaddr,
     addrlen: usize,
 ) -> Result<usize> {
-    let socket_id = SocketId::new_val(sockfd)?;
+    let socket_id = SocketId::try_new(sockfd)?;
     let data = unsafe { slice::from_raw_parts(buf, len) };
 
     if dest_addr.is_null() {
@@ -963,7 +963,7 @@ fn sys_recvfrom(
     src_addr: *const sockaddr,
     addrlen: usize,
 ) -> Result<usize> {
-    let socket_id = SocketId::new_val(sockfd)?;
+    let socket_id = SocketId::try_new(sockfd)?;
     let buf_mut = unsafe { slice::from_raw_parts_mut(buf, len) };
 
     if src_addr.is_null() {
@@ -992,7 +992,7 @@ fn sys_recvfrom(
 }
 
 fn sys_connect(sockfd: i32, addr: *const sockaddr, addrlen: usize) -> Result<()> {
-    let socket_id = SocketId::new_val(sockfd)?;
+    let socket_id = SocketId::try_new(sockfd)?;
 
     let addr = unsafe { *(addr as *const sockaddr_in) };
     assert_eq!(size_of::<sockaddr_in>(), addrlen);
@@ -1015,12 +1015,12 @@ fn sys_connect(sockfd: i32, addr: *const sockaddr, addrlen: usize) -> Result<()>
 }
 
 fn sys_listen(sockfd: i32, backlog: i32) -> Result<()> {
-    let socket_id = SocketId::new_val(sockfd)?;
+    let socket_id = SocketId::try_new(sockfd)?;
     net::listen_tcp_v4(socket_id)
 }
 
 fn sys_accept(sockfd: i32, addr: *const sockaddr, addrlen: *const i32) -> Result<SocketId> {
-    let socket_id = SocketId::new_val(sockfd)?;
+    let socket_id = SocketId::try_new(sockfd)?;
 
     loop {
         tty::check_sigint();

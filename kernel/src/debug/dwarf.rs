@@ -696,7 +696,7 @@ pub struct DebugAbbrev {
 }
 
 impl DebugAbbrev {
-    pub fn is_contains_by_ip(&self, ip: u64) -> bool {
+    pub fn contains_ip(&self, ip: u64) -> bool {
         let mut low_pc = None;
         let mut high_pc = None;
 
@@ -1299,7 +1299,7 @@ impl Dwarf {
         for (debug_info, debug_abbrevs) in &self.die_tree {
             let mut abbrevs = Vec::new();
             for abbrev in debug_abbrevs.values() {
-                if abbrev.is_contains_by_ip(ip) {
+                if abbrev.contains_ip(ip) {
                     abbrevs.extend(debug_abbrevs.values());
                     break;
                 }

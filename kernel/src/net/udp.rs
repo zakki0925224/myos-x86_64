@@ -1,4 +1,7 @@
-use crate::error::Error;
+use crate::{
+    error::Error,
+    net::checksum::{checksum_words, fold_checksum, pseudo_header_sum},
+};
 use alloc::{
     string::{String, ToString},
     vec::Vec,
@@ -84,35 +87,10 @@ impl UdpPacket {
 
     pub fn calc_checksum_with_ipv4(&mut self, src_addr: Ipv4Addr, dst_addr: Ipv4Addr) {
         self.checksum = 0;
-        let mut sum: u32 = 0;
-
-        // pseudo header
-        let src = src_addr.octets();
-        let dst = dst_addr.octets();
-        sum += ((src[0] as u32) << 8) | (src[1] as u32);
-        sum += ((src[2] as u32) << 8) | (src[3] as u32);
-        sum += ((dst[0] as u32) << 8) | (dst[1] as u32);
-        sum += ((dst[2] as u32) << 8) | (dst[3] as u32);
-        sum += 17;
-
         let udp_vec = self.to_vec();
-        let udp_len = udp_vec.len() as u32;
-        sum += udp_len;
-
-        for chunk in udp_vec.chunks(2) {
-            let word = match chunk {
-                [h, l] => u16::from_be_bytes([*h, *l]),
-                [h] => u16::from_be_bytes([*h, 0]),
-                _ => 0,
-            };
-            sum = sum.wrapping_add(word as u32);
-        }
-
-        while (sum >> 16) > 0 {
-            sum = (sum & 0xffff) + (sum >> 16);
-        }
-
-        self.checksum = !(sum as u16);
+        let sum = pseudo_header_sum(src_addr, dst_addr, 17, udp_vec.len())
+            .wrapping_add(checksum_words(&udp_vec));
+        self.checksum = fold_checksum(sum);
     }
 
     pub fn to_vec(&self) -> Vec<u8> {

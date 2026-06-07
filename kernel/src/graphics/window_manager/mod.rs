@@ -121,7 +121,7 @@ impl WindowManager {
                 height: m_h,
             },
             format: _,
-        } = mouse_pointer.get_layer_info()?;
+        } = mouse_pointer.layer_info()?;
 
         let m_pos_after = match &mouse_event {
             MouseEvent::Ps2Mouse(e) => {
@@ -165,7 +165,7 @@ impl WindowManager {
                         pos: w_pos,
                         size: w_size,
                         format: _,
-                    } = self.windows[i].get_layer_info()?;
+                    } = self.windows[i].layer_info()?;
 
                     let w_rect = Rect::from_point_and_size(w_pos, w_size);
                     if !w_rect.contains(m_pos_after) {
@@ -214,7 +214,7 @@ impl WindowManager {
                             height: w_h,
                         },
                     format: _,
-                } = w.get_layer_info()?;
+                } = w.layer_info()?;
 
                 let max_w_x = res.width.saturating_sub(w_w);
                 let max_w_y = res.height.saturating_sub(w_h);
@@ -229,7 +229,7 @@ impl WindowManager {
                         pos: w_pos,
                         size: w_size,
                         format: _,
-                    } = w.get_layer_info()?;
+                    } = w.layer_info()?;
 
                     let w_rect = Rect::from_point_and_size(w_pos, w_size);
                     if w_rect.contains(m_pos_after) {
@@ -320,11 +320,11 @@ impl WindowManager {
             .taskbar
             .as_mut()
             .ok_or(WindowManagerError::TaskbarLayerWasNotFound)?;
-        let size = taskbar.get_layer_info()?.size;
+        let size = taskbar.layer_info()?.size;
 
         taskbar.draw_flush()?;
 
-        let (f_w, f_h) = crate::graphics::font::FONT.get_wh();
+        let (f_w, f_h) = crate::graphics::font::FONT.wh();
         let text_y = size.height / 2 - f_h / 2;
 
         // window titles

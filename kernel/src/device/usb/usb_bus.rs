@@ -160,7 +160,7 @@ impl DeviceDriverFunction for UsbBusDriver {
     type PollNormalOutput = ();
     type PollInterruptOutput = ();
 
-    fn get_device_driver_info(&self) -> Result<DeviceDriverInfo> {
+    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
         Ok(self.device_driver_info.clone())
     }
 
@@ -170,7 +170,7 @@ impl DeviceDriverFunction for UsbBusDriver {
 
     fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
         let dev_desc = vfs::DeviceFileDescriptor {
-            get_device_driver_info,
+            device_driver_info,
             open,
             close,
             read,
@@ -236,16 +236,16 @@ impl DeviceDriverFunction for UsbBusDriver {
     }
 }
 
-pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
+pub fn device_driver_info() -> Result<DeviceDriverInfo> {
     let driver = USB_BUS_DRIVER.try_lock()?;
-    driver.get_device_driver_info()
+    driver.device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
     let mut driver = USB_BUS_DRIVER.try_lock()?;
     driver.probe()?;
     driver.attach(())?;
-    kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
+    kinfo!("{}: Attached!", driver.device_driver_info()?.name);
     Ok(())
 }
 

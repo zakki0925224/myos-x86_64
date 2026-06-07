@@ -34,7 +34,7 @@ impl MemoryFrameInfo {
     }
 
     pub fn frame_start_virt_addr(&self) -> Result<VirtualAddress> {
-        self.frame_start_phys_addr.get_virt_addr()
+        self.frame_start_phys_addr.virt_addr()
     }
 
     pub fn set_permissions(
@@ -51,7 +51,7 @@ impl MemoryFrameInfo {
             paging::update_mapping(&MappingInfo {
                 start,
                 end: start.offset(PAGE_SIZE),
-                phys_addr: start.get_phys_addr()?,
+                phys_addr: start.phys_addr()?,
                 rw,
                 us,
                 pwt,
@@ -182,41 +182,23 @@ impl BitmapMemoryManager {
         let total_frame_len = ((max_phys_addr as usize + UEFI_PAGE_SIZE) / UEFI_PAGE_SIZE).max(1);
 
         // find available memory area for bitmap
+        let bitmap_desc = mem_map
+            .iter()
+            .find(|d| {
+                is_valid_mem_desc(d)
+                    && (d.page_cnt as usize) * UEFI_PAGE_SIZE
+                        >= total_frame_len / Bitmap::BITMAP_SIZE
+            })
+            .expect("mem: Failed to allocate memory for bitmap");
         let mut bitmap_phys_addr = PhysicalAddress::default();
-        for d in mem_map {
-            if !d.ty.is_available_memory()
-                || (d.page_cnt as usize) * UEFI_PAGE_SIZE < (total_frame_len / Bitmap::BITMAP_SIZE)
-                || d.phys_start == 0
-                || d.phys_start % UEFI_PAGE_SIZE as u64 != 0
-            {
-                continue;
-            }
-
-            bitmap_phys_addr.set(d.phys_start);
-            break;
-        }
-
-        if bitmap_phys_addr.get() == 0 {
-            panic!("mem: Failed to allocate memory for bitmap");
-        }
+        bitmap_phys_addr.set(bitmap_desc.phys_start);
 
         // calc total available memory size
-        let mut total_available_mem_size = 0;
-        for d in mem_map {
-            if !d.ty.is_available_memory() {
-                continue;
-            }
-
-            if d.phys_start == 0 {
-                continue;
-            }
-
-            if d.phys_start % (PAGE_SIZE as u64) != 0 {
-                continue;
-            }
-
-            total_available_mem_size += d.page_cnt as usize * UEFI_PAGE_SIZE;
-        }
+        let total_available_mem_size: usize = mem_map
+            .iter()
+            .filter(|d| is_valid_mem_desc(d))
+            .map(|d| d.page_cnt as usize * UEFI_PAGE_SIZE)
+            .sum();
 
         self.bitmap_phys_addr = Some(bitmap_phys_addr);
         self.total_frame_len = total_frame_len;
@@ -234,22 +216,9 @@ impl BitmapMemoryManager {
         }
 
         // deallocate available memory frame
-        for d in mem_map {
-            if !d.ty.is_available_memory() {
-                continue;
-            }
-
-            if d.phys_start == 0 {
-                continue;
-            }
-
-            if d.phys_start % (PAGE_SIZE as u64) != 0 {
-                continue;
-            }
-
+        for d in mem_map.iter().filter(|d| is_valid_mem_desc(d)) {
             for i in 0..d.page_cnt {
                 let frame_index = (d.phys_start + (i * PAGE_SIZE as u64)) as usize / PAGE_SIZE;
-
                 self.dealloc_frame(frame_index)?;
             }
         }
@@ -270,15 +239,11 @@ impl BitmapMemoryManager {
         (self.total_frame_len + Bitmap::BITMAP_SIZE - 1) / Bitmap::BITMAP_SIZE
     }
 
-    fn get_mem_frame(&self, frame_index: usize) -> Option<MemoryFrameInfo> {
-        if self.bitmap(self.bitmap_offset(frame_index)).is_ok() {
-            return Some(MemoryFrameInfo {
-                frame_start_phys_addr: ((frame_index * PAGE_SIZE) as u64).into(),
-                frame_size: PAGE_SIZE,
-            });
-        }
-
-        None
+    fn mem_frame(&self, frame_index: usize) -> Option<MemoryFrameInfo> {
+        self.bitmap(self.bitmap_offset(frame_index)).ok().map(|_| MemoryFrameInfo {
+            frame_start_phys_addr: ((frame_index * PAGE_SIZE) as u64).into(),
+            frame_size: PAGE_SIZE,
+        })
     }
 
     fn alloc_single_mem_frame(&mut self) -> Result<MemoryFrameInfo> {
@@ -462,19 +427,23 @@ impl BitmapMemoryManager {
     }
 }
 
+fn is_valid_mem_desc(d: &MemoryDescriptor) -> bool {
+    d.ty.is_available_memory() && d.phys_start != 0 && d.phys_start % PAGE_SIZE as u64 == 0
+}
+
 pub fn init(mem_map: &[MemoryDescriptor]) -> Result<()> {
     let mut bmm = BMM.try_lock()?;
     bmm.init(mem_map)?;
     bmm.init2(mem_map)
 }
 
-pub fn get_total_mem_size() -> Result<usize> {
+pub fn total_mem_size() -> Result<usize> {
     let bmm = BMM.try_lock()?;
     let total = bmm.total_frame_len * PAGE_SIZE;
     Ok(total)
 }
 
-pub fn get_mem_size() -> Result<(usize, usize)> {
+pub fn mem_size() -> Result<(usize, usize)> {
     let bmm = BMM.try_lock()?;
     let used = bmm.allocated_frame_len_in_available_mem * PAGE_SIZE;
     let total = bmm.total_available_mem_size;
@@ -496,10 +465,10 @@ pub fn mem_clear(mem_frame_info: &MemoryFrameInfo) -> Result<()> {
     unsafe { bmm.mem_clear(mem_frame_info) }
 }
 
-pub fn get_bitmap_region() -> Result<(VirtualAddress, usize)> {
+pub fn bitmap_region() -> Result<(VirtualAddress, usize)> {
     let bmm = BMM.try_lock()?;
     let phys_addr = bmm.bitmap_phys_addr()?;
-    let virt_addr = phys_addr.get_virt_addr()?;
+    let virt_addr = phys_addr.virt_addr()?;
     let len = bmm.bitmap_len();
     Ok((virt_addr, len))
 }

@@ -15,7 +15,7 @@ pub fn init(mem_map: &[MemoryDescriptor]) -> Result<()> {
     kinfo!("mem: Bitmap memory manager initialized");
 
     let start = PAGE_SIZE as u64;
-    let end = bitmap::get_total_mem_size()? as u64;
+    let end = bitmap::total_mem_size()? as u64;
 
     paging::create_new_page_table(
         start.into(),
@@ -49,7 +49,7 @@ pub fn free() {
         }
     }
 
-    let (used, max) = bitmap::get_mem_size().unwrap_or((0, 0));
+    let (used, max) = bitmap::mem_size().unwrap_or((0, 0));
     let (used_value, used_unit) = format_size(used);
     let (max_value, max_unit) = format_size(max);
 

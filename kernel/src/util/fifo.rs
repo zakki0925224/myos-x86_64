@@ -24,7 +24,9 @@ impl<T: Sized + Copy, const SIZE: usize> Fifo<T, SIZE> {
     }
 
     pub fn len(&self) -> usize {
-        self.write_ptr.load(Ordering::Relaxed)
+        let read_ptr = self.read_ptr.load(Ordering::Relaxed);
+        let write_ptr = self.write_ptr.load(Ordering::Relaxed);
+        (write_ptr + self.size - read_ptr) % self.size
     }
 
     pub fn is_full(&self) -> bool {
@@ -38,7 +40,7 @@ impl<T: Sized + Copy, const SIZE: usize> Fifo<T, SIZE> {
         self.write_ptr.store(0, Ordering::Relaxed);
     }
 
-    pub fn get_read_write_ptr(&self) -> (usize, usize) {
+    pub fn read_write_ptr(&self) -> (usize, usize) {
         (
             self.read_ptr.load(Ordering::Relaxed),
             self.write_ptr.load(Ordering::Relaxed),
@@ -97,7 +99,7 @@ impl<T: Sized + Copy, const SIZE: usize> Fifo<T, SIZE> {
         Ok(self.buf.0[read_ptr])
     }
 
-    pub fn get_buf_ref(&self) -> &[T; SIZE] {
+    pub fn buf_ref(&self) -> &[T; SIZE] {
         &self.buf.0
     }
 }
@@ -106,7 +108,7 @@ impl<T: Sized + Copy, const SIZE: usize> Fifo<T, SIZE> {
 fn test_new() {
     let fifo: Fifo<u8, 4> = Fifo::new(0);
     assert_eq!(fifo.len(), 0);
-    assert_eq!(fifo.get_read_write_ptr(), (0, 0));
+    assert_eq!(fifo.read_write_ptr(), (0, 0));
 }
 
 #[test_case]
@@ -131,6 +133,6 @@ fn test_reset() {
     fifo.enqueue(3).unwrap();
     fifo.reset_ptr();
 
-    assert_eq!(fifo.get_read_write_ptr(), (0, 0));
+    assert_eq!(fifo.read_write_ptr(), (0, 0));
     assert!(fifo.dequeue().is_err());
 }

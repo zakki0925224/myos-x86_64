@@ -40,7 +40,7 @@ impl PciDevice {
         let conf_space_header =
             ConfigurationSpaceCommonHeaderField::read(bus, device, func).ok()?;
 
-        if !conf_space_header.is_exist() {
+        if !conf_space_header.exists() {
             return None;
         }
 
@@ -56,7 +56,7 @@ impl PciDevice {
             return None;
         }
 
-        match conf_space_header.get_header_type() {
+        match conf_space_header.header_type() {
             ConfigurationSpaceHeaderType::NonBridge
             | ConfigurationSpaceHeaderType::MultiFunction => {
                 Some(self.read_conf_space_non_bridge_field().unwrap().caps_ptr)
@@ -88,7 +88,7 @@ impl PciDeviceFunction for PciDevice {
 
     fn read_conf_space_non_bridge_field(&self) -> Result<ConfigurationSpaceNonBridgeField> {
         let (bus, device, func) = self.bdf;
-        let header_type = self.read_conf_space_header()?.get_header_type();
+        let header_type = self.read_conf_space_header()?.header_type();
 
         match header_type {
             ConfigurationSpaceHeaderType::NonBridge
@@ -103,7 +103,7 @@ impl PciDeviceFunction for PciDevice {
         &self,
     ) -> Result<ConfigurationSpacePciToPciBridgeField> {
         let (bus, device, func) = self.bdf;
-        let header_type = self.read_conf_space_header()?.get_header_type();
+        let header_type = self.read_conf_space_header()?.header_type();
 
         match header_type {
             ConfigurationSpaceHeaderType::PciToPciBridge => {
@@ -117,7 +117,7 @@ impl PciDeviceFunction for PciDevice {
         &self,
     ) -> Result<ConfigurationSpacePciToCardBusField> {
         let (bus, device, func) = self.bdf;
-        let header_type = self.read_conf_space_header()?.get_header_type();
+        let header_type = self.read_conf_space_header()?.header_type();
 
         match header_type {
             ConfigurationSpaceHeaderType::PciToCardBusBridge => {

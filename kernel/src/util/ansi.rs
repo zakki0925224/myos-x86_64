@@ -235,7 +235,7 @@ impl AnsiEscapeStream {
 fn test_new() {
     let stream = AnsiEscapeStream::new();
     assert_eq!(stream.state, State::Normal);
-    assert_eq!(stream.buf.get_read_write_ptr(), (0, 0));
+    assert_eq!(stream.buf.read_write_ptr(), (0, 0));
 }
 
 #[test_case]

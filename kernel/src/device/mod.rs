@@ -34,7 +34,7 @@ pub trait DeviceDriverFunction {
     type PollNormalOutput;
     type PollInterruptOutput;
 
-    fn get_device_driver_info(&self) -> Result<DeviceDriverInfo>;
+    fn device_driver_info(&self) -> Result<DeviceDriverInfo>;
     // check and find device
     fn probe(&mut self) -> Result<()>;
     // initialize device

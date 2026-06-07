@@ -57,7 +57,7 @@ impl Fat {
         Ok(dir.target_cluster_num)
     }
 
-    pub fn get_file(
+    pub fn file(
         &self,
         file_name: &str,
         current_dir_cluster_num: Option<usize>,
@@ -77,7 +77,7 @@ impl Fat {
         Ok((file.clone(), bytes))
     }
 
-    pub fn get_file_by_abs_path(&self, path: &Path) -> Result<(FileMetaData, Vec<u8>)> {
+    pub fn file_by_abs_path(&self, path: &Path) -> Result<(FileMetaData, Vec<u8>)> {
         let mut current_dir_cluster_num = self.root_cluster_num;
         let path = path.normalize();
         let parent_path = path.parent();
@@ -86,7 +86,7 @@ impl Fat {
             current_dir_cluster_num = self.cluster_num(dir_name, Some(current_dir_cluster_num))?;
         }
 
-        let file = self.get_file(&path.name(), Some(current_dir_cluster_num))?;
+        let file = self.file(&path.name(), Some(current_dir_cluster_num))?;
         Ok(file)
     }
 

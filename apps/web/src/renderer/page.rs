@@ -8,7 +8,7 @@ use crate::{
             token::CssTokenizer,
         },
         dom::{
-            api::{get_style_content, get_title_content},
+            api::{style_content, title_content},
             node::Window,
         },
         html::{parser::HtmlParser, token::HtmlTokenizer},
@@ -58,7 +58,7 @@ impl Page {
 
     pub fn title(&self) -> String {
         match &self.frame {
-            Some(frame) => get_title_content(frame.borrow().document()),
+            Some(frame) => title_content(frame.borrow().document()),
             None => String::new(),
         }
     }
@@ -72,7 +72,7 @@ impl Page {
         let frame = HtmlParser::new(html_tokenizer).construct_tree();
         let dom = frame.borrow().document();
 
-        let style = get_style_content(dom);
+        let style = style_content(dom);
         let css_tokenizer = CssTokenizer::new(style);
         let cssom = CssParser::new(css_tokenizer).parse_stylesheet();
 

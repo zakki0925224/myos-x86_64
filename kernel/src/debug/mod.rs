@@ -31,7 +31,7 @@ pub fn user_app_debugger(
 
         for (_, debug_abbrevs) in info {
             for debug_abbrev in debug_abbrevs {
-                if !debug_abbrev.is_contains_by_ip(ip) {
+                if !debug_abbrev.contains_ip(ip) {
                     continue;
                 }
 
@@ -88,7 +88,7 @@ pub fn user_app_debugger(
         print!("(dbg) ");
         let mut input_s = None;
         while input_s.is_none() {
-            if let Ok(s) = x86_64::disabled_int(|| tty::get_line()) {
+            if let Ok(s) = x86_64::disabled_int(|| tty::line()) {
                 input_s = s;
             } else {
                 x86_64::stihlt();

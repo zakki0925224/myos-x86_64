@@ -6,7 +6,7 @@ use alloc::{
 };
 use core::cell::RefCell;
 
-pub fn get_tagret_element_node(
+pub fn tagret_element_node(
     node: Option<Rc<RefCell<Node>>>,
     element_kind: ElementKind,
 ) -> Option<Rc<RefCell<Node>>> {
@@ -18,8 +18,8 @@ pub fn get_tagret_element_node(
                 return Some(n.clone());
             }
 
-            let result1 = get_tagret_element_node(n.borrow().first_child(), element_kind);
-            let result2 = get_tagret_element_node(n.borrow().next_sibling(), element_kind);
+            let result1 = tagret_element_node(n.borrow().first_child(), element_kind);
+            let result2 = tagret_element_node(n.borrow().next_sibling(), element_kind);
 
             if result1.is_none() && result2.is_none() {
                 return None;
@@ -35,8 +35,8 @@ pub fn get_tagret_element_node(
     }
 }
 
-pub fn get_title_content(root: Rc<RefCell<Node>>) -> String {
-    let title_node = match get_tagret_element_node(Some(root), ElementKind::Title) {
+pub fn title_content(root: Rc<RefCell<Node>>) -> String {
+    let title_node = match tagret_element_node(Some(root), ElementKind::Title) {
         Some(node) => node,
         None => return "".to_string(),
     };
@@ -52,8 +52,8 @@ pub fn get_title_content(root: Rc<RefCell<Node>>) -> String {
     }
 }
 
-pub fn get_style_content(root: Rc<RefCell<Node>>) -> String {
-    let style_node = match get_tagret_element_node(Some(root), ElementKind::Style) {
+pub fn style_content(root: Rc<RefCell<Node>>) -> String {
+    let style_node = match tagret_element_node(Some(root), ElementKind::Style) {
         Some(node) => node,
         None => return "".to_string(),
     };

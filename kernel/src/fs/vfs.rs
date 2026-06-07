@@ -20,7 +20,7 @@ static VFS: Mutex<VirtualFileSystem> = Mutex::new(VirtualFileSystem::new());
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceFileDescriptor {
-    pub get_device_driver_info: fn() -> Result<DeviceDriverInfo>,
+    pub device_driver_info: fn() -> Result<DeviceDriverInfo>,
     pub open: fn() -> Result<()>,
     pub close: fn() -> Result<()>,
     pub read: fn() -> Result<Vec<u8>>,
@@ -77,16 +77,17 @@ impl FileDescriptorNumber {
         Self(NEXT.fetch_add(1, Ordering::Relaxed))
     }
 
-    pub fn new_val(value: i32) -> Result<Self> {
+    pub fn get(&self) -> usize {
+        self.0
+    }
+}
+
+impl FileDescriptorNumber {
+    pub fn try_new(value: i32) -> Result<Self> {
         if value < 0 {
             return Err(VirtualFileSystemError::InvalidFileDescriptorNumber.into());
         }
-
         Ok(Self(value as usize))
-    }
-
-    pub fn get(&self) -> usize {
-        self.0
     }
 }
 
@@ -205,7 +206,7 @@ impl core::fmt::Display for VirtualFileSystemError {
 
                 Ok(())
             }
-            Self::BlockingFileResource(fd) => write!(f, "Blocking file reousrce: {}", fd),
+            Self::BlockingFileResource(fd) => write!(f, "Blocking file resource: {}", fd),
             Self::ReleasedFileResource(fd) => write!(f, "Released file resource: {}", fd),
             Self::InvalidFileName => write!(f, "Invalid file name"),
             Self::InvalidFileDescriptorNumber => write!(f, "Invalid file descriptor number"),
@@ -635,7 +636,7 @@ impl VirtualFileSystem {
                 } else if let Some((fs, fs_path)) = self.find_fs(file_ref) {
                     match fs {
                         FileSystem::Fat(fat) => {
-                            let (_, bytes) = fat.get_file_by_abs_path(&file_path.diff(&fs_path))?;
+                            let (_, bytes) = fat.file_by_abs_path(&file_path.diff(&fs_path))?;
                             Ok(bytes)
                         }
                     }
@@ -732,7 +733,7 @@ impl VirtualFileSystem {
                 } else if let Some((fs, fs_path)) = self.find_fs(file_ref) {
                     match fs {
                         FileSystem::Fat(fat) => {
-                            let (_, bytes) = fat.get_file_by_abs_path(&file_path.diff(&fs_path))?;
+                            let (_, bytes) = fat.file_by_abs_path(&file_path.diff(&fs_path))?;
                             Ok(bytes.len())
                         }
                     }

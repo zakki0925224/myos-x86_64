@@ -55,12 +55,14 @@ impl LayerId {
         Self(NEXT.fetch_add(1, Ordering::Relaxed))
     }
 
-    pub fn new_val(value: usize) -> Self {
-        Self(value)
-    }
-
     pub fn get(&self) -> usize {
         self.0
+    }
+}
+
+impl From<usize> for LayerId {
+    fn from(value: usize) -> Self {
+        Self(value)
     }
 }
 
@@ -243,7 +245,7 @@ impl LayerManager {
         Ok(())
     }
 
-    fn get_layer(&mut self, layer_id: LayerId) -> Result<&mut Layer> {
+    fn layer(&mut self, layer_id: LayerId) -> Result<&mut Layer> {
         self.layers
             .iter_mut()
             .find(|l| l.id == layer_id)
@@ -350,18 +352,18 @@ pub fn draw_layer<F: FnMut(&mut dyn Draw) -> Result<()>>(
     layer_id: LayerId,
     mut draw: F,
 ) -> Result<()> {
-    draw(LAYER_MAN.try_lock()?.get_layer(layer_id)?)
+    draw(LAYER_MAN.try_lock()?.layer(layer_id)?)
 }
 
-pub fn get_layer_info(layer_id: LayerId) -> Result<LayerInfo> {
+pub fn layer_info(layer_id: LayerId) -> Result<LayerInfo> {
     let mut layer_man = LAYER_MAN.try_lock()?;
-    let layer = layer_man.get_layer(layer_id)?;
+    let layer = layer_man.layer(layer_id)?;
     let layer_info = layer.layer_info();
     Ok(layer_info)
 }
 
 pub fn move_layer(layer_id: LayerId, to_pos: Point) -> Result<()> {
-    LAYER_MAN.try_lock()?.get_layer(layer_id)?.move_to(to_pos);
+    LAYER_MAN.try_lock()?.layer(layer_id)?.move_to(to_pos);
     Ok(())
 }
 

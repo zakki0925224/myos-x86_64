@@ -860,7 +860,7 @@ impl DeviceDriverFunction for XhcDriver {
     type PollNormalOutput = ();
     type PollInterruptOutput = ();
 
-    fn get_device_driver_info(&self) -> Result<DeviceDriverInfo> {
+    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
         Ok(self.device_driver_info.clone())
     }
 
@@ -883,14 +883,14 @@ impl DeviceDriverFunction for XhcDriver {
         device::pci_bus::configure_device(bus, device, func, |d| {
             // read base address registers
             let conf_space = d.read_conf_space_non_bridge_field()?;
-            let bars = conf_space.get_bars()?;
+            let bars = conf_space.bars()?;
             if bars.len() == 0 {
                 return Err(XhcDriverError::InvalidRegisterAddress.into());
             }
 
             let cap_reg_virt_addr = match bars[0].1 {
-                BaseAddress::MemoryAddress32BitSpace(addr, _) => addr.get_virt_addr()?,
-                BaseAddress::MemoryAddress64BitSpace(addr, _) => addr.get_virt_addr()?,
+                BaseAddress::MemoryAddress32BitSpace(addr, _) => addr.virt_addr()?,
+                BaseAddress::MemoryAddress64BitSpace(addr, _) => addr.virt_addr()?,
                 _ => return Err(XhcDriverError::InvalidRegisterAddress.into()),
             };
             let cap_reg: Mmio<CapabilityRegisters> =
@@ -932,7 +932,7 @@ impl DeviceDriverFunction for XhcDriver {
         })?;
 
         let dev_desc = vfs::DeviceFileDescriptor {
-            get_device_driver_info,
+            device_driver_info,
             open,
             close,
             read,
@@ -978,16 +978,16 @@ impl DeviceDriverFunction for XhcDriver {
     }
 }
 
-pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
+pub fn device_driver_info() -> Result<DeviceDriverInfo> {
     let driver = XHC_DRIVER.try_lock()?;
-    driver.get_device_driver_info()
+    driver.device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
     let mut driver = XHC_DRIVER.try_lock()?;
     driver.probe()?;
     driver.attach(())?;
-    kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
+    kinfo!("{}: Attached!", driver.device_driver_info()?.name);
     Ok(())
 }
 

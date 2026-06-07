@@ -40,37 +40,38 @@ impl TaskId {
         Self(NEXT.fetch_add(1, Ordering::Relaxed))
     }
 
-    pub fn new_val(value: usize) -> Self {
+}
+
+impl From<usize> for TaskId {
+    fn from(value: usize) -> Self {
         Self(value)
     }
 }
 
 #[derive(Debug, Clone)]
 struct TaskResource {
-    args_mem_frame_info: Option<MemoryFrameInfo>,
-    stack_mem_frame_info: Option<MemoryFrameInfo>,
-    program_mem_info: Vec<(MemoryFrameInfo, MappingInfo)>,
-    allocated_mem_frame_info: Vec<MemoryFrameInfo>,
+    args_frame: Option<MemoryFrameInfo>,
+    stack_frame: Option<MemoryFrameInfo>,
+    program_frames: Vec<(MemoryFrameInfo, MappingInfo)>,
+    alloc_frames: Vec<MemoryFrameInfo>,
     created_layer_ids: Vec<LayerId>,
-    opend_fd_num: Vec<FileDescriptorNumber>,
+    fd_nums: Vec<FileDescriptorNumber>,
     pipe_fd: [Option<FileDescriptorNumber>; 3],
 }
 
 impl Drop for TaskResource {
     fn drop(&mut self) {
-        if let Some(args_mem_frame_info) = self.args_mem_frame_info {
-            args_mem_frame_info.set_permissions_to_supervisor().unwrap();
-            bitmap::dealloc_mem_frame(args_mem_frame_info).unwrap();
+        if let Some(args_frame) = self.args_frame {
+            args_frame.set_permissions_to_supervisor().unwrap();
+            bitmap::dealloc_mem_frame(args_frame).unwrap();
         }
 
-        if let Some(stack_mem_frame_info) = self.stack_mem_frame_info {
-            stack_mem_frame_info
-                .set_permissions_to_supervisor()
-                .unwrap();
-            bitmap::dealloc_mem_frame(stack_mem_frame_info).unwrap();
+        if let Some(stack_frame) = self.stack_frame {
+            stack_frame.set_permissions_to_supervisor().unwrap();
+            bitmap::dealloc_mem_frame(stack_frame).unwrap();
         }
 
-        for (mem_info, mapping_info) in self.program_mem_info.iter() {
+        for (mem_info, mapping_info) in self.program_frames.iter() {
             let start = mapping_info.start;
             paging::update_mapping(&MappingInfo {
                 start,
@@ -90,9 +91,9 @@ impl Drop for TaskResource {
             bitmap::dealloc_mem_frame(*mem_info).unwrap();
         }
 
-        for mem_frame_info in self.allocated_mem_frame_info.iter() {
-            mem_frame_info.set_permissions_to_supervisor().unwrap();
-            bitmap::dealloc_mem_frame(*mem_frame_info).unwrap();
+        for frame in self.alloc_frames.iter() {
+            frame.set_permissions_to_supervisor().unwrap();
+            bitmap::dealloc_mem_frame(*frame).unwrap();
         }
 
         // destroy all created windows
@@ -100,8 +101,8 @@ impl Drop for TaskResource {
             let _ = window_manager::remove_component(*layer_id);
         }
 
-        // close all opend files
-        for fd in self.opend_fd_num.iter() {
+        // close all opened files
+        for fd in self.fd_nums.iter() {
             vfs::close_file(*fd).unwrap();
         }
     }
@@ -109,18 +110,18 @@ impl Drop for TaskResource {
 
 impl TaskResource {
     fn new(
-        args_mem_frame_info: Option<MemoryFrameInfo>,
-        stack_mem_frame_info: Option<MemoryFrameInfo>,
-        program_mem_info: Vec<(MemoryFrameInfo, MappingInfo)>,
+        args_frame: Option<MemoryFrameInfo>,
+        stack_frame: Option<MemoryFrameInfo>,
+        program_frames: Vec<(MemoryFrameInfo, MappingInfo)>,
         pipe_fd: [Option<FileDescriptorNumber>; 3],
     ) -> Self {
         Self {
-            args_mem_frame_info,
-            stack_mem_frame_info,
-            program_mem_info,
-            allocated_mem_frame_info: Vec::new(),
+            args_frame,
+            stack_frame,
+            program_frames,
+            alloc_frames: Vec::new(),
             created_layer_ids: Vec::new(),
-            opend_fd_num: Vec::new(),
+            fd_nums: Vec::new(),
             pipe_fd,
         }
     }
@@ -167,7 +168,7 @@ impl Task {
     ) -> Result<Self> {
         // parse ELF
         let mut entry = None;
-        let mut program_mem_info = Vec::new();
+        let mut program_frames = Vec::new();
         if let Some(elf64) = elf64 {
             let header = elf64.header();
 
@@ -215,7 +216,7 @@ impl Task {
                     pcd: false,
                 };
                 paging::update_mapping(&mapping_info)?;
-                program_mem_info.push((user_mem_frame_info, mapping_info));
+                program_frames.push((user_mem_frame_info, mapping_info));
 
                 if header.entry_point >= p_virt_addr
                     && header.entry_point < p_virt_addr + p_mem_size
@@ -231,7 +232,7 @@ impl Task {
         };
 
         // stack
-        let stack_mem_frame_info = if stack_size > 0 {
+        let stack_frame = if stack_size > 0 {
             let stack = bitmap::alloc_mem_frame(stack_size.div_ceil(PAGE_SIZE).max(1))?;
             match mode {
                 ContextMode::Kernel => stack.set_permissions_to_supervisor()?,
@@ -243,7 +244,7 @@ impl Task {
             None
         };
 
-        let rsp = if let Some(stack) = stack_mem_frame_info.as_ref() {
+        let rsp = if let Some(stack) = stack_frame.as_ref() {
             (stack.frame_start_virt_addr()?.get() + stack_size as u64 - 63) & !63
         } else {
             0
@@ -251,7 +252,7 @@ impl Task {
         assert!(rsp % 64 == 0); // must be 64 bytes align for SSE and AVX instructions, etc.
 
         // args
-        let mut args_mem_frame_info = None;
+        let mut args_frame = None;
         let mut arg0 = 0; // args len
         let mut arg1 = 0; // args virt addr
         if let Some(args) = args {
@@ -281,7 +282,7 @@ impl Task {
             }
             args_mem_virt_addr.copy_from_nonoverlapping(c_args_ref.as_ptr(), c_args_ref.len());
 
-            args_mem_frame_info = Some(mem_frame_info);
+            args_frame = Some(mem_frame_info);
             arg0 = args.len() as u64;
             arg1 = args_mem_virt_addr.get();
         }
@@ -294,19 +295,14 @@ impl Task {
             id: TaskId::new(),
             state: TaskState::default(),
             context,
-            resource: TaskResource::new(
-                args_mem_frame_info,
-                stack_mem_frame_info,
-                program_mem_info,
-                pipe_fd,
-            ),
+            resource: TaskResource::new(args_frame, stack_frame, program_frames, pipe_fd),
             dwarf,
             waiting_for: None,
         })
     }
 
     fn unmap_virt_addr(&self) -> Result<()> {
-        for (_, mapping_info) in self.resource.program_mem_info.iter() {
+        for (_, mapping_info) in self.resource.program_frames.iter() {
             let start = mapping_info.start;
             paging::update_mapping(&MappingInfo {
                 start,
@@ -328,7 +324,7 @@ impl Task {
     }
 
     fn remap_virt_addr(&self) -> Result<()> {
-        for (_, mapping_info) in self.resource.program_mem_info.iter() {
+        for (_, mapping_info) in self.resource.program_frames.iter() {
             paging::update_mapping(mapping_info)?;
         }
 
@@ -346,7 +342,7 @@ pub fn show_task_debug(task: &Task) {
     let ctx = &task.context;
     kdebug!("task id: {}", task.id);
 
-    if let Some(stack) = task.resource.stack_mem_frame_info {
+    if let Some(stack) = task.resource.stack_frame {
         kdebug!(
             "stack: (phys)0x{:x}, size: 0x{:x}bytes",
             stack.frame_start_phys_addr.get(),
@@ -397,18 +393,18 @@ pub fn show_task_debug(task: &Task) {
         ctx.r15
     );
 
-    kdebug!("args mem frame info:");
-    if let Some(mem_frame_info) = &task.resource.args_mem_frame_info {
-        let virt_addr = mem_frame_info.frame_start_virt_addr().unwrap();
+    kdebug!("args frame:");
+    if let Some(frame) = &task.resource.args_frame {
+        let virt_addr = frame.frame_start_virt_addr().unwrap();
         kdebug!(
             "\t(virt)0x{:x}-0x{:x}",
             virt_addr.get(),
-            virt_addr.offset(mem_frame_info.frame_size).get(),
+            virt_addr.offset(frame.frame_size).get(),
         );
     }
 
-    if let Some(stack) = task.resource.stack_mem_frame_info {
-        kdebug!("stack mem frame info:");
+    if let Some(stack) = task.resource.stack_frame {
+        kdebug!("stack frame:");
         let virt_addr = stack.frame_start_virt_addr().unwrap();
         kdebug!(
             "\t(virt)0x{:x}-0x{:x}",
@@ -417,26 +413,26 @@ pub fn show_task_debug(task: &Task) {
         );
     }
 
-    kdebug!("program mem frame info:");
-    for (mem_frame_info, mapping_info) in &task.resource.program_mem_info {
-        let virt_addr = mem_frame_info.frame_start_virt_addr().unwrap();
+    kdebug!("program frames:");
+    for (frame, mapping_info) in &task.resource.program_frames {
+        let virt_addr = frame.frame_start_virt_addr().unwrap();
         kdebug!(
             "\t(virt)0x{:x}-0x{:x} mapped to (virt)0x{:x}-0x{:x}",
             virt_addr.get(),
-            virt_addr.offset(mem_frame_info.frame_size).get(),
+            virt_addr.offset(frame.frame_size).get(),
             mapping_info.start.get(),
             mapping_info.end.get(),
         );
     }
 
-    kdebug!("allocated mem frame info:");
-    for mem_frame_info in &task.resource.allocated_mem_frame_info {
-        let virt_addr = mem_frame_info.frame_start_virt_addr().unwrap();
+    kdebug!("alloc frames:");
+    for frame in &task.resource.alloc_frames {
+        let virt_addr = frame.frame_start_virt_addr().unwrap();
 
         kdebug!(
             "\t(virt)0x{:x}-0x{:x}",
             virt_addr.get(),
-            virt_addr.offset(mem_frame_info.frame_size).get(),
+            virt_addr.offset(frame.frame_size).get(),
         );
     }
 }

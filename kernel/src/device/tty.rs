@@ -150,7 +150,7 @@ impl Tty {
         Ok(())
     }
 
-    fn get_line(&mut self, buf_type: BufferType) -> String {
+    fn line(&mut self, buf_type: BufferType) -> String {
         let buf = match buf_type {
             BufferType::Input => &mut self.input_buf,
             BufferType::Output => &mut self.output_buf,
@@ -177,7 +177,7 @@ impl Tty {
         s
     }
 
-    fn get_char(&mut self, buf_type: BufferType) -> Option<char> {
+    fn char(&mut self, buf_type: BufferType) -> Option<char> {
         let buf = match buf_type {
             BufferType::Input => &mut self.input_buf,
             BufferType::Output => &mut self.output_buf,
@@ -262,7 +262,7 @@ impl DeviceDriverFunction for Tty {
     type PollNormalOutput = ();
     type PollInterruptOutput = ();
 
-    fn get_device_driver_info(&self) -> Result<DeviceDriverInfo> {
+    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
         Ok(self.device_driver_info.clone())
     }
 
@@ -272,7 +272,7 @@ impl DeviceDriverFunction for Tty {
 
     fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
         let dev_desc = vfs::DeviceFileDescriptor {
-            get_device_driver_info,
+            device_driver_info,
             open,
             close,
             read,
@@ -326,16 +326,16 @@ macro_rules! println {
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
-pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
+pub fn device_driver_info() -> Result<DeviceDriverInfo> {
     let driver = TTY.try_lock()?;
-    driver.get_device_driver_info()
+    driver.device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
     let mut driver = TTY.try_lock()?;
     driver.probe()?;
     driver.attach(())?;
-    kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
+    kinfo!("{}: Attached!", driver.device_driver_info()?.name);
     Ok(())
 }
 
@@ -385,20 +385,20 @@ pub fn check_sigint() {
     }
 }
 
-pub fn get_line() -> Result<Option<String>> {
+pub fn line() -> Result<Option<String>> {
     let mut tty = TTY.try_lock()?;
 
     if tty.is_ready_get_line {
         tty.is_ready_get_line = false;
-        Ok(Some(tty.get_line(BufferType::Input)))
+        Ok(Some(tty.line(BufferType::Input)))
     } else {
         Ok(None)
     }
 }
 
-pub fn get_char() -> Result<Option<char>> {
+pub fn char() -> Result<Option<char>> {
     let mut tty = TTY.try_lock()?;
-    Ok(tty.get_char(BufferType::Input))
+    Ok(tty.char(BufferType::Input))
 }
 
 pub fn input_count() -> Result<usize> {

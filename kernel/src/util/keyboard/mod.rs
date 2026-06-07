@@ -5,7 +5,7 @@ pub mod key_event;
 pub mod key_map;
 pub mod scan_code;
 
-pub fn get_key_event_from_ps2(
+pub fn key_event_from_ps2(
     key_map: &BTreeMap<[u8; 6], ScanCode>,
     mod_keys_state: &mut ModifierKeysState,
     code: [u8; 6],
@@ -60,7 +60,7 @@ pub fn get_key_event_from_ps2(
     Some(key_event)
 }
 
-pub fn get_key_event_from_usb_hid(
+pub fn key_event_from_usb_hid(
     key_map: &BTreeMap<u8, ScanCode>,
     mod_keys_state: &ModifierKeysState,
     key_state: KeyState,

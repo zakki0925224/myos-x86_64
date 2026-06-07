@@ -39,7 +39,7 @@ impl PanicScreenDriver {
     }
 
     fn char_max_xy_len(&self) -> (usize, usize) {
-        let (font_width, font_height) = FONT.get_wh();
+        let (font_width, font_height) = FONT.wh();
 
         (
             self.res_x.unwrap_or(0) / font_width - 1,
@@ -124,8 +124,8 @@ impl PanicScreenDriver {
         }
 
         // draw font
-        let font_glyph = FONT.get_glyph(c)?;
-        let (font_width, font_height) = FONT.get_wh();
+        let font_glyph = FONT.glyph(c)?;
+        let (font_width, font_height) = FONT.wh();
         let x = self.cursor_x.unwrap_or(0) * font_width;
         let y = self.cursor_y.unwrap_or(0) * font_height;
 
@@ -157,7 +157,7 @@ impl DeviceDriverFunction for PanicScreenDriver {
     type PollNormalOutput = ();
     type PollInterruptOutput = ();
 
-    fn get_device_driver_info(&self) -> Result<DeviceDriverInfo> {
+    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
         Ok(self.device_driver_info.clone())
     }
 
@@ -201,16 +201,16 @@ impl DeviceDriverFunction for PanicScreenDriver {
     }
 }
 
-pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
+pub fn device_driver_info() -> Result<DeviceDriverInfo> {
     let driver = PANIC_SCREEN_DRIVER.try_lock()?;
-    driver.get_device_driver_info()
+    driver.device_driver_info()
 }
 
 pub fn probe_and_attach(graphic_info: GraphicInfo) -> Result<()> {
     let mut driver = PANIC_SCREEN_DRIVER.try_lock()?;
     driver.probe()?;
     driver.attach(graphic_info)?;
-    let info = driver.get_device_driver_info()?;
+    let info = driver.device_driver_info()?;
     kinfo!("{}: Attached!", info.name);
 
     Ok(())

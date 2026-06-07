@@ -28,12 +28,7 @@ struct Ps2KeyboardDriver {
     key_map_cache: Option<BTreeMap<[u8; 6], ScanCode>>,
     mod_keys_state: ModifierKeysState,
     data_buf: Fifo<u8, 128>,
-    data_0: Option<u8>,
-    data_1: Option<u8>,
-    data_2: Option<u8>,
-    data_3: Option<u8>,
-    data_4: Option<u8>,
-    data_5: Option<u8>,
+    data: [Option<u8>; 6],
 }
 
 impl Ps2KeyboardDriver {
@@ -44,12 +39,7 @@ impl Ps2KeyboardDriver {
             key_map_cache: None,
             mod_keys_state: ModifierKeysState::default(),
             data_buf: Fifo::new(0),
-            data_0: None,
-            data_1: None,
-            data_2: None,
-            data_3: None,
-            data_4: None,
-            data_5: None,
+            data: [None; 6],
         }
     }
 
@@ -59,41 +49,23 @@ impl Ps2KeyboardDriver {
             self.data_buf.enqueue(data)?;
         }
 
-        //println!("{:?}", self.data_buf.get_buf_ref());
-
         Ok(())
     }
 
-    fn get_event(&mut self) -> Result<Option<KeyEvent>> {
-        let data = self.data_buf.dequeue()?;
+    fn event(&mut self) -> Result<Option<KeyEvent>> {
+        let byte = self.data_buf.dequeue()?;
 
-        if self.data_0.is_none() {
-            self.data_0 = Some(data);
-        } else if self.data_1.is_none() {
-            self.data_1 = Some(data);
-        } else if self.data_2.is_none() {
-            self.data_2 = Some(data);
-        } else if self.data_3.is_none() {
-            self.data_3 = Some(data);
-        } else if self.data_4.is_none() {
-            self.data_4 = Some(data);
-        } else if self.data_5.is_none() {
-            self.data_5 = Some(data);
-        } else {
-            self.clear_data();
-            self.data_0 = Some(data);
+        match self.data.iter_mut().find(|d| d.is_none()) {
+            Some(slot) => *slot = Some(byte),
+            None => {
+                self.clear_data();
+                self.data[0] = Some(byte);
+            }
         }
 
-        let code = [
-            self.data_0.unwrap_or(0),
-            self.data_1.unwrap_or(0),
-            self.data_2.unwrap_or(0),
-            self.data_3.unwrap_or(0),
-            self.data_4.unwrap_or(0),
-            self.data_5.unwrap_or(0),
-        ];
+        let code = self.data.map(|d| d.unwrap_or(0));
 
-        let e = util::keyboard::get_key_event_from_ps2(
+        let e = util::keyboard::key_event_from_ps2(
             self.key_map_cache.as_ref().unwrap(),
             &mut self.mod_keys_state,
             code,
@@ -106,12 +78,7 @@ impl Ps2KeyboardDriver {
     }
 
     fn clear_data(&mut self) {
-        self.data_0 = None;
-        self.data_1 = None;
-        self.data_2 = None;
-        self.data_3 = None;
-        self.data_4 = None;
-        self.data_5 = None;
+        self.data.fill(None);
     }
 
     fn wait_ready(&self) {
@@ -126,7 +93,7 @@ impl DeviceDriverFunction for Ps2KeyboardDriver {
     type PollNormalOutput = Option<KeyEvent>;
     type PollInterruptOutput = ();
 
-    fn get_device_driver_info(&self) -> Result<DeviceDriverInfo> {
+    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
         Ok(self.device_driver_info.clone())
     }
 
@@ -146,7 +113,7 @@ impl DeviceDriverFunction for Ps2KeyboardDriver {
         self.key_map_cache = Some(self.key_map.to_ps2_map());
 
         let dev_desc = vfs::DeviceFileDescriptor {
-            get_device_driver_info,
+            device_driver_info,
             open,
             close,
             read,
@@ -162,7 +129,7 @@ impl DeviceDriverFunction for Ps2KeyboardDriver {
             return Err(Error::NotInitialized.into());
         }
 
-        self.get_event()
+        self.event()
     }
 
     fn poll_int(&mut self) -> Result<Self::PollInterruptOutput> {
@@ -193,9 +160,9 @@ impl DeviceDriverFunction for Ps2KeyboardDriver {
     }
 }
 
-pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
+pub fn device_driver_info() -> Result<DeviceDriverInfo> {
     let driver = PS2_KBD_DRIVER.try_lock()?;
-    driver.get_device_driver_info()
+    driver.device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
@@ -203,7 +170,7 @@ pub fn probe_and_attach() -> Result<()> {
         let mut driver = PS2_KBD_DRIVER.try_lock()?;
         driver.probe()?;
         driver.attach(())?;
-        kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
+        kinfo!("{}: Attached!", driver.device_driver_info()?.name);
         Ok(())
     })
 }

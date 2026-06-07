@@ -86,17 +86,17 @@ impl ConfigurationSpaceCommonHeaderField {
         Ok(())
     }
 
-    pub fn is_exist(&self) -> bool {
+    pub fn exists(&self) -> bool {
         self.vendor_id != PCI_DEVICE_NON_EXIST
     }
 
-    pub fn get_device_name(&self) -> Option<&str> {
-        let vendor = self.get_vendor();
-        if !self.is_exist() || vendor.is_none() {
+    pub fn device_name(&self) -> Option<&str> {
+        let vendor = self.vendor();
+        if !self.exists() || vendor.is_none() {
             return None;
         }
 
-        let device = self.get_device(&vendor.unwrap());
+        let device = self.device(&vendor.unwrap());
 
         if device.is_some() {
             Some(device.unwrap().name())
@@ -105,12 +105,12 @@ impl ConfigurationSpaceCommonHeaderField {
         }
     }
 
-    pub fn get_vendor_name(&self) -> Option<&str> {
-        if !self.is_exist() {
+    pub fn vendor_name(&self) -> Option<&str> {
+        if !self.exists() {
             return None;
         }
 
-        let vendor = self.get_vendor();
+        let vendor = self.vendor();
 
         if vendor.is_some() {
             Some(vendor.unwrap().name())
@@ -119,12 +119,12 @@ impl ConfigurationSpaceCommonHeaderField {
         }
     }
 
-    pub fn get_class_name(&self) -> Option<&str> {
-        if !self.is_exist() {
+    pub fn class_name(&self) -> Option<&str> {
+        if !self.exists() {
             return None;
         }
 
-        let class = self.get_class();
+        let class = self.class();
 
         if class.is_some() {
             Some(class.unwrap().name())
@@ -133,16 +133,16 @@ impl ConfigurationSpaceCommonHeaderField {
         }
     }
 
-    pub fn get_subclass_name(&self) -> Option<&str> {
-        let subclass = self.get_subclass();
-        if !self.is_exist() || subclass.is_none() {
+    pub fn subclass_name(&self) -> Option<&str> {
+        let subclass = self.subclass();
+        if !self.exists() || subclass.is_none() {
             return None;
         }
 
         Some(subclass.unwrap().name())
     }
 
-    pub fn get_header_type(&self) -> ConfigurationSpaceHeaderType {
+    pub fn header_type(&self) -> ConfigurationSpaceHeaderType {
         match self.header_type {
             0x00 => ConfigurationSpaceHeaderType::NonBridge,
             0x01 => ConfigurationSpaceHeaderType::PciToPciBridge,
@@ -157,20 +157,20 @@ impl ConfigurationSpaceCommonHeaderField {
         }
     }
 
-    fn get_vendor(&self) -> Option<&Vendor> {
+    fn vendor(&self) -> Option<&Vendor> {
         Vendors::iter().find(|v| v.id() == self.vendor_id)
     }
 
-    fn get_device(&self, vendor: &Vendor) -> Option<&Device> {
+    fn device(&self, vendor: &Vendor) -> Option<&Device> {
         vendor.devices().find(|d| d.id() == self.device_id)
     }
 
-    fn get_class(&self) -> Option<&Class> {
+    fn class(&self) -> Option<&Class> {
         Classes::iter().find(|c| c.id() == self.class_code)
     }
 
-    fn get_subclass(&self) -> Option<&Subclass> {
-        match self.get_class() {
+    fn subclass(&self) -> Option<&Subclass> {
+        match self.class() {
             Some(class) => class.subclasses().find(|c| c.id() == self.subclass),
             None => None,
         }
@@ -191,7 +191,7 @@ impl BaseAddressRegister {
         self.0
     }
 
-    pub fn get_base_addr(&self) -> Option<BaseAddress> {
+    pub fn base_addr(&self) -> Option<BaseAddress> {
         let bar = self.read();
 
         if bar == 0 {
@@ -254,7 +254,7 @@ impl ConfigurationSpaceNonBridgeField {
         Ok(unsafe { transmute::<[u32; 12], Self>(data) })
     }
 
-    pub fn get_bars(&self) -> Result<Vec<(usize, BaseAddress)>> {
+    pub fn bars(&self) -> Result<Vec<(usize, BaseAddress)>> {
         let mut skip_index = None;
         let bars = [
             &self.bar0, &self.bar1, &self.bar2, &self.bar3, &self.bar4, &self.bar5,
@@ -268,7 +268,7 @@ impl ConfigurationSpaceNonBridgeField {
                 }
             }
 
-            if let Some(base_addr) = bar.get_base_addr() {
+            if let Some(base_addr) = bar.base_addr() {
                 match base_addr {
                     BaseAddress::MemoryAddress64BitSpace(phys_addr, is_pref) => {
                         if i + 1 == bars.len() {

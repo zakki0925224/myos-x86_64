@@ -220,7 +220,7 @@ impl DeviceDriverFunction for Rtl8139Driver {
     type PollNormalOutput = ();
     type PollInterruptOutput = ();
 
-    fn get_device_driver_info(&self) -> Result<DeviceDriverInfo> {
+    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
         Ok(self.device_driver_info.clone())
     }
 
@@ -247,7 +247,7 @@ impl DeviceDriverFunction for Rtl8139Driver {
 
             // read I/O port base
             let conf_space = d.read_conf_space_non_bridge_field()?;
-            let bars = conf_space.get_bars()?;
+            let bars = conf_space.bars()?;
             let (_, mmio_bar) = bars
                 .get(0)
                 .ok_or(Error::NotFound.with_context("MMIO BAR"))?;
@@ -303,7 +303,7 @@ impl DeviceDriverFunction for Rtl8139Driver {
         })?;
 
         let dev_desc = vfs::DeviceFileDescriptor {
-            get_device_driver_info,
+            device_driver_info,
             open,
             close,
             read,
@@ -401,16 +401,16 @@ impl DeviceDriverFunction for Rtl8139Driver {
     }
 }
 
-pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
+pub fn device_driver_info() -> Result<DeviceDriverInfo> {
     let driver = RTL8139_DRIVER.try_lock()?;
-    driver.get_device_driver_info()
+    driver.device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
     let mut driver = RTL8139_DRIVER.try_lock()?;
     driver.probe()?;
     driver.attach(())?;
-    kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
+    kinfo!("{}: Attached!", driver.device_driver_info()?.name);
     Ok(())
 }
 

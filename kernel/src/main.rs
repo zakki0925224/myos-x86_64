@@ -107,7 +107,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
 
     // initialize speaker driver
     if let Err(err) = device::speaker::probe_and_attach() {
-        let name = device::speaker::get_device_driver_info().unwrap().name;
+        let name = device::speaker::device_driver_info().unwrap().name;
         kerror!("{}: Failed to probe or attach device: {:?}", name, err);
     }
 
@@ -122,13 +122,13 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
 
     // initialize xHC driver
     if let Err(err) = device::usb::xhc::probe_and_attach() {
-        let name = device::usb::xhc::get_device_driver_info().unwrap().name;
+        let name = device::usb::xhc::device_driver_info().unwrap().name;
         kerror!("{}: Failed to probe or attach device: {:?}", name, err);
     }
 
     // initialize RTL8139 driver
     if let Err(err) = device::rtl8139::probe_and_attach() {
-        let name = device::rtl8139::get_device_driver_info().unwrap().name;
+        let name = device::rtl8139::device_driver_info().unwrap().name;
         kerror!("{}: Failed to probe or attach device: {:?}", name, err);
     }
 

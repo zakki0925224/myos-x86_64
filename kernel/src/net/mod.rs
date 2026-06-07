@@ -10,6 +10,7 @@ use alloc::{collections::btree_map::BTreeMap, vec::Vec};
 use core::{net::Ipv4Addr, time::Duration};
 
 pub mod arp;
+pub mod checksum;
 pub mod eth;
 pub mod icmp;
 pub mod ip;
@@ -23,7 +24,7 @@ const GATEWAY_ADDR: Ipv4Addr = Ipv4Addr::new(10, 0, 2, 2);
 const LOCAL_ADDR: Ipv4Addr = Ipv4Addr::new(10, 0, 2, 15);
 const SUBNET_MASK: Ipv4Addr = Ipv4Addr::new(255, 255, 255, 0);
 
-fn get_target_ip(my_ip: Ipv4Addr, dst_ip: Ipv4Addr) -> Ipv4Addr {
+fn target_ip(my_ip: Ipv4Addr, dst_ip: Ipv4Addr) -> Ipv4Addr {
     let my_octets = my_ip.octets();
     let dst_octets = dst_ip.octets();
     let mask_octets = SUBNET_MASK.octets();
@@ -65,16 +66,17 @@ impl NetworkManager {
     }
 
     fn my_mac_addr(&self) -> Result<EthernetAddress> {
-        self.my_mac_addr.ok_or(Error::NotInitialized.with_context("MAC address"))
+        self.my_mac_addr
+            .ok_or(Error::NotInitialized.with_context("MAC address"))
     }
 
-    fn create_new_socket(&mut self, type_: SocketType) -> Result<SocketId> {
-        let protocol = match type_ {
+    fn create_new_socket(&mut self, kind: SocketType) -> Result<SocketId> {
+        let protocol = match kind {
             SocketType::Stream => Protocol::Tcp,
             SocketType::Dgram => Protocol::Udp,
         };
 
-        let socket_id = self.socket_table.insert_new_socket(type_, protocol)?;
+        let socket_id = self.socket_table.insert_new_socket(kind, protocol)?;
         kinfo!("net: Created new socket at {} ({:?})", socket_id, protocol);
 
         Ok(socket_id)
@@ -277,7 +279,7 @@ impl NetworkManager {
         );
         ipv4_packet.calc_checksum();
 
-        let target_ip = get_target_ip(self.my_ipv4_addr, dst_addr);
+        let target_ip = target_ip(self.my_ipv4_addr, dst_addr);
         let dst_mac_addr = self
             .resolve_mac_addr(target_ip)?
             .ok_or(Error::NotFound.with_context("MAC address"))?;
@@ -343,7 +345,7 @@ impl NetworkManager {
         );
         ipv4_packet.calc_checksum();
 
-        let target_ip = get_target_ip(self.my_ipv4_addr, dst_addr);
+        let target_ip = target_ip(self.my_ipv4_addr, dst_addr);
         let dst_mac_addr = self
             .resolve_mac_addr(target_ip)?
             .ok_or(Error::NotFound.with_context("MAC address"))?;
@@ -412,7 +414,7 @@ impl NetworkManager {
         );
         ipv4_packet.calc_checksum();
 
-        let target_ip = get_target_ip(self.my_ipv4_addr, dst_addr);
+        let target_ip = target_ip(self.my_ipv4_addr, dst_addr);
         let dst_mac_addr = self
             .resolve_mac_addr(target_ip)?
             .ok_or(Error::NotFound.with_context("MAC address"))?;
@@ -449,7 +451,7 @@ impl NetworkManager {
             return Err(Error::InvalidData.with_context("socket state"));
         }
 
-        let data = tcp_socket.get_and_reset_buf();
+        let data = tcp_socket.reset_buf();
         if data.is_empty() {
             return Ok(0);
         }
@@ -785,7 +787,7 @@ impl NetworkManager {
         );
         ipv4_packet.calc_checksum();
 
-        let target_ip = get_target_ip(self.my_ipv4_addr, dst_addr);
+        let target_ip = target_ip(self.my_ipv4_addr, dst_addr);
 
         let dst_mac_addr = self
             .resolve_mac_addr(target_ip)?
@@ -874,8 +876,8 @@ pub fn resolve_mac_addr(ipv4_addr: Ipv4Addr) -> Result<EthernetAddress> {
     }
 }
 
-pub fn create_new_socket(type_: SocketType) -> Result<SocketId> {
-    NETWORK_MAN.try_lock()?.create_new_socket(type_)
+pub fn create_new_socket(kind: SocketType) -> Result<SocketId> {
+    NETWORK_MAN.try_lock()?.create_new_socket(kind)
 }
 
 pub fn bind_socket_v4(
@@ -895,7 +897,7 @@ pub fn sendto_udp_v4(
     data: &[u8],
 ) -> Result<()> {
     let my_ip = my_ipv4_addr()?;
-    let target_ip = get_target_ip(my_ip, dst_addr);
+    let target_ip = target_ip(my_ip, dst_addr);
     resolve_mac_addr(target_ip)?;
 
     NETWORK_MAN
@@ -938,7 +940,7 @@ pub fn send_tcp_syn(socket_id: SocketId) -> Result<()> {
     };
 
     let my_ip = my_ipv4_addr()?;
-    let target_ip = get_target_ip(my_ip, dst_addr);
+    let target_ip = target_ip(my_ip, dst_addr);
     resolve_mac_addr(target_ip)?;
 
     NETWORK_MAN.try_lock()?.send_tcp_syn(socket_id)
@@ -961,7 +963,7 @@ pub fn send_tcp_packet(socket_id: SocketId, data: &[u8]) -> Result<()> {
     };
 
     let my_ip = my_ipv4_addr()?;
-    let target_ip = get_target_ip(my_ip, dst_addr);
+    let target_ip = target_ip(my_ip, dst_addr);
     resolve_mac_addr(target_ip)?;
 
     NETWORK_MAN.try_lock()?.send_tcp_packet(socket_id, data)

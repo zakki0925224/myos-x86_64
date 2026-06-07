@@ -173,7 +173,7 @@ impl Node {
         self.kind.clone()
     }
 
-    pub fn get_element(&self) -> Option<Element> {
+    pub fn element(&self) -> Option<Element> {
         match self.kind {
             NodeKind::Document | NodeKind::Text(_) => None,
             NodeKind::Element(ref e) => Some(e.clone()),

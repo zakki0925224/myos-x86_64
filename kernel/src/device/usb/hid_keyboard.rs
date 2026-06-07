@@ -90,7 +90,7 @@ impl UsbDeviceDriverFunction for UsbHidKeyboardDriver {
                 KeyState::Released
             };
 
-            let e = util::keyboard::get_key_event_from_usb_hid(
+            let e = util::keyboard::key_event_from_usb_hid(
                 &self.key_map,
                 &self.mod_keys_state,
                 key_state,

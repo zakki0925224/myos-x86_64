@@ -28,16 +28,17 @@ impl SocketId {
         Self(NEXT.fetch_add(1, Ordering::Relaxed))
     }
 
-    pub fn new_val(value: i32) -> Result<Self> {
+    pub fn get(&self) -> usize {
+        self.0
+    }
+}
+
+impl SocketId {
+    pub fn try_new(value: i32) -> Result<Self> {
         if value < 0 {
             return Err(Error::InvalidData.with_context("socket fd"));
         }
-
         Ok(Self(value as usize))
-    }
-
-    pub fn get(&self) -> usize {
-        self.0
     }
 }
 
@@ -58,7 +59,7 @@ pub struct Socket {
     port: u16,
     pub addr: Option<Ipv4Addr>,
     inner: SocketInner,
-    type_: SocketType,
+    kind: SocketType,
 }
 
 impl Socket {
@@ -70,12 +71,12 @@ impl Socket {
         self.port = port;
     }
 
-    pub fn type_(&self) -> SocketType {
-        self.type_
+    pub fn kind(&self) -> SocketType {
+        self.kind
     }
 
     pub fn inner_udp_mut(&mut self) -> Result<&mut UdpSocket> {
-        if self.type_ != SocketType::Dgram {
+        if self.kind != SocketType::Dgram {
             return Err(Error::InvalidData.with_context("socket type"));
         }
 
@@ -86,7 +87,7 @@ impl Socket {
     }
 
     pub fn inner_tcp_mut(&mut self) -> Result<&mut TcpSocket> {
-        if self.type_ != SocketType::Stream {
+        if self.kind != SocketType::Stream {
             return Err(Error::InvalidData.with_context("socket type"));
         }
 
@@ -136,7 +137,7 @@ impl SocketTable {
 
         let port = socket.port();
         if port != 0 {
-            match socket.type_() {
+            match socket.kind() {
                 SocketType::Stream => {
                     self.tcp_port_socket_id_map.remove(&port);
                 }
@@ -148,8 +149,8 @@ impl SocketTable {
         Ok(())
     }
 
-    pub fn socket_id_by_port_and_type(&self, port: u16, type_: SocketType) -> Result<SocketId> {
-        let socket_id = match type_ {
+    pub fn socket_id_by_port_and_type(&self, port: u16, kind: SocketType) -> Result<SocketId> {
+        let socket_id = match kind {
             SocketType::Stream => self.tcp_port_socket_id_map.get(&port),
             SocketType::Dgram => self.udp_port_socket_id_map.get(&port),
         }
@@ -158,8 +159,8 @@ impl SocketTable {
         Ok(*socket_id)
     }
 
-    pub fn insert_new_socket(&mut self, type_: SocketType, protocol: Protocol) -> Result<SocketId> {
-        let inner = match type_ {
+    pub fn insert_new_socket(&mut self, kind: SocketType, protocol: Protocol) -> Result<SocketId> {
+        let inner = match kind {
             SocketType::Stream => {
                 if protocol != Protocol::Tcp {
                     return Err(Error::InvalidData.with_context("socket protocol"));
@@ -181,7 +182,7 @@ impl SocketTable {
             port: 0,    // unbound
             addr: None, // unbound
             inner,
-            type_,
+            kind,
         };
         self.table.insert(id, socket);
 
@@ -219,7 +220,7 @@ impl SocketTable {
 
         // update port and port mapping
         socket.port = port;
-        match socket.type_ {
+        match socket.kind {
             SocketType::Stream => {
                 self.tcp_port_socket_id_map.insert(port, socket_id);
             }
@@ -233,7 +234,7 @@ impl SocketTable {
 
     pub fn find_tcp_established_socket(&self, server_port: u16) -> Option<SocketId> {
         for (socket_id, socket) in self.table.iter() {
-            if socket.type_() != SocketType::Stream {
+            if socket.kind() != SocketType::Stream {
                 continue;
             }
 
@@ -261,7 +262,7 @@ impl SocketTable {
         remote_port: u16,
     ) -> Option<SocketId> {
         for (socket_id, socket) in self.table.iter() {
-            if socket.type_() != SocketType::Stream {
+            if socket.kind() != SocketType::Stream {
                 continue;
             }
 

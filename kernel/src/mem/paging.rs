@@ -303,11 +303,11 @@ impl PageManager {
 
     // unsupported 2MB / 1GB pages
     pub unsafe fn calc_phys_addr(&self, virt_addr: VirtualAddress) -> Result<PhysicalAddress> {
-        let pml4e_index = virt_addr.get_pml4_entry_index();
-        let pml3e_index = virt_addr.get_pml3_entry_index();
-        let pml2e_index = virt_addr.get_pml2_entry_index();
-        let pml1e_index = virt_addr.get_pml1_entry_index();
-        let page_offset = virt_addr.get_page_offset();
+        let pml4e_index = virt_addr.pml4_entry_index();
+        let pml3e_index = virt_addr.pml3_entry_index();
+        let pml2e_index = virt_addr.pml2_entry_index();
+        let pml1e_index = virt_addr.pml1_entry_index();
+        let page_offset = virt_addr.page_offset();
 
         let pml4_table = self.pml4_table()?;
         let entry = &pml4_table.entries[pml4e_index];
@@ -364,7 +364,7 @@ impl PageManager {
         };
         let pml4_page_table = &mut *pml4_virt_addr.as_ptr_mut::<PageTable>();
 
-        let total_mem_size = bitmap::get_total_mem_size()?;
+        let total_mem_size = bitmap::total_mem_size()?;
         for i in (start.get() as usize..total_mem_size.min(end.get() as usize)).step_by(PAGE_SIZE) {
             self.set_map(
                 (i as u64).into(),
@@ -424,10 +424,10 @@ impl PageManager {
 
         self.calc_phys_addr(virt_addr)?;
 
-        let pml4e_index = virt_addr.get_pml4_entry_index();
-        let pml3e_index = virt_addr.get_pml3_entry_index();
-        let pml2e_index = virt_addr.get_pml2_entry_index();
-        let pml1e_index = virt_addr.get_pml1_entry_index();
+        let pml4e_index = virt_addr.pml4_entry_index();
+        let pml3e_index = virt_addr.pml3_entry_index();
+        let pml2e_index = virt_addr.pml2_entry_index();
+        let pml1e_index = virt_addr.pml1_entry_index();
 
         let pml4_table = self.pml4_table()?;
         let entry = &pml4_table.entries[pml4e_index];
@@ -511,10 +511,10 @@ impl PageManager {
             return Err(PageManagerError::VirtualAddressNotAlignedByPageSize(virt_addr).into());
         }
 
-        let pml4e_index = virt_addr.get_pml4_entry_index();
-        let pml3e_index = virt_addr.get_pml3_entry_index();
-        let pml2e_index = virt_addr.get_pml2_entry_index();
-        let pml1e_index = virt_addr.get_pml1_entry_index();
+        let pml4e_index = virt_addr.pml4_entry_index();
+        let pml3e_index = virt_addr.pml3_entry_index();
+        let pml2e_index = virt_addr.pml2_entry_index();
+        let pml1e_index = virt_addr.pml1_entry_index();
 
         let entry = &mut pml4_table.entries[pml4e_index];
 

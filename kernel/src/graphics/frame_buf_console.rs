@@ -46,7 +46,7 @@ impl FrameBufferConsole {
 
     fn screen_size(&self) -> Result<Size> {
         if let Some(layer_id) = &self.target_layer_id {
-            let size = multi_layer::get_layer_info(*layer_id)?.size;
+            let size = multi_layer::layer_info(*layer_id)?.size;
             Ok(size)
         } else {
             frame_buf::resolution()
@@ -55,7 +55,7 @@ impl FrameBufferConsole {
 
     fn cursor_max(&self) -> Result<(usize, usize)> {
         let (width, height) = self.screen_size()?.wh();
-        let (f_w, f_h) = FONT.get_wh();
+        let (f_w, f_h) = FONT.wh();
         let cursor_max_x = width / f_w - 1;
         let cursor_max_y = height / f_h - 1;
         Ok((cursor_max_x, cursor_max_y))
@@ -104,7 +104,7 @@ impl FrameBufferConsole {
     }
 
     fn write_char(&mut self, c: char) -> Result<()> {
-        let (f_w, f_h) = FONT.get_wh();
+        let (f_w, f_h) = FONT.wh();
 
         match c {
             '\n' => return self.new_line(),
@@ -380,7 +380,7 @@ impl FrameBufferConsole {
             return Ok(());
         }
 
-        let (_, f_h) = FONT.get_wh();
+        let (_, f_h) = FONT.wh();
         let (w, h) = self.screen_size()?.wh();
         let scroll_px = self.pending_scroll_lines * f_h;
         self.pending_scroll_lines = 0;
@@ -444,7 +444,7 @@ impl FrameBufferConsole {
     }
 
     fn backspace(&mut self) -> Result<()> {
-        let (f_w, f_h) = FONT.get_wh();
+        let (f_w, f_h) = FONT.wh();
 
         self.dec_cursor()?;
         let rect = Rect::new(self.cursor_x * f_w, self.cursor_y * f_h, f_w, f_h);

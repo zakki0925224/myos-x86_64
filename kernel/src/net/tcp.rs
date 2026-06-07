@@ -1,6 +1,7 @@
 use crate::{
     error::{Error, Error_, Result},
     kdebug,
+    net::checksum::{checksum_words, fold_checksum, pseudo_header_sum},
 };
 use alloc::vec::Vec;
 use core::net::Ipv4Addr;
@@ -76,7 +77,7 @@ impl TcpSocket {
         self.next_recv_seq
     }
 
-    pub fn get_and_reset_buf(&mut self) -> Vec<u8> {
+    pub fn reset_buf(&mut self) -> Vec<u8> {
         let buf = self.buf.clone();
         self.buf = Vec::new();
         buf
@@ -91,7 +92,7 @@ impl TcpSocket {
         self.state = TcpSocketState::Listen;
         self.src_port = Some(src_port);
         self.seq_num = 0;
-        let _ = self.get_and_reset_buf();
+        let _ = self.reset_buf();
 
         Ok(())
     }
@@ -106,7 +107,7 @@ impl TcpSocket {
         self.dst_ipv4_addr = Some(dst_ipv4_addr);
         self.dst_port = Some(dst_port);
         self.seq_num = 0;
-        let _ = self.get_and_reset_buf();
+        let _ = self.reset_buf();
 
         Ok(())
     }
@@ -290,94 +291,24 @@ impl TcpPacket {
 
     pub fn calc_checksum(&mut self) {
         self.checksum = 0;
-        let mut sum: u32 = 0;
-
         let packet = self.to_vec();
-        for chunk in packet.chunks(2) {
-            let word = match chunk {
-                [h, l] => u16::from_be_bytes([*h, *l]),
-                [h] => u16::from_be_bytes([*h, 0]),
-                _ => 0,
-            };
-            sum = sum.wrapping_add(word as u32);
-        }
-
-        while (sum >> 16) > 0 {
-            sum = (sum & 0xffff) + (sum >> 16);
-        }
-
-        self.checksum = !(sum as u16);
+        self.checksum = fold_checksum(checksum_words(&packet));
     }
 
     pub fn verify_checksum_with_ipv4(&self, src_addr: Ipv4Addr, dst_addr: Ipv4Addr) -> bool {
-        let mut sum: u32 = 0;
-
-        // pseudo header
-        let src_octets = src_addr.octets();
-        sum += ((src_octets[0] as u32) << 8) | (src_octets[1] as u32);
-        sum += ((src_octets[2] as u32) << 8) | (src_octets[3] as u32);
-
-        let dst_octets = dst_addr.octets();
-        sum += ((dst_octets[0] as u32) << 8) | (dst_octets[1] as u32);
-        sum += ((dst_octets[2] as u32) << 8) | (dst_octets[3] as u32);
-
-        sum += 6; // protocol number (TCP = 6)
-
-        // TCP header and data checksum
         let packet = self.to_vec();
-        let tcp_len = packet.len();
-        sum += tcp_len as u32;
-        for chunk in packet.chunks(2) {
-            let word = match chunk {
-                [h, l] => u16::from_be_bytes([*h, *l]),
-                [h] => u16::from_be_bytes([*h, 0]),
-                _ => 0,
-            };
-            sum = sum.wrapping_add(word as u32);
-        }
-
-        while (sum >> 16) > 0 {
-            sum = (sum & 0xffff) + (sum >> 16);
-        }
-
-        let checksum = !(sum as u16);
+        let sum = pseudo_header_sum(src_addr, dst_addr, 6, packet.len())
+            .wrapping_add(checksum_words(&packet));
+        let checksum = fold_checksum(sum);
         checksum == 0xffff || checksum == 0
     }
 
     pub fn calc_checksum_with_ipv4(&mut self, src_addr: Ipv4Addr, dst_addr: Ipv4Addr) {
         self.checksum = 0;
-        let mut sum: u32 = 0;
-
-        // pseudo header
-        let src_octets = src_addr.octets();
-        sum += ((src_octets[0] as u32) << 8) | (src_octets[1] as u32);
-        sum += ((src_octets[2] as u32) << 8) | (src_octets[3] as u32);
-
-        let dst_octets = dst_addr.octets();
-        sum += ((dst_octets[0] as u32) << 8) | (dst_octets[1] as u32);
-        sum += ((dst_octets[2] as u32) << 8) | (dst_octets[3] as u32);
-
-        sum += 6; // protocol number (TCP = 6)
-
-        // TCP header and data checksum
         let packet = self.to_vec();
-        let tcp_len = packet.len();
-        sum += tcp_len as u32;
-
-        for chunk in packet.chunks(2) {
-            let word = match chunk {
-                [h, l] => u16::from_be_bytes([*h, *l]),
-                [h] => u16::from_be_bytes([*h, 0]),
-                _ => 0,
-            };
-            sum = sum.wrapping_add(word as u32);
-        }
-
-        while (sum >> 16) > 0 {
-            sum = (sum & 0xffff) + (sum >> 16);
-        }
-
-        self.checksum = !(sum as u16);
+        let sum = pseudo_header_sum(src_addr, dst_addr, 6, packet.len())
+            .wrapping_add(checksum_words(&packet));
+        self.checksum = fold_checksum(sum);
     }
 
     pub fn flags_header_len(&self) -> usize {

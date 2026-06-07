@@ -93,7 +93,7 @@ impl PciBusDriver {
                         pci_device
                             .read_conf_space_header()
                             .unwrap()
-                            .get_device_name()
+                            .device_name()
                             .unwrap_or("<UNKNOWN NAME>")
                     );
                     devices.push(pci_device);
@@ -161,7 +161,7 @@ impl DeviceDriverFunction for PciBusDriver {
     type PollNormalOutput = ();
     type PollInterruptOutput = ();
 
-    fn get_device_driver_info(&self) -> Result<DeviceDriverInfo> {
+    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
         Ok(self.device_driver_info.clone())
     }
 
@@ -171,7 +171,7 @@ impl DeviceDriverFunction for PciBusDriver {
 
     fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
         let dev_desc = vfs::DeviceFileDescriptor {
-            get_device_driver_info,
+            device_driver_info,
             open,
             close,
             read,
@@ -204,10 +204,8 @@ impl DeviceDriverFunction for PciBusDriver {
         for d in &self.pci_devices {
             let (bus, device, func) = d.bdf();
             let conf_space_header = d.read_conf_space_header().unwrap();
-            let header_type = conf_space_header.get_header_type();
-            let device_name = conf_space_header
-                .get_device_name()
-                .unwrap_or("<UNKNOWN NAME>");
+            let header_type = conf_space_header.header_type();
+            let device_name = conf_space_header.device_name().unwrap_or("<UNKNOWN NAME>");
 
             s.push_str(&format!("{}:{}:{}", bus, device, func));
             s.push_str(&format!(" {:?} - {}\n", header_type, device_name));
@@ -221,13 +219,13 @@ impl DeviceDriverFunction for PciBusDriver {
     }
 }
 
-pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
-    PCI_BUS_DRIVER.try_lock()?.get_device_driver_info()
+pub fn device_driver_info() -> Result<DeviceDriverInfo> {
+    PCI_BUS_DRIVER.try_lock()?.device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
     let mut driver = PCI_BUS_DRIVER.try_lock()?;
-    let driver_name = driver.get_device_driver_info()?.name;
+    let driver_name = driver.device_driver_info()?.name;
 
     driver.probe()?;
     driver.attach(())?;
@@ -254,12 +252,12 @@ pub fn write(data: &[u8]) -> Result<()> {
     PCI_BUS_DRIVER.try_lock()?.write(data)
 }
 
-pub fn is_exist_device(bus: usize, device: usize, func: usize) -> Result<bool> {
-    let is_exist = PCI_BUS_DRIVER
+pub fn device_exists(bus: usize, device: usize, func: usize) -> Result<bool> {
+    let exists = PCI_BUS_DRIVER
         .try_lock()?
         .find_device(bus, device, func)
         .is_ok();
-    Ok(is_exist)
+    Ok(exists)
 }
 
 pub fn configure_device<F: FnMut(&mut dyn PciDeviceFunction) -> Result<()>>(

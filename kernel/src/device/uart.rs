@@ -82,7 +82,7 @@ impl DeviceDriverFunction for UartDriver {
     type PollNormalOutput = Option<u8>;
     type PollInterruptOutput = ();
 
-    fn get_device_driver_info(&self) -> Result<DeviceDriverInfo> {
+    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
         Ok(self.device_driver_info.clone())
     }
 
@@ -145,16 +145,16 @@ impl DeviceDriverFunction for UartDriver {
     }
 }
 
-pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
+pub fn device_driver_info() -> Result<DeviceDriverInfo> {
     let driver = unsafe { UART_DRIVER.try_lock() }?;
-    driver.get_device_driver_info()
+    driver.device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
     let mut driver = unsafe { UART_DRIVER.try_lock() }?;
     driver.probe()?;
     driver.attach(())?;
-    let info = driver.get_device_driver_info()?;
+    let info = driver.device_driver_info()?;
     kinfo!("{}: Attached!", info.name);
 
     Ok(())

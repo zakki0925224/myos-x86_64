@@ -55,15 +55,15 @@ fn fill_back_color_and_draw_borders(l: &mut dyn Draw, size: Size) -> Result<()> 
 
 pub trait Component {
     fn layer_id(&self) -> LayerId;
-    fn get_layer_info(&self) -> Result<LayerInfo> {
-        multi_layer::get_layer_info(self.layer_id())
+    fn layer_info(&self) -> Result<LayerInfo> {
+        multi_layer::layer_info(self.layer_id())
     }
     fn move_by_root(&self, to_pos: Point) -> Result<()> {
         multi_layer::move_layer(self.layer_id(), to_pos)
     }
     fn move_by_parent(&self, parent: &dyn Component, to_pos: Point) -> Result<()> {
-        let pos = self.get_layer_info()?.pos;
-        let p_pos = parent.get_layer_info()?.pos;
+        let pos = self.layer_info()?.pos;
+        let p_pos = parent.layer_info()?.pos;
         self.move_by_root(to_pos + (pos - p_pos))
     }
     fn draw_flush(&mut self) -> Result<()>;
@@ -104,7 +104,7 @@ impl Component for Image {
                 height: h,
             },
             format: layer_format,
-        } = self.get_layer_info()?;
+        } = self.layer_info()?;
         let bytes = match pixel_format {
             PixelFormat::Rgb => 3,
             PixelFormat::Bgr => 3,
@@ -242,7 +242,7 @@ impl Component for Window {
                 height: w_h,
             },
             format: _,
-        } = self.get_layer_info()?;
+        } = self.layer_info()?;
 
         if self.content_dirty {
             multi_layer::draw_layer(self.layer_id, |l| {
@@ -275,7 +275,7 @@ impl Component for Window {
             let Size {
                 width: w,
                 height: h,
-            } = child.get_layer_info()?.size;
+            } = child.layer_info()?.size;
             child.move_by_root(Point::new(
                 w_x + contents_base_rel_x,
                 w_y + contents_base_rel_y,
@@ -340,7 +340,7 @@ impl Window {
             pos: cb_pos,
             size: cb_size,
             format: _,
-        } = self.close_button.get_layer_info()?;
+        } = self.close_button.layer_info()?;
 
         let rect = Rect::from_point_and_size(cb_pos, cb_size);
         Ok(rect.contains(point))
@@ -383,7 +383,7 @@ impl Component for Panel {
             return Ok(());
         }
 
-        let size = self.get_layer_info()?.size;
+        let size = self.layer_info()?.size;
         multi_layer::draw_layer(self.layer_id, |l| fill_back_color_and_draw_borders(l, size))?;
         self.content_dirty = false;
         Ok(())
@@ -441,13 +441,13 @@ impl Component for Button {
             return Ok(());
         }
 
-        let size = self.get_layer_info()?.size;
+        let size = self.layer_info()?.size;
 
         multi_layer::draw_layer(self.layer_id, |l| {
             fill_back_color_and_draw_borders(l, size)?;
 
             // title
-            let (f_w, f_h) = FONT.get_wh();
+            let (f_w, f_h) = FONT.wh();
             l.draw_string_wrap(
                 Point::new(
                     size.width / 2 - f_w * self.title.len() / 2,
@@ -512,7 +512,7 @@ impl Component for Label {
             l.fill(back_color)?;
 
             // label
-            let (_, font_h) = FONT.get_wh();
+            let (_, font_h) = FONT.wh();
             let c_x = 0;
             let mut c_y = 0;
 
@@ -537,7 +537,7 @@ impl Label {
         fore_color: ColorCode,
     ) -> Result<Self> {
         // calc width and height
-        let (f_w, f_h) = FONT.get_wh();
+        let (f_w, f_h) = FONT.wh();
         let w = label.lines().map(|s| s.len()).max().unwrap_or(0) * f_w;
         let h = label.lines().count() * f_h;
 

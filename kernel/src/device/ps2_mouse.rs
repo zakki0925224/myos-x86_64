@@ -74,7 +74,7 @@ impl Ps2MouseDriver {
         Ok(())
     }
 
-    fn get_event(&mut self) -> Result<Option<Ps2MouseEvent>> {
+    fn event(&mut self) -> Result<Option<Ps2MouseEvent>> {
         let data = self.data_buf.dequeue()?;
         let e = match self.mouse_phase {
             Ps2MousePhase::WaitingAck => {
@@ -150,7 +150,7 @@ impl DeviceDriverFunction for Ps2MouseDriver {
     type PollNormalOutput = Option<Ps2MouseEvent>;
     type PollInterruptOutput = ();
 
-    fn get_device_driver_info(&self) -> Result<DeviceDriverInfo> {
+    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
         Ok(self.device_driver_info.clone())
     }
 
@@ -175,7 +175,7 @@ impl DeviceDriverFunction for Ps2MouseDriver {
         self.wait_ready();
 
         let dev_desc = vfs::DeviceFileDescriptor {
-            get_device_driver_info,
+            device_driver_info,
             open,
             close,
             read,
@@ -191,7 +191,7 @@ impl DeviceDriverFunction for Ps2MouseDriver {
             return Err(Error::NotInitialized.into());
         }
 
-        self.get_event()
+        self.event()
     }
 
     fn poll_int(&mut self) -> Result<Self::PollInterruptOutput> {
@@ -222,9 +222,9 @@ impl DeviceDriverFunction for Ps2MouseDriver {
     }
 }
 
-pub fn get_device_driver_info() -> Result<DeviceDriverInfo> {
+pub fn device_driver_info() -> Result<DeviceDriverInfo> {
     let driver = PS2_MOUSE_DRIVER.try_lock()?;
-    driver.get_device_driver_info()
+    driver.device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
@@ -232,7 +232,7 @@ pub fn probe_and_attach() -> Result<()> {
         let mut driver = PS2_MOUSE_DRIVER.try_lock()?;
         driver.probe()?;
         driver.attach(())?;
-        kinfo!("{}: Attached!", driver.get_device_driver_info()?.name);
+        kinfo!("{}: Attached!", driver.device_driver_info()?.name);
         Ok(())
     })
 }
