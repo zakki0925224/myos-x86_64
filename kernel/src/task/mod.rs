@@ -345,7 +345,7 @@ pub fn show_task_debug(task: &Task) {
     if let Some(stack) = task.resource.stack_frame {
         kdebug!(
             "stack: (phys)0x{:x}, size: 0x{:x}bytes",
-            stack.frame_start_phys_addr.get(),
+            stack.frame_start_phys_addr,
             stack.frame_size,
         );
     }

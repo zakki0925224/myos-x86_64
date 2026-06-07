@@ -4,38 +4,6 @@ pub mod x86_64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(transparent)]
-pub struct PhysicalAddress(u64);
-
-impl PhysicalAddress {
-    pub fn new(addr: u64) -> Self {
-        Self(addr)
-    }
-
-    pub fn get(&self) -> u64 {
-        self.0
-    }
-
-    pub fn set(&mut self, addr: u64) {
-        self.0 = addr;
-    }
-
-    pub fn offset(&self, offset: usize) -> Self {
-        Self::new(self.0 + offset as u64)
-    }
-
-    pub fn virt_addr(&self) -> Result<VirtualAddress> {
-        paging::calc_virt_addr(*self)
-    }
-}
-
-impl From<u64> for PhysicalAddress {
-    fn from(addr: u64) -> Self {
-        Self::new(addr)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[repr(transparent)]
 pub struct VirtualAddress(u64);
 
 impl VirtualAddress {
@@ -55,7 +23,7 @@ impl VirtualAddress {
         Self::new(self.0 + offset as u64)
     }
 
-    pub fn phys_addr(&self) -> Result<PhysicalAddress> {
+    pub fn phys_addr(&self) -> Result<u64> {
         paging::calc_phys_addr(*self)
     }
 

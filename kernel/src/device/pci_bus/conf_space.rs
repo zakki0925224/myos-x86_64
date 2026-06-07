@@ -1,5 +1,5 @@
 use crate::{
-    arch::{x86_64::registers::*, IoPortAddress, PhysicalAddress},
+    arch::{x86_64::registers::*, IoPortAddress, VirtualAddress},
     error::{Error, Result},
     mem::paging::{self, *},
 };
@@ -179,8 +179,8 @@ impl ConfigurationSpaceCommonHeaderField {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BaseAddress {
-    MemoryAddress32BitSpace(PhysicalAddress, bool), // (addr, is prefetchable)
-    MemoryAddress64BitSpace(PhysicalAddress, bool),
+    MemoryAddress32BitSpace(u64, bool), // (phys addr, is prefetchable)
+    MemoryAddress64BitSpace(u64, bool), // (phys addr, is prefetchable)
     MmioAddressSpace(u32),
 }
 #[derive(Debug, Clone, Copy)]
@@ -205,7 +205,7 @@ impl BaseAddressRegister {
 
         let bar_type = (bar >> 1) & 0x3;
         let prefetchable = bar & 0x8 != 0;
-        let phys_addr = PhysicalAddress::new((bar & !0xf) as u64);
+        let phys_addr: u64 = (bar & !0xf) as u64;
 
         match bar_type {
             0x0 => Some(BaseAddress::MemoryAddress32BitSpace(
@@ -276,19 +276,19 @@ impl ConfigurationSpaceNonBridgeField {
                         }
 
                         let next_bar = bars[i + 1];
-                        let full_phys_addr: PhysicalAddress =
-                            ((next_bar.read() as u64) << 32 | phys_addr.get()).into();
+                        let full_phys_addr: u64 =
+                            (next_bar.read() as u64) << 32 | phys_addr;
                         skip_index = Some(i + 1);
 
-                        if full_phys_addr.get() == 0 {
+                        if full_phys_addr == 0 {
                             continue;
                         }
 
-                        let start = full_phys_addr.get().into();
+                        let start: VirtualAddress = full_phys_addr.into();
                         // TODO: implement get bar size
                         paging::update_mapping(&MappingInfo {
                             start,
-                            end: start.offset(PAGE_SIZE * 3).into(),
+                            end: start.offset(PAGE_SIZE * 3),
                             phys_addr: full_phys_addr,
                             rw: ReadWrite::Write,
                             us: EntryMode::Supervisor,
@@ -296,16 +296,15 @@ impl ConfigurationSpaceNonBridgeField {
                             pcd: true, // page cache disable
                         })?;
 
-                        let base_addr =
-                            BaseAddress::MemoryAddress64BitSpace(full_phys_addr, is_pref);
+                        let base_addr = BaseAddress::MemoryAddress64BitSpace(full_phys_addr, is_pref);
                         result.push((i, base_addr));
                     }
                     BaseAddress::MemoryAddress32BitSpace(phys_addr, _) => {
-                        if phys_addr.get() == 0 {
+                        if phys_addr == 0 {
                             continue;
                         }
 
-                        let start = phys_addr.get().into();
+                        let start: VirtualAddress = phys_addr.into();
                         // TODO: implement get bar size
                         paging::update_mapping(&MappingInfo {
                             start,

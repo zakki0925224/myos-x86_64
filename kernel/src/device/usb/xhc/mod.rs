@@ -13,7 +13,7 @@ use crate::{
     error::{Error, Result},
     fs::vfs,
     kdebug, kinfo, ktrace,
-    mem::{bitmap, paging::PAGE_SIZE},
+    mem::{bitmap, paging::{self, PAGE_SIZE}},
     sync::mutex::Mutex,
     util::{keyboard::key_map::ANSI_US_104_KEY_MAP, mmio::Mmio, slice::Sliceable},
 };
@@ -889,8 +889,8 @@ impl DeviceDriverFunction for XhcDriver {
             }
 
             let cap_reg_virt_addr = match bars[0].1 {
-                BaseAddress::MemoryAddress32BitSpace(addr, _) => addr.virt_addr()?,
-                BaseAddress::MemoryAddress64BitSpace(addr, _) => addr.virt_addr()?,
+                BaseAddress::MemoryAddress32BitSpace(addr, _) => paging::calc_virt_addr(addr)?,
+                BaseAddress::MemoryAddress64BitSpace(addr, _) => paging::calc_virt_addr(addr)?,
                 _ => return Err(XhcDriverError::InvalidRegisterAddress.into()),
             };
             let cap_reg: Mmio<CapabilityRegisters> =

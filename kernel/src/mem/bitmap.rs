@@ -1,5 +1,5 @@
 use crate::{
-    arch::{PhysicalAddress, VirtualAddress},
+    arch::VirtualAddress,
     error::{Error, Result},
     mem::paging::{self, *},
     sync::mutex::Mutex,
@@ -10,7 +10,7 @@ static BMM: Mutex<BitmapMemoryManager> = Mutex::new(BitmapMemoryManager::new());
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MemoryFrameInfo {
-    pub frame_start_phys_addr: PhysicalAddress,
+    pub frame_start_phys_addr: u64, // physical address
     pub frame_size: usize, // must be 4096B align
 }
 
@@ -34,7 +34,7 @@ impl MemoryFrameInfo {
     }
 
     pub fn frame_start_virt_addr(&self) -> Result<VirtualAddress> {
-        self.frame_start_phys_addr.virt_addr()
+        paging::calc_virt_addr(self.frame_start_phys_addr)
     }
 
     pub fn set_permissions(
@@ -64,7 +64,7 @@ impl MemoryFrameInfo {
     }
 
     pub fn frame_index(&self) -> usize {
-        self.frame_start_phys_addr.get() as usize / PAGE_SIZE
+        self.frame_start_phys_addr as usize / PAGE_SIZE
     }
 }
 
@@ -147,7 +147,7 @@ impl core::fmt::Display for BitmapMemoryManagerError {
 
 #[derive(Debug)]
 struct BitmapMemoryManager {
-    bitmap_phys_addr: Option<PhysicalAddress>,
+    bitmap_phys_addr: Option<u64>, // physical address
     total_frame_len: usize,
     allocated_frame_len: usize,
     free_frame_len: usize,
@@ -167,7 +167,7 @@ impl BitmapMemoryManager {
         }
     }
 
-    fn bitmap_phys_addr(&self) -> Result<PhysicalAddress> {
+    fn bitmap_phys_addr(&self) -> Result<u64> {
         self.bitmap_phys_addr.ok_or(Error::NotInitialized.into())
     }
 
@@ -190,8 +190,7 @@ impl BitmapMemoryManager {
                         >= total_frame_len / Bitmap::BITMAP_SIZE
             })
             .expect("mem: Failed to allocate memory for bitmap");
-        let mut bitmap_phys_addr = PhysicalAddress::default();
-        bitmap_phys_addr.set(bitmap_desc.phys_start);
+        let bitmap_phys_addr: u64 = bitmap_desc.phys_start;
 
         // calc total available memory size
         let total_available_mem_size: usize = mem_map
@@ -225,8 +224,8 @@ impl BitmapMemoryManager {
 
         // allocate bitmap memory frame
         let bitmap_phys_addr = self.bitmap_phys_addr()?;
-        let start = bitmap_phys_addr.get() as usize / PAGE_SIZE;
-        let end = bitmap_phys_addr.offset(self.bitmap_len()).get() as usize / PAGE_SIZE;
+        let start = bitmap_phys_addr as usize / PAGE_SIZE;
+        let end = (bitmap_phys_addr + self.bitmap_len() as u64) as usize / PAGE_SIZE;
         for i in start..=end {
             // ignore already allocated error
             let _ = self.alloc_frame(i);
@@ -241,7 +240,7 @@ impl BitmapMemoryManager {
 
     fn mem_frame(&self, frame_index: usize) -> Option<MemoryFrameInfo> {
         self.bitmap(self.bitmap_offset(frame_index)).ok().map(|_| MemoryFrameInfo {
-            frame_start_phys_addr: ((frame_index * PAGE_SIZE) as u64).into(),
+            frame_start_phys_addr: (frame_index * PAGE_SIZE) as u64,
             frame_size: PAGE_SIZE,
         })
     }
@@ -266,7 +265,7 @@ impl BitmapMemoryManager {
                 if !bitmap.get(j)? {
                     self.alloc_frame(frame_index)?;
                     return Ok(MemoryFrameInfo {
-                        frame_start_phys_addr: ((frame_index * PAGE_SIZE) as u64).into(),
+                        frame_start_phys_addr: (frame_index * PAGE_SIZE) as u64,
                         frame_size: PAGE_SIZE,
                     });
                 }
@@ -333,7 +332,7 @@ impl BitmapMemoryManager {
         }
 
         Ok(MemoryFrameInfo {
-            frame_start_phys_addr: ((start_frame_index * PAGE_SIZE) as u64).into(),
+            frame_start_phys_addr: (start_frame_index * PAGE_SIZE) as u64,
             frame_size: PAGE_SIZE * len,
         })
     }
@@ -367,7 +366,7 @@ impl BitmapMemoryManager {
             .into());
         }
 
-        Ok(unsafe { &mut *(self.bitmap_phys_addr()?.offset(offset).get() as *mut Bitmap) })
+        Ok(unsafe { &mut *((self.bitmap_phys_addr()? + offset as u64) as *mut Bitmap) })
     }
 
     fn alloc_frame(&mut self, frame_index: usize) -> Result<()> {
@@ -467,8 +466,7 @@ pub fn mem_clear(mem_frame_info: &MemoryFrameInfo) -> Result<()> {
 
 pub fn bitmap_region() -> Result<(VirtualAddress, usize)> {
     let bmm = BMM.try_lock()?;
-    let phys_addr = bmm.bitmap_phys_addr()?;
-    let virt_addr = phys_addr.virt_addr()?;
+    let virt_addr = paging::calc_virt_addr(bmm.bitmap_phys_addr()?)?;
     let len = bmm.bitmap_len();
     Ok((virt_addr, len))
 }
