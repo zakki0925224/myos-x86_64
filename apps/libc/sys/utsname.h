@@ -1,5 +1,5 @@
-#ifndef _UTSNAME_H
-#define _UTSNAME_H
+#ifndef _SYS_UTSNAME_H
+#define _SYS_UTSNAME_H
 
 #define UTS_LEN 64
 

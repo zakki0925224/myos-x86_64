@@ -14,7 +14,9 @@ use crate::{
     kdebug, kerror, kinfo,
     mem::{bitmap, paging::PAGE_SIZE},
     net::{self, socket::*},
-    print, task, util,
+    print,
+    task::{self, TaskId},
+    util,
 };
 use alloc::{
     boxed::Box,
@@ -231,6 +233,16 @@ fn syscall_handler_inner(
                 return -1;
             }
         }
+        SN_WAIT => {
+            let pid = arg0 as pid_t;
+            match sys_wait(pid) {
+                Ok(exit_code) => return exit_code as i64,
+                Err(err) => {
+                    kerror!("syscall: wait: {:?}", err);
+                    return -1;
+                }
+            }
+        }
         SN_SBRKSZ => {
             let target = arg0 as *const u8;
             match sys_sbrksz(target) {
@@ -241,6 +253,13 @@ fn syscall_handler_inner(
                 }
             };
         }
+        SN_GETPID => match sys_getpid() {
+            Ok(pid) => return pid as i64,
+            Err(err) => {
+                kerror!("syscall: getpid: {:?}", err);
+                return -1;
+            }
+        },
         SN_GETENAMES => {
             let path = arg0 as *const u8;
             let buf = arg1 as *mut u8;
@@ -586,18 +605,14 @@ fn sys_uptime() -> i64 {
     util::time::global_uptime().as_millis() as i64
 }
 
-fn sys_exec(args: *const u8, flags: i32) -> Result<i32> {
+fn sys_exec(args: *const u8, flags: i32) -> Result<pid_t> {
     let args = unsafe { util::cstring::from_cstring_ptr(args) };
     let args: Vec<&str> = args.split(' ').collect();
 
     let enable_debug = (flags as u32) & EXEC_FLAG_DEBUG != 0;
     let child_id = task::exec::exec_elf(&args[0].into(), &args[1..], enable_debug)?;
-    task::scheduler::sleep_waiting_for(child_id);
 
-    let exit_code = task::scheduler::take_exit_code(child_id)
-        .ok_or(Error::NotFound.with_context("exit code"))?;
-
-    Ok(exit_code)
+    Ok(child_id.0 as pid_t)
 }
 
 fn sys_getcwd(buf: *mut u8, buf_len: usize) -> Result<()> {
@@ -638,12 +653,29 @@ fn sys_free(ptr: *const u8) -> Result<()> {
     Ok(())
 }
 
+fn sys_wait(pid: pid_t) -> Result<i32> {
+    let task_id = TaskId::new_val(pid as usize);
+    task::scheduler::sleep_waiting_for(task_id);
+
+    let exit_code = task::scheduler::take_exit_code(task_id)
+        .ok_or(Error::NotFound.with_context("exit code"))?;
+
+    Ok(exit_code)
+}
+
 fn sys_sbrksz(target: *const u8) -> Result<usize> {
     let target_virt_addr: VirtualAddress = (target as u64).into();
     let size = task::scheduler::get_mem_frame_size(target_virt_addr)?;
     let size = size.ok_or(Error::NotFound.with_context("memory frame size"))?;
 
     Ok(size)
+}
+
+fn sys_getpid() -> Result<pid_t> {
+    let task = task::scheduler::current().ok_or(Error::NotFound.with_context("current task"))?;
+    let pid = task.id.0 as pid_t;
+
+    Ok(pid)
 }
 
 fn sys_getenames(path: *const u8, buf: *mut u8, buf_len: usize) -> Result<()> {

@@ -137,7 +137,13 @@ void exec_cmd(char* cmd) {
             }
         }
 
-        int exit_code = sys_exec(args, EXEC_FLAG_DEBUG);
+        pid_t pid = sys_exec(args, EXEC_FLAG_DEBUG);
+        if (pid == -1) {
+            printf("sh: exec: failed\n");
+            return;
+        }
+
+        int exit_code = sys_wait(pid);
         printf("sh: exit code: %d\n", exit_code);
     } else if (strcmp(splitted_buf[0], "window") == 0) {
         component_descriptor* cdesc = create_component_window("test window", 200, 50, 300, 200);
@@ -163,7 +169,13 @@ void exec_cmd(char* cmd) {
             }
         }
 
-        int exit_code = sys_exec(args, EXEC_FLAG_NONE);
+        pid_t pid = sys_exec(args, EXEC_FLAG_NONE);
+        if (pid == -1) {
+            printf("sh: exec: failed\n");
+            return;
+        }
+
+        int exit_code = sys_wait(pid);
         printf("sh: exit code: %d\n", exit_code);
     }
     // unreachable

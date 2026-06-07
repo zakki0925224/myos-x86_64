@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/utsname.h>
 #include <syscalls.h>
-#include <utsname.h>
 
 int main(int argc, const char* argv[]) {
     utsname* buf = (utsname*)malloc(sizeof(utsname));

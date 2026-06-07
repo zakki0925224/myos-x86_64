@@ -5,9 +5,10 @@
 #include <stdint.h>
 
 #include "iomsg.h"
-#include "stat.h"
 #include "sys/socket.h"
-#include "utsname.h"
+#include "sys/stat.h"
+#include "sys/types.h"
+#include "sys/utsname.h"
 
 // syscall numbers
 #define SN_READ 0
@@ -24,9 +25,9 @@
 #define SN_GETCWD 11
 #define SN_CHDIR 12
 #define SN_FREE 13
-// 14
+#define SN_WAIT 14
 #define SN_SBRKSZ 15
-// 16
+#define SN_GETPID 16
 #define SN_GETENAMES 17
 #define SN_IOMSG 18
 #define SN_SOCKET 19
@@ -68,11 +69,13 @@ int sys_uname(utsname* buf);
 void sys_break(void);
 int sys_stat(int fd, f_stat* buf);
 uint64_t sys_uptime(void);
-int sys_exec(const char* args, int flags);
+pid_t sys_exec(const char* args, int flags);
 int sys_getcwd(char* buf, size_t buf_len);
 int sys_chdir(const char* path);
 int sys_free(void* ptr);
+int sys_wait(pid_t pid);
 size_t sys_sbrksz(const void* target);
+pid_t sys_getpid(void);
 int sys_getenames(const char* path, char* buf, size_t buf_len);
 int sys_iomsg(const void* msgbuf, void* replymsgbuf, size_t replymsgbuf_len);
 int sys_socket(int domain, int type, int protocol);

@@ -5,8 +5,8 @@
 static uint64_t syscall(uint64_t syscall_number, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6) {
     uint64_t ret_val;
     register uint64_t _r10 __asm__("r10") = arg4;
-    register uint64_t _r8  __asm__("r8")  = arg5;
-    register uint64_t _r9  __asm__("r9")  = arg6;
+    register uint64_t _r8 __asm__("r8") = arg5;
+    register uint64_t _r9 __asm__("r9") = arg6;
     __asm__ volatile(
         "syscall\n"
         : "=a"(ret_val)
@@ -56,8 +56,8 @@ uint64_t sys_uptime(void) {
     return syscall(SN_UPTIME, 0, 0, 0, 0, 0, 0);
 }
 
-int sys_exec(const char* args, int flags) {
-    return (int)syscall(SN_EXEC, (uint64_t)args, (uint64_t)flags, 0, 0, 0, 0);
+pid_t sys_exec(const char* args, int flags) {
+    return (pid_t)syscall(SN_EXEC, (uint64_t)args, (uint64_t)flags, 0, 0, 0, 0);
 }
 
 int sys_getcwd(char* buf, size_t buf_len) {
@@ -72,8 +72,16 @@ int sys_free(void* ptr) {
     return (int)syscall(SN_FREE, (uint64_t)ptr, 0, 0, 0, 0, 0);
 }
 
+int sys_wait(pid_t pid) {
+    return (int)syscall(SN_WAIT, (uint64_t)pid, 0, 0, 0, 0, 0);
+}
+
 size_t sys_sbrksz(const void* target) {
     return (size_t)syscall(SN_SBRKSZ, (uint64_t)target, 0, 0, 0, 0, 0);
+}
+
+pid_t sys_getpid() {
+    return (pid_t)syscall(SN_GETPID, 0, 0, 0, 0, 0, 0);
 }
 
 int sys_getenames(const char* path, char* buf, size_t buf_len) {

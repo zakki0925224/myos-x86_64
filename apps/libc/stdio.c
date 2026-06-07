@@ -2,9 +2,9 @@
 
 #include <stddef.h>
 
-#include "stat.h"
 #include "stdlib.h"
 #include "string.h"
+#include "sys/stat.h"
 #include "syscalls.h"
 
 static f_stat __stdin_stat = {.size = 0};
