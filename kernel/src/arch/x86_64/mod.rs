@@ -18,30 +18,39 @@ pub struct DescriptorTableArgs {
     pub base: u64,
 }
 
+#[inline(always)]
 pub fn stihlt() {
     unsafe { asm!("sti", "hlt", options(nomem, nostack)) }
 }
 
+#[inline(always)]
 pub fn sti() {
     unsafe { asm!("sti", options(nomem, nostack)) }
 }
 
+#[inline(always)]
+pub fn cli() {
+    unsafe { asm!("cli", options(nomem, nostack)) }
+}
+
 pub fn disabled_int<F: FnMut() -> R, R>(mut func: F) -> R {
     let rflags = Rflags::read();
-    unsafe { asm!("cli", options(nomem, nostack)) };
+    cli();
     let func_res = func();
 
     if rflags.if_() {
-        unsafe { asm!("sti", options(nomem, nostack)) };
+        sti();
     }
 
     func_res
 }
 
+#[inline(always)]
 pub fn int3() {
     unsafe { asm!("int3", options(nomem, nostack)) }
 }
 
+#[inline(always)]
 pub fn out8(port: u16, data: u8) {
     unsafe {
         asm!(
@@ -53,6 +62,7 @@ pub fn out8(port: u16, data: u8) {
     }
 }
 
+#[inline(always)]
 pub fn in8(port: u16) -> u8 {
     let data: u8;
     unsafe {
@@ -66,6 +76,7 @@ pub fn in8(port: u16) -> u8 {
     data
 }
 
+#[inline(always)]
 pub fn out16(port: u16, data: u16) {
     unsafe {
         asm!(
@@ -77,6 +88,7 @@ pub fn out16(port: u16, data: u16) {
     }
 }
 
+#[inline(always)]
 pub fn in16(port: u16) -> u16 {
     let data: u16;
     unsafe {
@@ -90,6 +102,7 @@ pub fn in16(port: u16) -> u16 {
     data
 }
 
+#[inline(always)]
 pub fn out32(port: u32, data: u32) {
     unsafe {
         asm!(
@@ -101,6 +114,7 @@ pub fn out32(port: u32, data: u32) {
     }
 }
 
+#[inline(always)]
 pub fn in32(port: u32) -> u32 {
     let data: u32;
     unsafe {
@@ -114,24 +128,28 @@ pub fn in32(port: u32) -> u32 {
     data
 }
 
+#[inline(always)]
 pub fn lidt(desc_table_args: &DescriptorTableArgs) {
     unsafe {
         asm!("lidt [{}]", in(reg) desc_table_args, options(nomem, nostack));
     }
 }
 
+#[inline(always)]
 pub fn lgdt(desc_table_args: &DescriptorTableArgs) {
     unsafe {
         asm!("lgdt [{}]", in(reg) desc_table_args, options(nomem, nostack));
     }
 }
 
+#[inline(always)]
 pub fn ltr(sel: u16) {
     unsafe {
         asm!("ltr cx", in("cx") sel, options(nomem, nostack));
     }
 }
 
+#[inline(always)]
 pub fn read_msr(addr: u32) -> u64 {
     let low: u32;
     let high: u32;
@@ -143,6 +161,7 @@ pub fn read_msr(addr: u32) -> u64 {
     ((high as u64) << 32) | (low as u64)
 }
 
+#[inline(always)]
 pub fn write_msr(addr: u32, value: u64) {
     let low = value as u32;
     let high = (value >> 32) as u32;
@@ -152,6 +171,7 @@ pub fn write_msr(addr: u32, value: u64) {
     }
 }
 
+#[inline(always)]
 pub fn read_xcr0() -> u64 {
     let value;
     unsafe {
@@ -160,12 +180,14 @@ pub fn read_xcr0() -> u64 {
     value
 }
 
+#[inline(always)]
 pub fn write_xcr0(value: u64) {
     unsafe {
         asm!("xsetbv", in("rax") value, options(nomem, nostack));
     }
 }
 
+#[inline(always)]
 pub fn rdtsc() -> u64 {
     let low: u32;
     let high: u32;

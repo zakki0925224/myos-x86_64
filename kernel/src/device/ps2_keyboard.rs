@@ -20,7 +20,7 @@ const PS2_DATA_REG_ADDR: IoPortAddress = IoPortAddress::new(0x60);
 const PS2_CMD_AND_STATE_REG_ADDR: IoPortAddress = IoPortAddress::new(0x64);
 
 static PS2_KBD_DRIVER: Mutex<Ps2KeyboardDriver> =
-    Mutex::new(Ps2KeyboardDriver::new(ANSI_US_104_KEY_MAP));
+    Mutex::new(Ps2KeyboardDriver::new(JIS_JP_109_KEY_MAP));
 
 struct Ps2KeyboardDriver {
     device_driver_info: DeviceDriverInfo,
@@ -105,9 +105,6 @@ impl DeviceDriverFunction for Ps2KeyboardDriver {
         PS2_CMD_AND_STATE_REG_ADDR.out8(0x60); // write configuration byte
         self.wait_ready();
         PS2_DATA_REG_ADDR.out8(0x47); // enable interrupt
-        self.wait_ready();
-
-        PS2_CMD_AND_STATE_REG_ADDR.out8(0x20); // read configuration byte
         self.wait_ready();
 
         self.key_map_cache = Some(self.key_map.to_ps2_map());

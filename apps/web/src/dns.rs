@@ -75,7 +75,6 @@ impl DnsClient {
                 n = res;
                 break;
             }
-            unsafe { core::arch::asm!("pause") };
         }
 
         if n == 0 {

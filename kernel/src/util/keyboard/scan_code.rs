@@ -105,6 +105,13 @@ pub enum KeyCode {
     Comma,
     Period,
     Slash,
+    // JIS-specific keys
+    HankakuZenkaku,
+    Muhenkan,
+    Henkan,
+    KatakanaHiragana,
+    Yen,
+    RoUnderscore,
 }
 
 impl KeyCode {

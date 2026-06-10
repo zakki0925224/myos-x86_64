@@ -13,9 +13,12 @@ use crate::{
     error::{Error, Result},
     fs::vfs,
     kdebug, kinfo, ktrace,
-    mem::{bitmap, paging::{self, PAGE_SIZE}},
+    mem::{
+        bitmap,
+        paging::{self, PAGE_SIZE},
+    },
     sync::mutex::Mutex,
-    util::{keyboard::key_map::ANSI_US_104_KEY_MAP, mmio::Mmio, slice::Sliceable},
+    util::{keyboard::key_map::JIS_JP_109_KEY_MAP, mmio::Mmio, slice::Sliceable},
 };
 use alloc::{
     boxed::Box,
@@ -730,7 +733,7 @@ impl XhcDriver {
             .is_some()
         {
             let attach_info = UsbDeviceAttachInfo::new_xhci(xhci_attach_info);
-            let driver = UsbHidKeyboardDriver::new(ANSI_US_104_KEY_MAP);
+            let driver = UsbHidKeyboardDriver::new(JIS_JP_109_KEY_MAP);
             let usb_driver_name = driver.name;
             let usb_device = UsbDevice::new(attach_info, Box::new(driver));
             device::usb::usb_bus::attach_usb_device(usb_device)?;
