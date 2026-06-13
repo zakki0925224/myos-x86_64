@@ -311,7 +311,13 @@ def run():
 def run_nographic():
     build()
     _make_img()
-    _run_cmd(f"{_qemu_cmd()} -nographic", ignore_error=True)
+
+    qemu_args = " ".join(QEMU_ARGS).replace("-serial mon:stdio", "-serial stdio")
+    qemu_drives = " ".join(QEMU_DRIVES)
+    qemu_devices = " ".join(QEMU_DEVICES)
+    cmd = f"{QEMU_ARCH} {qemu_args} {qemu_drives} {qemu_devices} -display none"
+
+    _run_cmd(cmd, ignore_error=True)
 
 
 def run_with_gdb():
