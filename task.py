@@ -22,7 +22,6 @@ ISO_FILE = "myos.iso"
 FONT_FILE = "font.psf"
 COZETTE_BDF = "cozette.bdf"
 OVMF_CODE_FILE = "OVMF_CODE.fd"
-QEMU_TRACE_FILE = "qemu_trace"
 DOOM_WAD_FILE = "doom1.wad"
 INITRAMFS_IMG_FILE = "initramfs.img"
 
@@ -56,30 +55,28 @@ QEMU_ARGS = [
     f"-monitor telnet::{QEMU_MONITOR_PORT},server,nowait",
     f"-gdb tcp::{QEMU_GDB_PORT}",
 ]
+OWN_QEMU_TRACE_EVENTS = ["rtl8139_*", "usb_xhci_*"]
 
 WEBSERVER_PORT = 8888
+USE_OWN_QEMU = False
 
 is_kernel_test = False
 test_kernel_path = ""
 
 
 def _qemu_cmd() -> str:
-    global is_kernel_test
-
     qemu_args = " ".join(QEMU_ARGS)
     qemu_drives = " ".join(QEMU_DRIVES)
     qemu_devices = " ".join(QEMU_DEVICES)
-
-    if is_kernel_test:
-        qemu_args += " -display none"
 
     return f"{QEMU_ARCH} {qemu_args} {qemu_drives} {qemu_devices}"
 
 
 def _own_qemu_cmd() -> str:
-    _build_qemu()
-
-    return f"./{THIRD_PARTY_DIR}/{QEMU_DIR}/build/{_qemu_cmd()} --display sdl --trace events=./{QEMU_TRACE_FILE}"
+    trace_args = " ".join(f"--trace enable={e}" for e in OWN_QEMU_TRACE_EVENTS)
+    return (
+        f"./{THIRD_PARTY_DIR}/{QEMU_DIR}/build/{_qemu_cmd()} --display sdl {trace_args}"
+    )
 
 
 def _run_cmd(
@@ -129,12 +126,7 @@ def _build_cozette():
 
 
 def _build_qemu():
-    global is_kernel_test
-
     d = f"./{THIRD_PARTY_DIR}/{QEMU_DIR}"
-
-    if is_kernel_test:
-        return
 
     # check if QEMU directory exists, if not, clone it
     if not os.path.exists(f"{d}/.git"):
@@ -209,13 +201,14 @@ def build():
     global is_kernel_test
 
     _init()
-
-    # update submodules (except QEMU, which is handled in _build_qemu())
     _run_cmd(
         f"git submodule update --init --recursive -- ':!{THIRD_PARTY_DIR}/{QEMU_DIR}'"
     )
 
     if not is_kernel_test:
+        if USE_OWN_QEMU:
+            _build_qemu()
+
         _build_apps()
 
     _build_cozette()
@@ -302,8 +295,10 @@ def run():
 
     build()
     _make_img()
-    cmd = _qemu_cmd() if is_kernel_test else _own_qemu_cmd()
-    # cmd = _qemu_cmd()
+    cmd = _qemu_cmd() if not USE_OWN_QEMU else _own_qemu_cmd()
+
+    if is_kernel_test:
+        cmd += " -display none"
 
     _run_cmd(cmd, ignore_error=not is_kernel_test, check_qemu_exit_code=is_kernel_test)
 
@@ -312,10 +307,9 @@ def run_nographic():
     build()
     _make_img()
 
-    qemu_args = " ".join(QEMU_ARGS).replace("-serial mon:stdio", "-serial stdio")
-    qemu_drives = " ".join(QEMU_DRIVES)
-    qemu_devices = " ".join(QEMU_DEVICES)
-    cmd = f"{QEMU_ARCH} {qemu_args} {qemu_drives} {qemu_devices} -display none"
+    cmd = _qemu_cmd() if not USE_OWN_QEMU else _own_qemu_cmd()
+    cmd = cmd.replace("-serial mon:stdio", "-serial stdio")
+    cmd += " -display none"
 
     _run_cmd(cmd, ignore_error=True)
 
@@ -323,7 +317,11 @@ def run_nographic():
 def run_with_gdb():
     build()
     _make_img()
-    _run_cmd(f"{_qemu_cmd()} -S")
+
+    cmd = _qemu_cmd() if not USE_OWN_QEMU else _own_qemu_cmd()
+    cmd += " -S"
+
+    _run_cmd(cmd)
 
 
 def monitor():
@@ -331,7 +329,9 @@ def monitor():
 
 
 def gdb():
-    _run_cmd(f'gdb ./{OUTPUT_DIR}/{KERNEL_FILE} -ex "target remote :{QEMU_GDB_PORT}"')
+    _run_cmd(
+        f'rust-gdb ./{OUTPUT_DIR}/{KERNEL_FILE} -ex "target remote :{QEMU_GDB_PORT}" -ex "hbreak kernel_main" -ex "continue"'
+    )
 
 
 def dump():

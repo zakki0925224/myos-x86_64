@@ -193,6 +193,8 @@ pub fn sched() {
 
     if let Some((prev, next)) = switch_pair {
         unsafe { (*prev).switch_to(&*next) };
+    } else {
+        panic!("No next task!")
     }
 }
 
@@ -221,7 +223,10 @@ pub fn take_exit_code(id: TaskId) -> Option<i32> {
 
 pub fn add_layer_id(layer_id: LayerId) -> Result<()> {
     let mut s = TASK_SCHED.spin_lock();
-    s.current_task_mut()?.resource.created_layer_ids.push(layer_id);
+    s.current_task_mut()?
+        .resource
+        .created_layer_ids
+        .push(layer_id);
     Ok(())
 }
 

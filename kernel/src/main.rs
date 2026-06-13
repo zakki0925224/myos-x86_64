@@ -46,6 +46,7 @@ pub extern "sysv64" fn kernel_entry(boot_info: &BootInfo) -> ! {
     context::switch_kernel_stack(kernel_main, boot_info);
 }
 
+#[no_mangle]
 pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     let graphic_info = boot_info.graphic_info;
 
