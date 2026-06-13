@@ -39,7 +39,6 @@ impl TaskId {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         Self(NEXT.fetch_add(1, Ordering::Relaxed))
     }
-
 }
 
 impl From<usize> for TaskId {
@@ -153,7 +152,7 @@ struct Task {
 
 impl Drop for Task {
     fn drop(&mut self) {
-        kdebug!("task: Dropped tid: {}", self.id);
+        // kdebug!("task: Dropped tid: {}", self.id);
     }
 }
 
@@ -338,7 +337,7 @@ impl Task {
     }
 }
 
-pub fn show_task_debug(task: &Task) {
+pub fn debug_task(task: &Task) {
     let ctx = &task.context;
     kdebug!("task id: {}", task.id);
 

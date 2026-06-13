@@ -1,8 +1,7 @@
 use crate::{
     error::Result,
-    kinfo,
+    kdebug, kinfo,
     mem::paging::{EntryMode, PageWriteThroughLevel, ReadWrite, PAGE_SIZE},
-    println,
 };
 use common::mem_desc::MemoryDescriptor;
 
@@ -32,7 +31,7 @@ pub fn init(mem_map: &[MemoryDescriptor]) -> Result<()> {
     Ok(())
 }
 
-pub fn free() {
+pub fn debug_usage() {
     fn format_size(size: usize) -> (f64, &'static str) {
         const KIB: usize = 1024;
         const MIB: usize = 1024 * KIB;
@@ -53,14 +52,25 @@ pub fn free() {
     let (used_value, used_unit) = format_size(used);
     let (max_value, max_unit) = format_size(max);
 
-    println!(
-        "Memory used: {:.2}{}({}B) / {:.2}{}({}B) ({:.2}%)",
+    let (heap_used, heap_max) = allocator::heap_size();
+    let (heap_used_value, heap_used_unit) = format_size(heap_used);
+    let (heap_max_value, heap_max_unit) = format_size(heap_max);
+
+    kdebug!(
+        "Memory used: {:.2}{} / {:.2}{} ({:.2}%)",
         used_value,
         used_unit,
-        used,
         max_value,
         max_unit,
-        max,
         (used as f64 / max as f64) * 100f64
+    );
+
+    kdebug!(
+        "Heap used: {:.2}{} / {:.2}{} ({:.2}%)",
+        heap_used_value,
+        heap_used_unit,
+        heap_max_value,
+        heap_max_unit,
+        (heap_used as f64 / heap_max as f64) * 100f64
     );
 }

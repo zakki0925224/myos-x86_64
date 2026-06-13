@@ -606,7 +606,7 @@ fn sys_uname(buf: *mut utsname) -> Result<()> {
 }
 
 fn sys_break() {
-    let _ = task::scheduler::show_task_debug();
+    let _ = task::scheduler::debug_current();
     x86_64::int3();
 }
 

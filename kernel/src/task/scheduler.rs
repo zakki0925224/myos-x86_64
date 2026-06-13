@@ -77,15 +77,10 @@ impl TaskScheduler {
         &mut self,
         exit_code: i32,
     ) -> (*const Task, *const Task, Vec<Box<Task>>) {
-        let mut current = self
-            .current_task
-            .take()
-            .expect("task: No current task to exit");
+        let mut current = self.current_task.take().expect("No current task to exit");
         let exiting_id = current.id;
 
         current.unmap_virt_addr().unwrap();
-
-        kdebug!("task: Task exited with code: {}", exit_code);
         current.state = TaskState::Exited(exit_code);
 
         let old = core::mem::take(&mut self.exited_tasks);
@@ -286,10 +281,10 @@ pub fn remove_mem_frame_info(virt_addr: VirtualAddress) -> Result<MemoryFrameInf
     Err(Error::InvalidData.with_context("virtual address"))
 }
 
-pub fn show_task_debug() -> bool {
+pub fn debug_current() -> bool {
     let s = TASK_SCHED.spin_lock();
     if let Some(task) = s.current_task.as_ref() {
-        super::show_task_debug(task);
+        super::debug_task(task);
         true
     } else {
         false

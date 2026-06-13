@@ -9,7 +9,7 @@ use core::{
     ptr::{self, NonNull},
 };
 
-const HEAP_SIZE: usize = 1024 * 1024 * 128; // 128MiB
+const HEAP_SIZE: usize = 1024 * 1024 * 32; // 32MiB
 
 #[global_allocator]
 static mut ALLOCATOR: LinkedListAllocator = LinkedListAllocator::empty();
@@ -443,7 +443,11 @@ impl LinkedListAllocator {
     }
 
     unsafe fn init(&mut self, heap_bottom: *mut u8, heap_size: usize) {
-        self.heap.try_lock().unwrap().init(heap_bottom, heap_size)
+        self.heap.spin_lock().init(heap_bottom, heap_size)
+    }
+
+    fn used(&self) -> usize {
+        self.heap.spin_lock().used
     }
 }
 
@@ -454,6 +458,10 @@ pub fn init_heap() -> Result<()> {
 
     unsafe { ALLOCATOR.init(heap_start_virt_addr.as_ptr_mut(), mem_frame_info.frame_size) }
     Ok(())
+}
+
+pub fn heap_size() -> (usize, usize) {
+    (unsafe { &ALLOCATOR }.used(), HEAP_SIZE)
 }
 
 fn align_up(addr: *mut u8, align: usize) -> *mut u8 {

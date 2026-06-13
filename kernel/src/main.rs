@@ -140,7 +140,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     test_main();
 
     env::print_info();
-    mem::free();
+    mem::debug_usage();
 
     async_task::spawn_with_priority(graphics(), Priority::High).unwrap();
     async_task::spawn_with_priority(poll_ps2_mouse(), Priority::High).unwrap();

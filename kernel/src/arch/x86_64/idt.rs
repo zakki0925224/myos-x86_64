@@ -313,7 +313,7 @@ extern "x86-interrupt" fn general_protection_fault_handler(
         stack_frame
     );
 
-    if task::scheduler::show_task_debug() {
+    if task::scheduler::debug_current() {
         task::scheduler::exit_current(122);
     }
 
@@ -333,7 +333,7 @@ extern "x86-interrupt" fn page_fault_handler(
         accessed_virt_addr, error_code, stack_frame, page_virt_addr.get(), page_table_entry
     );
 
-    if task::scheduler::show_task_debug() {
+    if task::scheduler::debug_current() {
         task::scheduler::exit_current(122);
     }
 
