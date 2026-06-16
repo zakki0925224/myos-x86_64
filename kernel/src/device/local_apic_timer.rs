@@ -1,10 +1,16 @@
 use crate::{
-    arch::{x86_64::*, VirtualAddress},
+    arch::{
+        x86_64::{
+            context::{Context, InterruptedContext},
+            *,
+        },
+        VirtualAddress,
+    },
     device::*,
     error::{Error, Result},
     kdebug, kinfo,
     sync::{mutex::Mutex, volatile::Volatile},
-    task::async_task,
+    task::{self, async_task},
     util::mmio::Mmio,
 };
 use alloc::vec::Vec;
@@ -153,9 +159,8 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
     fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
         let device_name = self.device_driver_info.name;
 
-        // register interrupt handler
         let vec_num = idt::set_handler_dyn_vec(
-            idt::InterruptHandler::General(poll_int_local_apic_timer),
+            idt::InterruptHandler::Naked(preempt_timer_isr),
             idt::GateType::Interrupt,
         )?;
         kdebug!(
@@ -217,7 +222,6 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
             self.tick += 1;
         }
 
-        // poll async tasks
         let _ = async_task::poll();
 
         Ok(())
@@ -280,11 +284,66 @@ pub fn global_uptime() -> Duration {
     Duration::from_millis(ms as u64)
 }
 
-extern "x86-interrupt" fn poll_int_local_apic_timer(_stack_frame: idt::InterruptStackFrame) {
-    unsafe {
-        let driver = LOCAL_APIC_TIMER_DRIVER.get_force_mut();
-        let _ = driver.poll_int();
+#[unsafe(naked)]
+unsafe extern "C" fn preempt_timer_isr() {
+    core::arch::naked_asm!(
+        "push rax",
+        "push rbx",
+        "push rcx",
+        "push rdx",
+        "push rsi",
+        "push rdi",
+        "push rbp",
+        "push r8",
+        "push r9",
+        "push r10",
+        "push r11",
+        "push r12",
+        "push r13",
+        "push r14",
+        "push r15",
+        "mov rdi, rsp",
+        "mov rbp, rsp",
+        "and rsp, -16",
+        "call timer_preempt_handler",
+        "mov rsp, rbp",
+        "test rax, rax",
+        "jz 2f",
+        "mov rdi, rax",
+        "jmp restore_context_and_iret",
+        "2:",
+        "pop r15",
+        "pop r14",
+        "pop r13",
+        "pop r12",
+        "pop r11",
+        "pop r10",
+        "pop r9",
+        "pop r8",
+        "pop rbp",
+        "pop rdi",
+        "pop rsi",
+        "pop rdx",
+        "pop rcx",
+        "pop rbx",
+        "pop rax",
+        "iretq",
+    );
+}
 
+#[no_mangle]
+unsafe extern "sysv64" fn timer_preempt_handler(
+    interrupted: *const InterruptedContext,
+) -> *const Context {
+    let driver = LOCAL_APIC_TIMER_DRIVER.get_force_mut();
+
+    if !driver.device_driver_info.attached {
         apic::notify_end_of_int();
+        return core::ptr::null();
     }
+
+    let _ = driver.poll_int();
+    apic::notify_end_of_int();
+
+    task::scheduler::preempt_sched(&*interrupted)
 }

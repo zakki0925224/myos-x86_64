@@ -106,6 +106,41 @@ extern "sysv64" fn switch_context(next_ctx: &Context, current_ctx: &Context) {
     );
 }
 
+#[no_mangle]
+#[unsafe(naked)]
+pub unsafe extern "C" fn restore_context_and_iret(ctx: *const Context) {
+    naked_asm!(
+        "push qword ptr [rdi + 0x28]", // ss
+        "push qword ptr [rdi + 0x70]", // rsp
+        "push qword ptr [rdi + 0x10]", // rflags
+        "push qword ptr [rdi + 0x20]", // cs
+        "push qword ptr [rdi + 0x08]", // rip
+        "fxrstor64 [rdi + 0xc0]",
+        "mov rax, [rdi + 0x00]",
+        "mov cr3, rax",
+        "mov rax, [rdi + 0x30]",
+        "mov fs, ax",
+        "mov rax, [rdi + 0x38]",
+        "mov gs, ax",
+        "mov rax, [rdi + 0x40]",
+        "mov rbx, [rdi + 0x48]",
+        "mov rcx, [rdi + 0x50]",
+        "mov rdx, [rdi + 0x58]",
+        "mov rsi, [rdi + 0x68]",
+        "mov rbp, [rdi + 0x78]",
+        "mov r8,  [rdi + 0x80]",
+        "mov r9,  [rdi + 0x88]",
+        "mov r10, [rdi + 0x90]",
+        "mov r11, [rdi + 0x98]",
+        "mov r12, [rdi + 0xa0]",
+        "mov r13, [rdi + 0xa8]",
+        "mov r14, [rdi + 0xb0]",
+        "mov r15, [rdi + 0xb8]",
+        "mov rdi, [rdi + 0x60]",
+        "iretq",
+    );
+}
+
 #[derive(PartialEq, Eq)]
 pub enum ContextMode {
     Kernel,
@@ -207,4 +242,29 @@ impl Context {
     pub fn switch_to(&self, next_ctx: &Context) {
         switch_context(next_ctx, self);
     }
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct InterruptedContext {
+    pub r15: u64,
+    pub r14: u64,
+    pub r13: u64,
+    pub r12: u64,
+    pub r11: u64,
+    pub r10: u64,
+    pub r9: u64,
+    pub r8: u64,
+    pub rbp: u64,
+    pub rdi: u64,
+    pub rsi: u64,
+    pub rdx: u64,
+    pub rcx: u64,
+    pub rbx: u64,
+    pub rax: u64,
+    pub rip: u64,
+    pub cs: u64,
+    pub rflags: u64,
+    pub rsp: u64,
+    pub ss: u64,
 }

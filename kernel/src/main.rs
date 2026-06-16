@@ -170,7 +170,6 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     }
 
     loop {
-        scheduler::sched();
         x86_64::sti();
         let _ = async_task::poll();
     }

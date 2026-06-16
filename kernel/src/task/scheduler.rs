@@ -1,10 +1,15 @@
 use crate::{
-    arch::{x86_64::context::ContextMode, VirtualAddress},
+    arch::{
+        x86_64::{
+            context::{Context, ContextMode, InterruptedContext},
+            registers::{Cr3, Register, Rflags},
+        },
+        VirtualAddress,
+    },
     debug::dwarf::Dwarf,
     error::{Error, Result},
     fs::{path::Path, vfs::FileDescriptorNumber},
     graphics::multi_layer::LayerId,
-    kdebug,
     mem::bitmap::MemoryFrameInfo,
     sync::mutex::Mutex,
     task::*,
@@ -169,13 +174,17 @@ pub fn spawn_user_task(
 }
 
 pub fn sleep_waiting_for(child_id: TaskId) {
+    let saved = Rflags::read_with_cli();
     let (prev, next) = TASK_SCHED.spin_lock().sleep_current_waiting_for(child_id);
     unsafe {
         (*prev).switch_to(&*next);
     }
+    saved.write();
 }
 
 pub fn sched() {
+    let saved = Rflags::read_with_cli();
+
     let (switch_pair, stale) = {
         let mut s = TASK_SCHED.spin_lock();
         let pair = s.pick_next_task();
@@ -183,14 +192,16 @@ pub fn sched() {
         (pair, stale)
     };
 
-    // drop old exited tasks outside the lock
     drop(stale);
 
     if let Some((prev, next)) = switch_pair {
         unsafe { (*prev).switch_to(&*next) };
     } else {
+        saved.write();
         panic!("No next task!")
     }
+
+    saved.write();
 }
 
 pub fn current() -> Option<&'static Task> {
@@ -201,8 +212,8 @@ pub fn current() -> Option<&'static Task> {
 }
 
 pub fn exit_current(exit_code: i32) -> ! {
+    Rflags::read_with_cli();
     let (prev, next, old) = TASK_SCHED.spin_lock().pick_next_task_on_exit(exit_code);
-    // drop old exited tasks outside the lock
     drop(old);
 
     unsafe {
@@ -299,6 +310,71 @@ pub fn current_pipe_fd() -> Option<[Option<FileDescriptorNumber>; 3]> {
     let sched = TASK_SCHED.spin_lock();
     let task = sched.current_task.as_ref()?;
     Some(task.resource.pipe_fd)
+}
+
+pub fn preempt_sched(interrupted: &InterruptedContext) -> *const Context {
+    let (pair, stale) = {
+        let mut s = TASK_SCHED.spin_lock();
+
+        if let Some(current) = s.current_task.as_mut() {
+            let ctx = &mut current.context;
+            ctx.rip = interrupted.rip;
+            ctx.rflags.set_raw(interrupted.rflags);
+            ctx.cs = interrupted.cs;
+            ctx.ss = interrupted.ss;
+            ctx.rsp = interrupted.rsp;
+            ctx.rax = interrupted.rax;
+            ctx.rbx = interrupted.rbx;
+            ctx.rcx = interrupted.rcx;
+            ctx.rdx = interrupted.rdx;
+            ctx.rdi = interrupted.rdi;
+            ctx.rsi = interrupted.rsi;
+            ctx.rbp = interrupted.rbp;
+            ctx.r8 = interrupted.r8;
+            ctx.r9 = interrupted.r9;
+            ctx.r10 = interrupted.r10;
+            ctx.r11 = interrupted.r11;
+            ctx.r12 = interrupted.r12;
+            ctx.r13 = interrupted.r13;
+            ctx.r14 = interrupted.r14;
+            ctx.r15 = interrupted.r15;
+            ctx.cr3 = Cr3::read().raw();
+
+            let mut fs: u64 = 0;
+            let mut gs: u64 = 0;
+            unsafe {
+                core::arch::asm!(
+                    "mov {0:x}, fs",
+                    "mov {1:x}, gs",
+                    inout(reg) fs,
+                    inout(reg) gs,
+                    options(nostack, nomem),
+                );
+            }
+            ctx.fs = fs;
+            ctx.gs = gs;
+
+            let fpu_ptr = ctx.fpu_context.as_mut_ptr();
+            unsafe {
+                core::arch::asm!(
+                    "fxsave64 [{0}]",
+                    in(reg) fpu_ptr,
+                    options(nostack),
+                );
+            }
+        }
+
+        let pair = s.pick_next_task();
+        let stale = core::mem::take(&mut s.exited_tasks);
+        (pair, stale)
+    };
+
+    drop(stale);
+
+    match pair {
+        Some((_, next)) => unsafe { &(*next).context as *const Context },
+        None => core::ptr::null(),
+    }
 }
 
 #[test_case]

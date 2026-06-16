@@ -131,6 +131,7 @@ pub enum InterruptHandler {
     General(extern "x86-interrupt" fn(InterruptStackFrame)),
     WithErrorCode(extern "x86-interrupt" fn(InterruptStackFrame, u64)),
     PageFault(extern "x86-interrupt" fn(InterruptStackFrame, PageFaultErrorCode)),
+    Naked(unsafe extern "C" fn()),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -159,6 +160,7 @@ impl GateDescriptor {
             InterruptHandler::General(handler) => handler as *const (),
             InterruptHandler::WithErrorCode(handler) => handler as *const (),
             InterruptHandler::PageFault(handler) => handler as *const (),
+            InterruptHandler::Naked(handler) => handler as *const (),
         } as u64;
         self.set_handler_offset(handler_addr);
         self.set_selector(Cs::read().raw());
