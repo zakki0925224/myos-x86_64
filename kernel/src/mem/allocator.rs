@@ -452,11 +452,11 @@ impl LinkedListAllocator {
 }
 
 pub fn init_heap() -> Result<()> {
-    let mem_frame_info = bitmap::alloc_mem_frame(HEAP_SIZE.div_ceil(PAGE_SIZE))?;
-    let heap_start_virt_addr = mem_frame_info.frame_start_virt_addr()?;
-    bitmap::mem_clear(&mem_frame_info)?;
+    let mem_frame = bitmap::alloc_mem_frame(HEAP_SIZE.div_ceil(PAGE_SIZE))?;
+    mem_frame.zero_out()?;
+    let heap_start_virt_addr = mem_frame.frame_start_virt_addr()?;
 
-    unsafe { ALLOCATOR.init(heap_start_virt_addr.as_ptr_mut(), mem_frame_info.frame_size) }
+    unsafe { ALLOCATOR.init(heap_start_virt_addr.as_ptr_mut(), mem_frame.frame_size()) }
     Ok(())
 }
 

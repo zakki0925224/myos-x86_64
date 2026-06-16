@@ -2,7 +2,7 @@ use crate::{
     arch::{x86_64::registers::*, VirtualAddress},
     error::Result,
     kinfo,
-    mem::bitmap::{self, MemoryFrameInfo},
+    mem::bitmap::{self, MemoryFrame},
 };
 
 const PAGE_TABLE_ENTRY_LEN: usize = 512;
@@ -354,9 +354,9 @@ impl PageManager {
         mode: EntryMode,
         write_through_level: PageWriteThroughLevel,
     ) -> Result<()> {
-        let pml4_table_mem_frame_info = bitmap::alloc_mem_frame(1)?;
-        let pml4_phys_addr = pml4_table_mem_frame_info.frame_start_phys_addr;
-        self.mem_clear(&pml4_table_mem_frame_info)?;
+        let pml4_table_frame = bitmap::alloc_mem_frame(1)?;
+        let pml4_phys_addr = pml4_table_frame.frame_start_phys_addr();
+        self.mem_clear(&pml4_table_frame)?;
         let pml4_virt_addr: VirtualAddress = if self.is_mapped {
             self.calc_virt_addr(pml4_phys_addr)?
         } else {
@@ -519,10 +519,10 @@ impl PageManager {
         let entry = &mut pml4_table.entries[pml4e_index];
 
         if !entry.p() {
-            let mem_info = bitmap::alloc_mem_frame(1)?;
-            self.mem_clear(&mem_info)?;
+            let mem_frame = bitmap::alloc_mem_frame(1)?;
+            self.mem_clear(&mem_frame)?;
             entry.set_entry(
-                mem_info.frame_start_phys_addr,
+                mem_frame.frame_start_phys_addr(),
                 rw,
                 mode,
                 write_through_level,
@@ -542,10 +542,10 @@ impl PageManager {
         let entry = &mut pml3_table.entries[pml3e_index];
 
         if !entry.p() {
-            let mem_info = bitmap::alloc_mem_frame(1)?;
-            self.mem_clear(&mem_info)?;
+            let mem_frame = bitmap::alloc_mem_frame(1)?;
+            self.mem_clear(&mem_frame)?;
             entry.set_entry(
-                mem_info.frame_start_phys_addr,
+                mem_frame.frame_start_phys_addr(),
                 rw,
                 mode,
                 write_through_level,
@@ -565,10 +565,10 @@ impl PageManager {
         let entry = &mut pml2_table.entries[pml2e_index];
 
         if !entry.p() {
-            let mem_info = bitmap::alloc_mem_frame(1)?;
-            self.mem_clear(&mem_info)?;
+            let mem_frame = bitmap::alloc_mem_frame(1)?;
+            self.mem_clear(&mem_frame)?;
             entry.set_entry(
-                mem_info.frame_start_phys_addr,
+                mem_frame.frame_start_phys_addr(),
                 rw,
                 mode,
                 write_through_level,
@@ -586,24 +586,17 @@ impl PageManager {
 
         let pml1_table = entry.page_table().unwrap();
         let entry = &mut pml1_table.entries[pml1e_index];
-        entry.set_entry(
-            phys_addr,
-            rw,
-            mode,
-            write_through_level,
-            disable_cache,
-        );
+        entry.set_entry(phys_addr, rw, mode, write_through_level, disable_cache);
 
         Ok(())
     }
 
-    // use this function instead of mem::bitmap::mem_clear()
-    unsafe fn mem_clear(&self, mem_info: &MemoryFrameInfo) -> Result<()> {
-        let frame_size = mem_info.frame_size;
+    unsafe fn mem_clear(&self, mem_frame: &MemoryFrame) -> Result<()> {
+        let frame_size = mem_frame.frame_size();
         let start_virt_addr: VirtualAddress = if self.is_mapped {
-            self.calc_virt_addr(mem_info.frame_start_phys_addr)?
+            self.calc_virt_addr(mem_frame.frame_start_phys_addr())?
         } else {
-            mem_info.frame_start_phys_addr.into()
+            mem_frame.frame_start_phys_addr().into()
         };
 
         let ptr: *mut u8 = start_virt_addr.as_ptr_mut();

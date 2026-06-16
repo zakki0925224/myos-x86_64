@@ -560,10 +560,10 @@ fn sys_sbrk(len: usize) -> Result<*const u8> {
         return Ok(core::ptr::null());
     }
 
-    let mem_frame_info = bitmap::alloc_mem_frame((len + PAGE_SIZE).div_ceil(PAGE_SIZE))?;
-    mem_frame_info.set_permissions_to_user()?;
-    let virt_addr = mem_frame_info.frame_start_virt_addr()?;
-    task::scheduler::add_mem_frame_info(mem_frame_info)?;
+    let mem_frame = bitmap::alloc_mem_frame((len + PAGE_SIZE).div_ceil(PAGE_SIZE))?;
+    mem_frame.set_permissions_to_user()?;
+    let virt_addr = mem_frame.frame_start_virt_addr()?;
+    task::scheduler::add_mem_frame(mem_frame)?;
 
     Ok(virt_addr.as_ptr())
 }
@@ -679,9 +679,9 @@ fn sys_free(ptr: *const u8) -> Result<()> {
     let virt_addr: VirtualAddress = (ptr as u64).into();
     // kdebug!("syscall: free: target memory at 0x{:x}", virt_addr.get());
 
-    let mem_frame_info = task::scheduler::remove_mem_frame_info(virt_addr)?;
-    mem_frame_info.set_permissions_to_supervisor()?;
-    bitmap::dealloc_mem_frame(mem_frame_info)?;
+    let mem_frame = task::scheduler::remove_mem_frame(virt_addr)?;
+    mem_frame.set_permissions_to_supervisor()?;
+    bitmap::dealloc_mem_frame(mem_frame)?;
 
     Ok(())
 }

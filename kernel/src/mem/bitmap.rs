@@ -5,16 +5,70 @@ use crate::{
     sync::mutex::Mutex,
 };
 use common::mem_desc::{MemoryDescriptor, UEFI_PAGE_SIZE};
+use core::fmt::Debug;
 
 static BMM: Mutex<BitmapMemoryManager> = Mutex::new(BitmapMemoryManager::new());
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MemoryFrameInfo {
-    pub frame_start_phys_addr: u64, // physical address
-    pub frame_size: usize, // must be 4096B align
+pub struct MemoryFrame {
+    frame_start_phys_addr: u64, // physical address
+    frame_size: usize,          // must be 4096B align
+    deallocated: bool,
+    alloc_location: &'static core::panic::Location<'static>,
 }
 
-impl MemoryFrameInfo {
+impl Debug for MemoryFrame {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MemoryFrame")
+            .field(
+                "frame_start_phys_addr",
+                &format_args!("0x{:x}", self.frame_start_phys_addr),
+            )
+            .field("frame_size", &self.frame_size)
+            .field("alloc_location", &self.alloc_location)
+            .finish()
+    }
+}
+
+impl Drop for MemoryFrame {
+    fn drop(&mut self) {
+        if !self.deallocated {
+            panic!("Memory frame leaked!: {:?}", self);
+        }
+    }
+}
+
+impl MemoryFrame {
+    #[track_caller]
+    pub fn new(frame_start_phys_addr: u64, frame_size: usize) -> Self {
+        Self {
+            frame_start_phys_addr,
+            frame_size,
+            deallocated: false,
+            alloc_location: core::panic::Location::caller(),
+        }
+    }
+
+    pub fn frame_start_phys_addr(&self) -> u64 {
+        self.frame_start_phys_addr
+    }
+
+    pub fn frame_size(&self) -> usize {
+        self.frame_size
+    }
+
+    pub fn frame_index(&self) -> usize {
+        self.frame_start_phys_addr as usize / PAGE_SIZE
+    }
+
+    pub fn zero_out(&self) -> Result<()> {
+        let ptr: *mut u8 = self.frame_start_virt_addr()?.as_ptr_mut();
+        unsafe {
+            ptr.write_bytes(0, self.frame_size);
+        }
+
+        Ok(())
+    }
+
     pub fn set_permissions_to_supervisor(&self) -> Result<()> {
         self.set_permissions(
             ReadWrite::Write,
@@ -61,10 +115,6 @@ impl MemoryFrameInfo {
         }
 
         Ok(())
-    }
-
-    pub fn frame_index(&self) -> usize {
-        self.frame_start_phys_addr as usize / PAGE_SIZE
     }
 }
 
@@ -238,14 +288,14 @@ impl BitmapMemoryManager {
         (self.total_frame_len + Bitmap::BITMAP_SIZE - 1) / Bitmap::BITMAP_SIZE
     }
 
-    fn mem_frame(&self, frame_index: usize) -> Option<MemoryFrameInfo> {
-        self.bitmap(self.bitmap_offset(frame_index)).ok().map(|_| MemoryFrameInfo {
-            frame_start_phys_addr: (frame_index * PAGE_SIZE) as u64,
-            frame_size: PAGE_SIZE,
-        })
+    fn mem_frame(&self, frame_index: usize) -> Option<MemoryFrame> {
+        self.bitmap(self.bitmap_offset(frame_index))
+            .ok()
+            .map(|_| MemoryFrame::new((frame_index * PAGE_SIZE) as u64, PAGE_SIZE))
     }
 
-    fn alloc_single_mem_frame(&mut self) -> Result<MemoryFrameInfo> {
+    #[track_caller]
+    fn alloc_single_mem_frame(&mut self) -> Result<MemoryFrame> {
         if self.free_frame_len == 0 {
             return Err(BitmapMemoryManagerError::FreeMemoryFrameWasNotFound.into());
         }
@@ -264,10 +314,8 @@ impl BitmapMemoryManager {
 
                 if !bitmap.get(j)? {
                     self.alloc_frame(frame_index)?;
-                    return Ok(MemoryFrameInfo {
-                        frame_start_phys_addr: (frame_index * PAGE_SIZE) as u64,
-                        frame_size: PAGE_SIZE,
-                    });
+                    let frame = MemoryFrame::new((frame_index * PAGE_SIZE) as u64, PAGE_SIZE);
+                    return Ok(frame);
                 }
             }
         }
@@ -275,7 +323,8 @@ impl BitmapMemoryManager {
         Err(BitmapMemoryManagerError::FreeMemoryFrameWasNotFound.into())
     }
 
-    fn alloc_multi_mem_frame(&mut self, len: usize) -> Result<MemoryFrameInfo> {
+    #[track_caller]
+    fn alloc_multi_mem_frame(&mut self, len: usize) -> Result<MemoryFrame> {
         if len == 0 {
             return Err(BitmapMemoryManagerError::InvalidMemoryFrameLength(len).into());
         }
@@ -331,29 +380,19 @@ impl BitmapMemoryManager {
             self.alloc_frame(start_frame_index + i)?;
         }
 
-        Ok(MemoryFrameInfo {
-            frame_start_phys_addr: (start_frame_index * PAGE_SIZE) as u64,
-            frame_size: PAGE_SIZE * len,
-        })
+        let frame = MemoryFrame::new((start_frame_index * PAGE_SIZE) as u64, PAGE_SIZE * len);
+        Ok(frame)
     }
 
-    unsafe fn mem_clear(&self, mem_frame_info: &MemoryFrameInfo) -> Result<()> {
-        let frame_size = mem_frame_info.frame_size;
-        let start_virt_addr = mem_frame_info.frame_start_virt_addr()?;
-        let ptr: *mut u8 = start_virt_addr.as_ptr_mut();
-        ptr.write_bytes(0, frame_size);
-
-        Ok(())
-    }
-
-    fn dealloc_mem_frame(&mut self, mem_frame_info: MemoryFrameInfo) -> Result<()> {
-        let frame_size = mem_frame_info.frame_size;
-        let frame_index = mem_frame_info.frame_index();
+    fn dealloc_mem_frame(&mut self, mut mem_frame: MemoryFrame) -> Result<()> {
+        let frame_size = mem_frame.frame_size;
+        let frame_index = mem_frame.frame_index();
 
         for i in frame_index..frame_index + (frame_size / PAGE_SIZE) {
             self.dealloc_frame(i)?;
         }
 
+        mem_frame.deallocated = true;
         Ok(())
     }
 
@@ -449,19 +488,15 @@ pub fn mem_size() -> Result<(usize, usize)> {
     Ok((used, total))
 }
 
-pub fn alloc_mem_frame(len: usize) -> Result<MemoryFrameInfo> {
+#[track_caller]
+pub fn alloc_mem_frame(len: usize) -> Result<MemoryFrame> {
     let mut bmm = BMM.try_lock()?;
     bmm.alloc_multi_mem_frame(len)
 }
 
-pub fn dealloc_mem_frame(mem_frame_info: MemoryFrameInfo) -> Result<()> {
+pub fn dealloc_mem_frame(mem_frame: MemoryFrame) -> Result<()> {
     let mut bmm = BMM.try_lock()?;
-    bmm.dealloc_mem_frame(mem_frame_info)
-}
-
-pub fn mem_clear(mem_frame_info: &MemoryFrameInfo) -> Result<()> {
-    let bmm = BMM.try_lock()?;
-    unsafe { bmm.mem_clear(mem_frame_info) }
+    bmm.dealloc_mem_frame(mem_frame)
 }
 
 pub fn bitmap_region() -> Result<(VirtualAddress, usize)> {

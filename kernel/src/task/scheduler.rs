@@ -10,7 +10,7 @@ use crate::{
     error::{Error, Result},
     fs::{path::Path, vfs::FileDescriptorNumber},
     graphics::multi_layer::LayerId,
-    mem::bitmap::MemoryFrameInfo,
+    mem::bitmap::MemoryFrame,
     sync::mutex::Mutex,
     task::*,
 };
@@ -260,27 +260,24 @@ pub fn remove_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
     Ok(())
 }
 
-pub fn add_mem_frame_info(mem_frame_info: MemoryFrameInfo) -> Result<()> {
+pub fn add_mem_frame(mem_frame: MemoryFrame) -> Result<()> {
     let mut s = TASK_SCHED.spin_lock();
-    s.current_task_mut()?
-        .resource
-        .alloc_frames
-        .push(mem_frame_info);
+    s.current_task_mut()?.resource.alloc_frames.push(mem_frame);
     Ok(())
 }
 
 pub fn mem_frame_size(virt_addr: VirtualAddress) -> Result<Option<usize>> {
     let mut s = TASK_SCHED.spin_lock();
     let task = s.current_task_mut()?;
-    for mem_frame_info in &task.resource.alloc_frames {
-        if mem_frame_info.frame_start_virt_addr()? == virt_addr {
-            return Ok(Some(mem_frame_info.frame_size));
+    for mem_frame in &task.resource.alloc_frames {
+        if mem_frame.frame_start_virt_addr()? == virt_addr {
+            return Ok(Some(mem_frame.frame_size()));
         }
     }
     Ok(None)
 }
 
-pub fn remove_mem_frame_info(virt_addr: VirtualAddress) -> Result<MemoryFrameInfo> {
+pub fn remove_mem_frame(virt_addr: VirtualAddress) -> Result<MemoryFrame> {
     let mut s = TASK_SCHED.spin_lock();
     let allocated = &mut s.current_task_mut()?.resource.alloc_frames;
     if let Some(index) = allocated

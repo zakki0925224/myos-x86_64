@@ -247,12 +247,12 @@ impl XhcDriver {
 
         // buffer table
         // non-deallocate memory
-        let mem_frame_info = bitmap::alloc_mem_frame(
+        let mem_frame = bitmap::alloc_mem_frame(
             (size_of::<usize>() * num_scratchpad_bufs).div_ceil(PAGE_SIZE),
         )?;
         let table = unsafe {
             slice::from_raw_parts(
-                mem_frame_info.frame_start_virt_addr()?.as_ptr_mut() as *mut *const u8,
+                mem_frame.frame_start_virt_addr()?.as_ptr_mut() as *mut *const u8,
                 num_scratchpad_bufs,
             )
         };
@@ -262,8 +262,8 @@ impl XhcDriver {
         let mut bufs = Vec::new();
         for sb in table.iter_mut() {
             // non-deallocate memory
-            let sb_frame_info = bitmap::alloc_mem_frame(1)?;
-            let buf_ptr = sb_frame_info.frame_start_virt_addr()?.as_ptr();
+            let sb_frame = bitmap::alloc_mem_frame(1)?;
+            let buf_ptr = sb_frame.frame_start_virt_addr()?.as_ptr();
             let buf = unsafe { slice::from_raw_parts(buf_ptr as *const u8, PAGE_SIZE) };
             let buf: Pin<Box<[u8]>> = Pin::new(Box::from(buf));
             *sb = buf.as_ref().as_ptr();

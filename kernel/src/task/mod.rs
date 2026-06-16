@@ -6,7 +6,7 @@ use crate::{
     graphics::{multi_layer::LayerId, window_manager},
     kdebug,
     mem::{
-        bitmap::{self, MemoryFrameInfo},
+        bitmap::{self, MemoryFrame},
         paging::{self, *},
     },
     util,
@@ -47,12 +47,12 @@ impl From<usize> for TaskId {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct TaskResource {
-    args_frame: Option<MemoryFrameInfo>,
-    stack_frame: Option<MemoryFrameInfo>,
-    program_frames: Vec<(MemoryFrameInfo, MappingInfo)>,
-    alloc_frames: Vec<MemoryFrameInfo>,
+    args_frame: Option<MemoryFrame>,
+    stack_frame: Option<MemoryFrame>,
+    program_frames: Vec<(MemoryFrame, MappingInfo)>,
+    alloc_frames: Vec<MemoryFrame>,
     created_layer_ids: Vec<LayerId>,
     fd_nums: Vec<FileDescriptorNumber>,
     pipe_fd: [Option<FileDescriptorNumber>; 3],
@@ -60,17 +60,17 @@ struct TaskResource {
 
 impl Drop for TaskResource {
     fn drop(&mut self) {
-        if let Some(args_frame) = self.args_frame {
+        if let Some(args_frame) = self.args_frame.take() {
             args_frame.set_permissions_to_supervisor().unwrap();
             bitmap::dealloc_mem_frame(args_frame).unwrap();
         }
 
-        if let Some(stack_frame) = self.stack_frame {
+        if let Some(stack_frame) = self.stack_frame.take() {
             stack_frame.set_permissions_to_supervisor().unwrap();
             bitmap::dealloc_mem_frame(stack_frame).unwrap();
         }
 
-        for (mem_info, mapping_info) in self.program_frames.iter() {
+        for (mem_frame, mapping_info) in self.program_frames.drain(..) {
             let start = mapping_info.start;
             paging::update_mapping(&MappingInfo {
                 start,
@@ -83,16 +83,12 @@ impl Drop for TaskResource {
             })
             .unwrap();
 
-            // assert_eq!(
-            //     paging::calc_virt_addr(start.get().into()).unwrap().get(),
-            //     start.get()
-            // );
-            bitmap::dealloc_mem_frame(*mem_info).unwrap();
+            bitmap::dealloc_mem_frame(mem_frame).unwrap();
         }
 
-        for frame in self.alloc_frames.iter() {
+        for frame in self.alloc_frames.drain(..) {
             frame.set_permissions_to_supervisor().unwrap();
-            bitmap::dealloc_mem_frame(*frame).unwrap();
+            bitmap::dealloc_mem_frame(frame).unwrap();
         }
 
         // destroy all created windows
@@ -109,9 +105,9 @@ impl Drop for TaskResource {
 
 impl TaskResource {
     fn new(
-        args_frame: Option<MemoryFrameInfo>,
-        stack_frame: Option<MemoryFrameInfo>,
-        program_frames: Vec<(MemoryFrameInfo, MappingInfo)>,
+        args_frame: Option<MemoryFrame>,
+        stack_frame: Option<MemoryFrame>,
+        program_frames: Vec<(MemoryFrame, MappingInfo)>,
         pipe_fd: [Option<FileDescriptorNumber>; 3],
     ) -> Self {
         Self {
@@ -140,7 +136,7 @@ impl TaskState {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct Task {
     id: TaskId,
     state: TaskState,
@@ -191,9 +187,9 @@ impl Task {
                 let pages_needed =
                     ((p_virt_addr % PAGE_SIZE as u64 + p_mem_size + PAGE_SIZE as u64 - 1)
                         / PAGE_SIZE as u64) as usize;
-                let user_mem_frame_info = bitmap::alloc_mem_frame(pages_needed)?;
-                bitmap::mem_clear(&user_mem_frame_info)?;
-                let user_mem_frame_start_virt_addr = user_mem_frame_info.frame_start_virt_addr()?;
+                let user_mem_frame = bitmap::alloc_mem_frame(pages_needed)?;
+                user_mem_frame.zero_out()?;
+                let user_mem_frame_start_virt_addr = user_mem_frame.frame_start_virt_addr()?;
 
                 // copy data
                 let program_data = elf64.data_by_program_header(program_header);
@@ -207,15 +203,15 @@ impl Task {
                 let start_virt_addr = (p_virt_addr / PAGE_SIZE as u64 * PAGE_SIZE as u64).into();
                 let mapping_info = MappingInfo {
                     start: start_virt_addr,
-                    end: start_virt_addr.offset(user_mem_frame_info.frame_size),
-                    phys_addr: user_mem_frame_info.frame_start_phys_addr,
+                    end: start_virt_addr.offset(user_mem_frame.frame_size()),
+                    phys_addr: user_mem_frame.frame_start_phys_addr(),
                     rw: ReadWrite::Write,
                     us: EntryMode::User,
                     pwt: PageWriteThroughLevel::WriteThrough,
                     pcd: false,
                 };
                 paging::update_mapping(&mapping_info)?;
-                program_frames.push((user_mem_frame_info, mapping_info));
+                program_frames.push((user_mem_frame, mapping_info));
 
                 if header.entry_point >= p_virt_addr
                     && header.entry_point < p_virt_addr + p_mem_size
@@ -261,15 +257,15 @@ impl Task {
             }
 
             let mut c_args_offset = (args.len() + 2) * 8;
-            let mem_frame_info =
+            let mem_frame =
                 bitmap::alloc_mem_frame(((c_args.len() + c_args_offset) / PAGE_SIZE).max(1))?;
-            bitmap::mem_clear(&mem_frame_info)?;
+            mem_frame.zero_out()?;
             match mode {
-                ContextMode::Kernel => mem_frame_info.set_permissions_to_supervisor()?,
-                ContextMode::User => mem_frame_info.set_permissions_to_user()?,
+                ContextMode::Kernel => mem_frame.set_permissions_to_supervisor()?,
+                ContextMode::User => mem_frame.set_permissions_to_user()?,
             }
 
-            let args_mem_virt_addr = mem_frame_info.frame_start_virt_addr()?;
+            let args_mem_virt_addr = mem_frame.frame_start_virt_addr()?;
             args_mem_virt_addr
                 .offset(c_args_offset)
                 .copy_from_nonoverlapping(c_args.as_ptr(), c_args.len());
@@ -281,7 +277,7 @@ impl Task {
             }
             args_mem_virt_addr.copy_from_nonoverlapping(c_args_ref.as_ptr(), c_args_ref.len());
 
-            args_frame = Some(mem_frame_info);
+            args_frame = Some(mem_frame);
             arg0 = args.len() as u64;
             arg1 = args_mem_virt_addr.get();
         }
@@ -341,11 +337,11 @@ pub fn debug_task(task: &Task) {
     let ctx = &task.context;
     kdebug!("task id: {}", task.id);
 
-    if let Some(stack) = task.resource.stack_frame {
+    if let Some(stack) = &task.resource.stack_frame {
         kdebug!(
             "stack: (phys)0x{:x}, size: 0x{:x}bytes",
-            stack.frame_start_phys_addr,
-            stack.frame_size,
+            stack.frame_start_phys_addr(),
+            stack.frame_size(),
         );
     }
 
@@ -398,17 +394,17 @@ pub fn debug_task(task: &Task) {
         kdebug!(
             "\t(virt)0x{:x}-0x{:x}",
             virt_addr.get(),
-            virt_addr.offset(frame.frame_size).get(),
+            virt_addr.offset(frame.frame_size()).get(),
         );
     }
 
-    if let Some(stack) = task.resource.stack_frame {
+    if let Some(stack) = &task.resource.stack_frame {
         kdebug!("stack frame:");
         let virt_addr = stack.frame_start_virt_addr().unwrap();
         kdebug!(
             "\t(virt)0x{:x}-0x{:x}",
             virt_addr.get(),
-            virt_addr.offset(stack.frame_size).get(),
+            virt_addr.offset(stack.frame_size()).get(),
         );
     }
 
@@ -418,7 +414,7 @@ pub fn debug_task(task: &Task) {
         kdebug!(
             "\t(virt)0x{:x}-0x{:x} mapped to (virt)0x{:x}-0x{:x}",
             virt_addr.get(),
-            virt_addr.offset(frame.frame_size).get(),
+            virt_addr.offset(frame.frame_size()).get(),
             mapping_info.start.get(),
             mapping_info.end.get(),
         );
@@ -431,7 +427,7 @@ pub fn debug_task(task: &Task) {
         kdebug!(
             "\t(virt)0x{:x}-0x{:x}",
             virt_addr.get(),
-            virt_addr.offset(frame.frame_size).get(),
+            virt_addr.offset(frame.frame_size()).get(),
         );
     }
 }
