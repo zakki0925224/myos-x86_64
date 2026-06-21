@@ -1,7 +1,12 @@
 use crate::{
-    arch::{x86_64::registers::*, IoPortAddress, VirtualAddress},
+    arch::{
+        x86_64::{
+            paging::{self, PageWriteThroughLevel, ReadWrite, PAGE_SIZE},
+            registers::*,
+        },
+        IoPortAddress, VirtualAddress,
+    },
     error::{Error, Result},
-    mem::paging::{self, *},
 };
 use alloc::vec::Vec;
 use core::mem::transmute;
@@ -224,12 +229,7 @@ impl BaseAddressRegister {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct ConfigurationSpaceNonBridgeField {
-    bar0: BaseAddressRegister,
-    bar1: BaseAddressRegister,
-    bar2: BaseAddressRegister,
-    bar3: BaseAddressRegister,
-    bar4: BaseAddressRegister,
-    bar5: BaseAddressRegister,
+    bars: [BaseAddressRegister; 6],
     cardbus_cis_ptr: u32,
     subsystem_vendor_id: u16,
     pub subsystem_id: u16,
@@ -256,11 +256,8 @@ impl ConfigurationSpaceNonBridgeField {
 
     pub fn bars(&self) -> Result<Vec<(usize, BaseAddress)>> {
         let mut skip_index = None;
-        let bars = [
-            &self.bar0, &self.bar1, &self.bar2, &self.bar3, &self.bar4, &self.bar5,
-        ];
         let mut result = Vec::new();
-        for (i, bar) in bars.iter().enumerate() {
+        for (i, bar) in self.bars.iter().enumerate() {
             if let Some(skip) = skip_index {
                 if skip == i {
                     skip_index = None;
@@ -271,13 +268,10 @@ impl ConfigurationSpaceNonBridgeField {
             if let Some(base_addr) = bar.base_addr() {
                 match base_addr {
                     BaseAddress::MemoryAddress64BitSpace(phys_addr, is_pref) => {
-                        if i + 1 == bars.len() {
-                            unreachable!()
-                        }
+                        assert!(i + 1 < self.bars.len());
 
-                        let next_bar = bars[i + 1];
-                        let full_phys_addr: u64 =
-                            (next_bar.read() as u64) << 32 | phys_addr;
+                        let next_bar = self.bars[i + 1];
+                        let full_phys_addr: u64 = (next_bar.read() as u64) << 32 | phys_addr;
                         skip_index = Some(i + 1);
 
                         if full_phys_addr == 0 {
@@ -285,18 +279,18 @@ impl ConfigurationSpaceNonBridgeField {
                         }
 
                         let start: VirtualAddress = full_phys_addr.into();
-                        // TODO: implement get bar size
-                        paging::update_mapping(&MappingInfo {
-                            start,
-                            end: start.offset(PAGE_SIZE * 3),
-                            phys_addr: full_phys_addr,
-                            rw: ReadWrite::Write,
-                            us: EntryMode::Supervisor,
-                            pwt: PageWriteThroughLevel::WriteThrough,
-                            pcd: true, // page cache disable
-                        })?;
+                        unsafe {
+                            paging::kernel_map(
+                                start,
+                                start.offset(PAGE_SIZE * 3),
+                                ReadWrite::Write,
+                                PageWriteThroughLevel::WriteThrough,
+                                true, // disable cache
+                            )?;
+                        }
 
-                        let base_addr = BaseAddress::MemoryAddress64BitSpace(full_phys_addr, is_pref);
+                        let base_addr =
+                            BaseAddress::MemoryAddress64BitSpace(full_phys_addr, is_pref);
                         result.push((i, base_addr));
                     }
                     BaseAddress::MemoryAddress32BitSpace(phys_addr, _) => {
@@ -305,16 +299,15 @@ impl ConfigurationSpaceNonBridgeField {
                         }
 
                         let start: VirtualAddress = phys_addr.into();
-                        // TODO: implement get bar size
-                        paging::update_mapping(&MappingInfo {
-                            start,
-                            end: (start.get() + (PAGE_SIZE * 3) as u64).into(),
-                            phys_addr,
-                            rw: ReadWrite::Write,
-                            us: EntryMode::Supervisor,
-                            pwt: PageWriteThroughLevel::WriteThrough,
-                            pcd: true, // page cache disable
-                        })?;
+                        unsafe {
+                            paging::kernel_map(
+                                start,
+                                start.offset(PAGE_SIZE * 3),
+                                ReadWrite::Write,
+                                PageWriteThroughLevel::WriteThrough,
+                                true, // disable cache
+                            )?;
+                        }
                         result.push((i, base_addr));
                     }
                     _ => result.push((i, base_addr)),

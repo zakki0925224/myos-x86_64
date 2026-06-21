@@ -1,7 +1,4 @@
-use crate::{
-    error::Result,
-    mem::{self, paging::PAGE_SIZE},
-};
+use crate::{arch::x86_64::paging::PAGE_SIZE, error::Result, mem};
 use core::mem::size_of;
 
 static mut TSS: TaskStateSegment = TaskStateSegment::new();
@@ -67,9 +64,11 @@ impl TaskStateSegment {
 
     pub fn init(&mut self) -> Result<()> {
         let frame_len = 8;
+        let mut tss_frame = mem::bitmap::alloc_mem_frame(frame_len)?;
+        tss_frame.leak();
 
-        let rsp0 = mem::bitmap::alloc_mem_frame(frame_len)?
-            .frame_start_virt_addr()?
+        let rsp0 = tss_frame
+            .frame_start_virt_addr()
             .offset(frame_len * PAGE_SIZE)
             .get();
         self.rsp[0] = rsp0;

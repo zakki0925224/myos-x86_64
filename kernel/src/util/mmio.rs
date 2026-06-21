@@ -1,6 +1,6 @@
-use crate::{
-    arch::VirtualAddress,
-    mem::paging::{self, *},
+use crate::arch::{
+    x86_64::paging::{self, PageWriteThroughLevel, ReadWrite, PAGE_SIZE},
+    VirtualAddress,
 };
 use alloc::boxed::Box;
 use core::{
@@ -79,16 +79,17 @@ impl<T: Sized> IoBox<T> {
 
         // disable cache
         let start: VirtualAddress = (this.as_ref() as *const T as u64).into();
-        paging::update_mapping(&MappingInfo {
-            start,
-            end: start.offset(size_of::<T>().div_ceil(PAGE_SIZE)),
-            phys_addr: start.phys_addr().unwrap(),
-            rw: ReadWrite::Write,
-            us: EntryMode::Supervisor,
-            pwt: PageWriteThroughLevel::WriteThrough,
-            pcd: true, // page cache disable
-        })
-        .unwrap();
+        let end = start.offset(size_of::<T>().div_ceil(PAGE_SIZE));
+
+        unsafe {
+            paging::kernel_map(
+                start,
+                end,
+                ReadWrite::Write,
+                PageWriteThroughLevel::WriteThrough,
+                true, // disable cache
+            )
+        };
 
         this
     }

@@ -1,12 +1,11 @@
 use crate::{
     arch::{
-        x86_64::{self, registers::*},
+        x86_64::{self, paging, registers::*},
         IoPortAddress,
     },
     debug, device,
     error::{Error, Result},
     kerror, kinfo,
-    mem::paging,
     sync::mutex::Mutex,
     task,
 };
@@ -18,59 +17,97 @@ static IDT: Mutex<InterruptDescriptorTable> = Mutex::new(InterruptDescriptorTabl
 pub struct PageFaultErrorCode(u64);
 
 impl PageFaultErrorCode {
-    pub const PROTECTION_VIOLATION: u64 = 1;
-    pub const CAUSED_BY_WRITE: u64 = 1 << 1;
-    pub const USER_MODE: u64 = 1 << 2;
-    pub const MALFORMED_TABLE: u64 = 1 << 3;
-    pub const INSTRUCTION_FETCH: u64 = 1 << 4;
-    pub const PROTECTION_KEY: u64 = 1 << 5;
-    pub const SHADOW_STACK: u64 = 1 << 6;
-    pub const SGX: u64 = 1 << 15;
-    pub const RMP: u64 = 1 << 31;
+    const PROTECTION_VIOLATION: u64 = 1;
+    const CAUSED_BY_WRITE: u64 = 1 << 1;
+    const USER_MODE: u64 = 1 << 2;
+    const MALFORMED_TABLE: u64 = 1 << 3;
+    const INSTRUCTION_FETCH: u64 = 1 << 4;
+    const PROTECTION_KEY: u64 = 1 << 5;
+    const SHADOW_STACK: u64 = 1 << 6;
+    const SGX: u64 = 1 << 15;
+    const RMP: u64 = 1 << 31;
 }
 
 impl core::fmt::Debug for PageFaultErrorCode {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let mut builder = f.debug_struct("PageFaultErrorCode");
-        builder.field("raw", &format_args!("{:#x}", self.0));
+        builder.field("0", &format_args!("{:#x}", self.0));
 
-        if (self.0 & Self::PROTECTION_VIOLATION) != 0 {
+        if self.protection_violation() {
             builder.field("PROTECTION_VIOLATION", &true);
         }
 
-        if (self.0 & Self::CAUSED_BY_WRITE) != 0 {
+        if self.caused_by_write() {
             builder.field("CAUSED_BY_WRITE", &true);
         }
 
-        if (self.0 & Self::USER_MODE) != 0 {
+        if self.user_mode() {
             builder.field("USER_MODE", &true);
         }
 
-        if (self.0 & Self::MALFORMED_TABLE) != 0 {
+        if self.malformed_table() {
             builder.field("MALFORMED_TABLE", &true);
         }
 
-        if (self.0 & Self::INSTRUCTION_FETCH) != 0 {
+        if self.instruction_fetch() {
             builder.field("INSTRUCTION_FETCH", &true);
         }
 
-        if (self.0 & Self::PROTECTION_KEY) != 0 {
+        if self.protection_key() {
             builder.field("PROTECTION_KEY", &true);
         }
 
-        if (self.0 & Self::SHADOW_STACK) != 0 {
+        if self.shadow_stack() {
             builder.field("SHADOW_STACK", &true);
         }
 
-        if (self.0 & Self::SGX) != 0 {
+        if self.sgx() {
             builder.field("SGX", &true);
         }
 
-        if (self.0 & Self::RMP) != 0 {
+        if self.rmp() {
             builder.field("RMP", &true);
         }
 
         builder.finish()
+    }
+}
+
+impl PageFaultErrorCode {
+    pub fn protection_violation(&self) -> bool {
+        (self.0 & Self::PROTECTION_VIOLATION) != 0
+    }
+
+    pub fn caused_by_write(&self) -> bool {
+        (self.0 & Self::CAUSED_BY_WRITE) != 0
+    }
+
+    pub fn user_mode(&self) -> bool {
+        (self.0 & Self::USER_MODE) != 0
+    }
+
+    pub fn malformed_table(&self) -> bool {
+        (self.0 & Self::MALFORMED_TABLE) != 0
+    }
+
+    pub fn instruction_fetch(&self) -> bool {
+        (self.0 & Self::INSTRUCTION_FETCH) != 0
+    }
+
+    pub fn protection_key(&self) -> bool {
+        (self.0 & Self::PROTECTION_KEY) != 0
+    }
+
+    pub fn shadow_stack(&self) -> bool {
+        (self.0 & Self::SHADOW_STACK) != 0
+    }
+
+    pub fn sgx(&self) -> bool {
+        (self.0 & Self::SGX) != 0
+    }
+
+    pub fn rmp(&self) -> bool {
+        (self.0 & Self::RMP) != 0
     }
 }
 
@@ -310,7 +347,7 @@ extern "x86-interrupt" fn general_protection_fault_handler(
     error_code: u64,
 ) {
     kerror!(
-        "int: GENERAL PROTECTION FAULT, error_code: 0x{:x}, {:?}",
+        "int: GENERAL PROTECTION FAULT, error_code: {:#x}, {:?}",
         error_code,
         stack_frame
     );
@@ -326,13 +363,21 @@ extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    let accessed_virt_addr = Cr2::read().raw();
-    let page_virt_addr = (accessed_virt_addr & !0xfff).into();
-    let page_table_entry = paging::read_page_table_entry(page_virt_addr);
+    let accessed_virt_addr = Cr2::read().raw().into();
+    let is_user = error_code.user_mode();
+    let pml4_table = if !is_user {
+        unsafe { &*paging::kernel_page_table() }
+    } else {
+        todo!()
+    };
+    let pte = unsafe { paging::lookup_pte(pml4_table, accessed_virt_addr) };
 
     kerror!(
-        "int: PAGE FAULT, Accessed virtual address: 0x{:x}, {:?}, {:?}, Page table entry (at 0x{:x}): {:?}",
-        accessed_virt_addr, error_code, stack_frame, page_virt_addr.get(), page_table_entry
+        "int: PAGE FAULT at {:?}, {:?}, {:?}, PTE: {:?}",
+        accessed_virt_addr,
+        error_code,
+        stack_frame,
+        pte
     );
 
     if task::scheduler::debug_current() {

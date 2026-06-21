@@ -1,4 +1,5 @@
 use crate::{
+    arch::{x86_64::paging::PAGE_SIZE, VirtualAddress},
     device::{
         self,
         pci_bus::conf_space::BaseAddress,
@@ -13,10 +14,7 @@ use crate::{
     error::{Error, Result},
     fs::vfs,
     kdebug, kinfo, ktrace,
-    mem::{
-        bitmap,
-        paging::{self, PAGE_SIZE},
-    },
+    mem::bitmap,
     sync::mutex::Mutex,
     util::{keyboard::key_map::JIS_JP_109_KEY_MAP, mmio::Mmio, slice::Sliceable},
 };
@@ -191,7 +189,7 @@ impl XhcDriver {
                 if trb.trb_type() == TrbType::CommandCompletionEvent as u32 {
                     return Ok(trb);
                 } else {
-                    ktrace!("Invalid TRB type: 0x{:x}", trb.trb_type());
+                    ktrace!("Invalid TRB type: {:#x}", trb.trb_type());
                 }
             }
         }
@@ -246,13 +244,13 @@ impl XhcDriver {
         );
 
         // buffer table
-        // non-deallocate memory
-        let mem_frame = bitmap::alloc_mem_frame(
+        let mut mem_frame = bitmap::alloc_mem_frame(
             (size_of::<usize>() * num_scratchpad_bufs).div_ceil(PAGE_SIZE),
         )?;
+        mem_frame.leak();
         let table = unsafe {
             slice::from_raw_parts(
-                mem_frame.frame_start_virt_addr()?.as_ptr_mut() as *mut *const u8,
+                mem_frame.frame_start_virt_addr().as_ptr_mut() as *mut *const u8,
                 num_scratchpad_bufs,
             )
         };
@@ -261,9 +259,9 @@ impl XhcDriver {
         // buffer
         let mut bufs = Vec::new();
         for sb in table.iter_mut() {
-            // non-deallocate memory
-            let sb_frame = bitmap::alloc_mem_frame(1)?;
-            let buf_ptr = sb_frame.frame_start_virt_addr()?.as_ptr();
+            let mut sb_frame = bitmap::alloc_mem_frame(1)?;
+            sb_frame.leak();
+            let buf_ptr = sb_frame.frame_start_virt_addr().as_ptr();
             let buf = unsafe { slice::from_raw_parts(buf_ptr as *const u8, PAGE_SIZE) };
             let buf: Pin<Box<[u8]>> = Pin::new(Box::from(buf));
             *sb = buf.as_ref().as_ptr();
@@ -891,9 +889,9 @@ impl DeviceDriverFunction for XhcDriver {
                 return Err(XhcDriverError::InvalidRegisterAddress.into());
             }
 
-            let cap_reg_virt_addr = match bars[0].1 {
-                BaseAddress::MemoryAddress32BitSpace(addr, _) => paging::calc_virt_addr(addr)?,
-                BaseAddress::MemoryAddress64BitSpace(addr, _) => paging::calc_virt_addr(addr)?,
+            let cap_reg_virt_addr: VirtualAddress = match bars[0].1 {
+                BaseAddress::MemoryAddress32BitSpace(addr, _) => addr.into(),
+                BaseAddress::MemoryAddress64BitSpace(addr, _) => addr.into(),
                 _ => return Err(XhcDriverError::InvalidRegisterAddress.into()),
             };
             let cap_reg: Mmio<CapabilityRegisters> =
@@ -954,7 +952,7 @@ impl DeviceDriverFunction for XhcDriver {
         let driver_name = self.device_driver_info.name;
 
         if let Some(trb) = self.primary_event_ring()?.pop()? {
-            kdebug!("{}: Processed TRB: 0x{:x}", driver_name, trb.trb_type());
+            kdebug!("{}: Processed TRB: {:#x}", driver_name, trb.trb_type());
         }
 
         Ok(())

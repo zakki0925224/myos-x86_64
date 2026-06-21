@@ -164,7 +164,7 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
             idt::GateType::Interrupt,
         )?;
         kdebug!(
-            "{}: Interrupt vector number: 0x{:x}, Interrupt occures every {}ms",
+            "{}: Interrupt vector number: {:#x}, Interrupt occures every {}ms",
             device_name,
             vec_num,
             INT_INTERVAL_MS

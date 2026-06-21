@@ -1,7 +1,7 @@
 use crate::{
-    arch::x86_64,
+    arch::x86_64::{self, paging::PAGE_SIZE},
     error::Result,
-    mem::{bitmap, paging::PAGE_SIZE},
+    mem::bitmap,
     sync::mutex::Mutex,
 };
 use core::{
@@ -452,9 +452,10 @@ impl LinkedListAllocator {
 }
 
 pub fn init_heap() -> Result<()> {
-    let mem_frame = bitmap::alloc_mem_frame(HEAP_SIZE.div_ceil(PAGE_SIZE))?;
+    let mut mem_frame = bitmap::alloc_mem_frame(HEAP_SIZE.div_ceil(PAGE_SIZE))?;
     mem_frame.zero_out()?;
-    let heap_start_virt_addr = mem_frame.frame_start_virt_addr()?;
+    mem_frame.leak();
+    let heap_start_virt_addr = mem_frame.frame_start_virt_addr();
 
     unsafe { ALLOCATOR.init(heap_start_virt_addr.as_ptr_mut(), mem_frame.frame_size()) }
     Ok(())

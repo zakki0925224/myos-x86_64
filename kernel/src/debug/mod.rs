@@ -73,13 +73,13 @@ pub fn user_app_debugger(
         let file_path = file_name.and_then(|name| dir_name.map(|dir| format!("{}/{}", dir, name)));
 
         println!(
-            "0x{:x} in {} at {}",
+            "{:#x} in {} at {}",
             ip,
             function_name.unwrap_or("<UNKNOWN>"),
             file_path.unwrap_or("<UNKNOWN>".to_string())
         );
     } else {
-        println!("0x{:x} in <UNKNOWN> at <UNKNOWN>", ip);
+        println!("{:#x} in <UNKNOWN> at <UNKNOWN>", ip);
     }
 
     let result;

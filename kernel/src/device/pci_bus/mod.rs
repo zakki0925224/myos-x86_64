@@ -28,17 +28,15 @@ pub enum PciError {
 impl core::fmt::Display for PciError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::DeviceNotFoundByBdf { bus, device, func } => write!(
-                f,
-                "Device not found: 0x{:x}:0x{:x}:0x{:x}",
-                bus, device, func
-            ),
+            Self::DeviceNotFoundByBdf { bus, device, func } => {
+                write!(f, "Device not found: {:#x}:{:#x}:{:#x}", bus, device, func)
+            }
             Self::DeviceNotFoundById {
                 vendor_id,
                 device_id,
             } => write!(
                 f,
-                "Device not found: vendor: 0x{:x}, device: 0x{:x}",
+                "Device not found: vendor: {:#x}, device: {:#x}",
                 vendor_id, device_id
             ),
             Self::InvalidConfigurationSpaceHeaderType(header_type) => write!(

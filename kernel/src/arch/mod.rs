@@ -1,10 +1,23 @@
-use crate::{error::Result, mem::paging};
+use crate::{arch::x86_64::paging, error::Result, mem::paging::PageError};
+use core::fmt::Debug;
 
 pub mod x86_64;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 #[repr(transparent)]
 pub struct VirtualAddress(u64);
+
+impl Debug for VirtualAddress {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "VirtualAddress({:#x})", self.0)
+    }
+}
+
+impl From<u64> for VirtualAddress {
+    fn from(addr: u64) -> Self {
+        Self::new(addr)
+    }
+}
 
 impl VirtualAddress {
     pub fn new(addr: u64) -> Self {
@@ -23,8 +36,10 @@ impl VirtualAddress {
         Self::new(self.0 + offset as u64)
     }
 
-    pub fn phys_addr(&self) -> Result<u64> {
-        paging::calc_phys_addr(*self)
+    pub unsafe fn phys_addr(&self) -> Result<u64> {
+        let page_table = &*paging::kernel_page_table();
+        paging::calc_phys_addr(page_table, *self)
+            .ok_or(PageError::AddressNotMapped(self.get()).into())
     }
 
     pub fn pml4_entry_index(&self) -> usize {
@@ -54,21 +69,29 @@ impl VirtualAddress {
     pub fn as_ptr_mut<T>(&self) -> *mut T {
         self.get() as *mut T
     }
+}
 
-    pub fn copy_from_nonoverlapping<T>(&self, src: *const T, count: usize) {
-        unsafe { self.as_ptr_mut::<T>().copy_from_nonoverlapping(src, count) }
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[repr(transparent)]
+pub struct IoPortAddress(u32);
+
+impl From<u16> for IoPortAddress {
+    fn from(addr: u16) -> Self {
+        Self::new(addr as u32)
     }
 }
 
-impl From<u64> for VirtualAddress {
-    fn from(addr: u64) -> Self {
+impl From<u32> for IoPortAddress {
+    fn from(addr: u32) -> Self {
         Self::new(addr)
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[repr(transparent)]
-pub struct IoPortAddress(u32);
+impl Debug for IoPortAddress {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "IoPortAddress({:#x})", self.0)
+    }
+}
 
 impl IoPortAddress {
     pub const fn new(addr: u32) -> Self {
@@ -105,17 +128,5 @@ impl IoPortAddress {
 
     pub fn in32(&self) -> u32 {
         x86_64::in32(self.0)
-    }
-}
-
-impl From<u16> for IoPortAddress {
-    fn from(addr: u16) -> Self {
-        Self::new(addr as u32)
-    }
-}
-
-impl From<u32> for IoPortAddress {
-    fn from(addr: u32) -> Self {
-        Self::new(addr)
     }
 }

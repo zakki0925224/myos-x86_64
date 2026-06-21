@@ -1,6 +1,6 @@
 use crate::{
     arch::{
-        x86_64::{self, gdt::*, registers::*},
+        x86_64::{self, gdt::*, paging::PAGE_SIZE, registers::*},
         VirtualAddress,
     },
     device::tty,
@@ -12,7 +12,7 @@ use crate::{
     },
     graphics::{multi_layer::LayerId, window_manager},
     kdebug, kerror, kinfo,
-    mem::{bitmap, paging::PAGE_SIZE},
+    mem::bitmap,
     net::{self, socket::*},
     print,
     task::{self, TaskId},
@@ -249,7 +249,7 @@ fn syscall_handler_inner(
             match sys_sbrksz(target) {
                 Ok(size) => return size as i64,
                 Err(err) => {
-                    kerror!("syscall: sbrksz: {:?}, target addr: 0x{:x}", err, arg0);
+                    kerror!("syscall: sbrksz: {:?}, target addr: {:#x}", err, arg0);
                     return 0;
                 }
             };
@@ -401,7 +401,7 @@ fn syscall_handler_inner(
             }
         }
         num => {
-            kerror!("syscall: Syscall number 0x{:x} is not defined", num);
+            kerror!("syscall: Syscall number {:#x} is not defined", num);
             return -1;
         }
     }
@@ -561,8 +561,8 @@ fn sys_sbrk(len: usize) -> Result<*const u8> {
     }
 
     let mem_frame = bitmap::alloc_mem_frame((len + PAGE_SIZE).div_ceil(PAGE_SIZE))?;
-    mem_frame.set_permissions_to_user()?;
-    let virt_addr = mem_frame.frame_start_virt_addr()?;
+    task::scheduler::map_current_user_page(&mem_frame)?;
+    let virt_addr = mem_frame.frame_start_virt_addr();
     task::scheduler::add_mem_frame(mem_frame)?;
 
     Ok(virt_addr.as_ptr())
@@ -677,10 +677,9 @@ fn sys_chdir(path: *const u8) -> Result<()> {
 
 fn sys_free(ptr: *const u8) -> Result<()> {
     let virt_addr: VirtualAddress = (ptr as u64).into();
-    // kdebug!("syscall: free: target memory at 0x{:x}", virt_addr.get());
 
     let mem_frame = task::scheduler::remove_mem_frame(virt_addr)?;
-    mem_frame.set_permissions_to_supervisor()?;
+    task::scheduler::unmap_current_user_page(&mem_frame)?;
     bitmap::dealloc_mem_frame(mem_frame)?;
 
     Ok(())

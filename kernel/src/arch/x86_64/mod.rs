@@ -7,6 +7,7 @@ pub mod context;
 pub mod cpu;
 pub mod gdt;
 pub mod idt;
+pub mod paging;
 pub mod registers;
 pub mod tsc;
 pub mod tss;

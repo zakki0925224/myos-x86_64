@@ -44,7 +44,7 @@ fn efi_main() -> Status {
 
     // load kernel
     let kernel_entry_point_addr = load_kernel(config.kernel_path);
-    info!("Kernel entry point: 0x{:x}", kernel_entry_point_addr);
+    info!("Kernel entry point: {:#x}", kernel_entry_point_addr);
 
     // load initramfs
     let (initramfs_start_virt_addr, initramfs_page_cnt) = load_initramfs(config.initramfs_path);
@@ -52,7 +52,7 @@ fn efi_main() -> Status {
     // get RSDP address
     let rsdp_virt_addr = rsdp_addr();
     if let Some(addr) = rsdp_virt_addr {
-        info!("ACPI2 RSDP found at: 0x{:x}", addr);
+        info!("ACPI2 RSDP found at: {:#x}", addr);
     } else {
         info!("ACPI2 RSDP was not found");
     }
@@ -170,7 +170,7 @@ fn load_kernel(path: &str) -> u64 {
         dest[file_size..].fill(0);
     }
 
-    info!("Loaded ELF at: 0x{:x}", dest_start);
+    info!("Loaded ELF at: {:#x}", dest_start);
     elf.header().entry_point
 }
 
@@ -200,7 +200,7 @@ fn load_initramfs(path: &str) -> (u64, usize) {
     dest[offset..].fill(0);
 
     let addr = dest.as_ptr() as u64;
-    info!("Loaded initramfs at: 0x{:x}", addr);
+    info!("Loaded initramfs at: {:#x}", addr);
     (addr, pages)
 }
 

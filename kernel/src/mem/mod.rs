@@ -1,8 +1,4 @@
-use crate::{
-    error::Result,
-    kdebug, kinfo,
-    mem::paging::{EntryMode, PageWriteThroughLevel, ReadWrite, PAGE_SIZE},
-};
+use crate::{arch::x86_64, error::Result, kdebug, kinfo};
 use common::mem_desc::MemoryDescriptor;
 
 pub mod allocator;
@@ -13,18 +9,10 @@ pub fn init(mem_map: &[MemoryDescriptor]) -> Result<()> {
     bitmap::init(mem_map)?;
     kinfo!("mem: Bitmap memory manager initialized");
 
-    let start = PAGE_SIZE as u64;
+    let start = x86_64::paging::PAGE_SIZE as u64;
     let end = bitmap::total_mem_size()? as u64;
 
-    paging::create_new_page_table(
-        start.into(),
-        end.into(),
-        start.into(),
-        ReadWrite::Write,
-        EntryMode::Supervisor,
-        PageWriteThroughLevel::WriteBack,
-    )?;
-
+    x86_64::paging::kernel_init(start.into(), end.into())?;
     allocator::init_heap()?;
     kinfo!("mem: Heap allocator initialized");
 

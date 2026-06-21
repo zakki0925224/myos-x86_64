@@ -1,7 +1,6 @@
 use crate::{
-    arch::VirtualAddress,
+    arch::{x86_64::paging::PAGE_SIZE, VirtualAddress},
     error::{Error, Result},
-    mem::paging::{self, *},
     sync::mutex::Mutex,
 };
 use common::mem_desc::{MemoryDescriptor, UEFI_PAGE_SIZE};
@@ -10,8 +9,8 @@ use core::fmt::Debug;
 static BMM: Mutex<BitmapMemoryManager> = Mutex::new(BitmapMemoryManager::new());
 
 pub struct MemoryFrame {
-    frame_start_phys_addr: u64, // physical address
-    frame_size: usize,          // must be 4096B align
+    frame_start_phys_addr: u64,
+    frame_size: usize,
     deallocated: bool,
     alloc_location: &'static core::panic::Location<'static>,
 }
@@ -21,7 +20,7 @@ impl Debug for MemoryFrame {
         f.debug_struct("MemoryFrame")
             .field(
                 "frame_start_phys_addr",
-                &format_args!("0x{:x}", self.frame_start_phys_addr),
+                &format_args!("{:#x}", self.frame_start_phys_addr),
             )
             .field("frame_size", &self.frame_size)
             .field("alloc_location", &self.alloc_location)
@@ -40,6 +39,7 @@ impl Drop for MemoryFrame {
 impl MemoryFrame {
     #[track_caller]
     pub fn new(frame_start_phys_addr: u64, frame_size: usize) -> Self {
+        assert!(frame_size % PAGE_SIZE == 0);
         Self {
             frame_start_phys_addr,
             frame_size,
@@ -61,7 +61,7 @@ impl MemoryFrame {
     }
 
     pub fn zero_out(&self) -> Result<()> {
-        let ptr: *mut u8 = self.frame_start_virt_addr()?.as_ptr_mut();
+        let ptr: *mut u8 = self.frame_start_virt_addr().as_ptr_mut();
         unsafe {
             ptr.write_bytes(0, self.frame_size);
         }
@@ -69,52 +69,13 @@ impl MemoryFrame {
         Ok(())
     }
 
-    pub fn set_permissions_to_supervisor(&self) -> Result<()> {
-        self.set_permissions(
-            ReadWrite::Write,
-            EntryMode::Supervisor,
-            PageWriteThroughLevel::WriteThrough,
-            false,
-        )
+    pub fn leak(&mut self) {
+        self.deallocated = true;
+        core::mem::forget(self);
     }
 
-    pub fn set_permissions_to_user(&self) -> Result<()> {
-        self.set_permissions(
-            ReadWrite::Write,
-            EntryMode::User,
-            PageWriteThroughLevel::WriteThrough,
-            false,
-        )
-    }
-
-    pub fn frame_start_virt_addr(&self) -> Result<VirtualAddress> {
-        paging::calc_virt_addr(self.frame_start_phys_addr)
-    }
-
-    pub fn set_permissions(
-        &self,
-        rw: ReadWrite,
-        us: EntryMode,
-        pwt: PageWriteThroughLevel,
-        pcd: bool,
-    ) -> Result<()> {
-        let page_len = self.frame_size / PAGE_SIZE;
-        let mut start = self.frame_start_virt_addr()?;
-
-        for _ in 0..page_len {
-            paging::update_mapping(&MappingInfo {
-                start,
-                end: start.offset(PAGE_SIZE),
-                phys_addr: start.phys_addr()?,
-                rw,
-                us,
-                pwt,
-                pcd,
-            })?;
-            start = start.offset(PAGE_SIZE);
-        }
-
-        Ok(())
+    pub fn frame_start_virt_addr(&self) -> VirtualAddress {
+        self.frame_start_phys_addr.into()
     }
 }
 
@@ -501,7 +462,7 @@ pub fn dealloc_mem_frame(mem_frame: MemoryFrame) -> Result<()> {
 
 pub fn bitmap_region() -> Result<(VirtualAddress, usize)> {
     let bmm = BMM.try_lock()?;
-    let virt_addr = paging::calc_virt_addr(bmm.bitmap_phys_addr()?)?;
+    let virt_addr = bmm.bitmap_phys_addr()?.into();
     let len = bmm.bitmap_len();
     Ok((virt_addr, len))
 }

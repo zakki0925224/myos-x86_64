@@ -102,7 +102,7 @@ impl core::fmt::Display for AcpiError {
 
         match self {
             Self::InvalidSignature => write!(f, "Invalid signature"),
-            Self::InvalidRevision(r) => write!(f, "Invalid revision: 0x{:x}", r),
+            Self::InvalidRevision(r) => write!(f, "Invalid revision: {:#x}", r),
             Self::InvalidChecksum => write!(f, "Invalid checksum"),
             Self::FixedAcpiDescriptionTableWasNotFound => {
                 write!(f, "Fixed ACPI Description Table was not found")

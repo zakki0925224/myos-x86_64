@@ -3,7 +3,7 @@ use crate::{
     device::{pci_bus::PciError, usb::xhc::XhcDriverError},
     fs::vfs::VirtualFileSystemError,
     graphics::{draw::DrawError, multi_layer::LayerError, window_manager::WindowManagerError},
-    mem::{allocator::AllocationError, bitmap::BitmapMemoryManagerError, paging::PageManagerError},
+    mem::{allocator::AllocationError, bitmap::BitmapMemoryManagerError, paging::PageError},
 };
 use common::elf::Elf64Error;
 
@@ -56,13 +56,13 @@ pub enum Error {
     AcpiError(AcpiError),
     VirtualFileSystemError(VirtualFileSystemError),
     PciError(PciError),
-    PageManagerError(PageManagerError),
     XhcDriverError(XhcDriverError),
     DrawError(DrawError),
     LayerError(LayerError),
     WindowManagerError(WindowManagerError),
     AllocationError(AllocationError),
     BitmapMemoryManagerError(BitmapMemoryManagerError),
+    PageError(PageError),
 }
 
 impl core::fmt::Display for Error {
@@ -106,13 +106,13 @@ impl core::fmt::Display for Error {
             Self::AcpiError(err) => write!(f, "{}", err),
             Self::VirtualFileSystemError(err) => write!(f, "{}", err),
             Self::PciError(err) => write!(f, "{}", err),
-            Self::PageManagerError(err) => write!(f, "{}", err),
             Self::XhcDriverError(err) => write!(f, "{}", err),
             Self::DrawError(err) => write!(f, "{}", err),
             Self::LayerError(err) => write!(f, "{}", err),
             Self::WindowManagerError(err) => write!(f, "{}", err),
             Self::AllocationError(err) => write!(f, "{}", err),
             Self::BitmapMemoryManagerError(err) => write!(f, "{}", err),
+            Self::PageError(err) => write!(f, "{}", err),
         }
     }
 }
@@ -122,13 +122,13 @@ impl_from_error! {
     AcpiError(AcpiError),
     VirtualFileSystemError(VirtualFileSystemError),
     PciError(PciError),
-    PageManagerError(PageManagerError),
     XhcDriverError(XhcDriverError),
     DrawError(DrawError),
     LayerError(LayerError),
     WindowManagerError(WindowManagerError),
     AllocationError(AllocationError),
     BitmapMemoryManagerError(BitmapMemoryManagerError),
+    PageError(PageError),
 }
 
 impl Error {

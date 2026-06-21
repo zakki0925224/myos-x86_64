@@ -2,6 +2,7 @@ use crate::{
     arch::{
         x86_64::{
             context::{Context, ContextMode, InterruptedContext},
+            paging::{PageWriteThroughLevel, ReadWrite},
             registers::{Cr3, Register, Rflags},
         },
         VirtualAddress,
@@ -50,11 +51,6 @@ impl TaskScheduler {
     }
 
     fn spawn(&mut self, task: Task) {
-        task.unmap_virt_addr().unwrap();
-        if let Some(current) = &self.current_task {
-            current.remap_virt_addr().unwrap();
-        }
-
         self.ready_queue.push_back(Box::new(task));
     }
 
@@ -62,9 +58,6 @@ impl TaskScheduler {
         let prev_task = self.current_task.take()?;
 
         if let Some(next_task) = self.ready_queue.pop_front() {
-            prev_task.unmap_virt_addr().unwrap();
-            next_task.remap_virt_addr().unwrap();
-
             self.ready_queue.push_back(prev_task);
             self.current_task = Some(next_task);
 
@@ -85,7 +78,6 @@ impl TaskScheduler {
         let mut current = self.current_task.take().expect("No current task to exit");
         let exiting_id = current.id;
 
-        current.unmap_virt_addr().unwrap();
         current.state = TaskState::Exited(exit_code);
 
         let old = core::mem::take(&mut self.exited_tasks);
@@ -107,8 +99,6 @@ impl TaskScheduler {
             .ready_queue
             .pop_front()
             .expect("No task to run after exit");
-        next_task.remap_virt_addr().unwrap();
-
         self.current_task = Some(next_task);
 
         let prev_ptr = &**self.exited_tasks.last().unwrap() as *const Task;
@@ -121,16 +111,12 @@ impl TaskScheduler {
         let mut current = self.current_task.take().expect("No current task to sleep");
         current.waiting_for = Some(child_id);
         current.state = TaskState::Sleeping;
-        current.unmap_virt_addr().unwrap();
-
         self.sleeping_tasks.push(current);
 
         let next_task = self
             .ready_queue
             .pop_front()
             .expect("No task to run after sleep");
-        next_task.remap_virt_addr().unwrap();
-
         self.current_task = Some(next_task);
 
         let prev_ptr = &**self.sleeping_tasks.last().unwrap() as *const Task;
@@ -266,11 +252,37 @@ pub fn add_mem_frame(mem_frame: MemoryFrame) -> Result<()> {
     Ok(())
 }
 
+pub fn map_current_user_page(frame: &MemoryFrame) -> Result<()> {
+    let mut s = TASK_SCHED.spin_lock();
+    let task = s.current_task_mut()?;
+    let phys = frame.frame_start_phys_addr();
+    let start: VirtualAddress = phys.into();
+    let end = start.offset(frame.frame_size());
+    task.resource.page_table.map(
+        start,
+        end,
+        phys,
+        ReadWrite::Write,
+        PageWriteThroughLevel::WriteThrough,
+        false,
+    )?;
+    Ok(())
+}
+
+pub fn unmap_current_user_page(frame: &MemoryFrame) -> Result<()> {
+    let mut s = TASK_SCHED.spin_lock();
+    let task = s.current_task_mut()?;
+    let start: VirtualAddress = frame.frame_start_phys_addr().into();
+    let end = start.offset(frame.frame_size());
+    unsafe { task.resource.page_table.unmap(start, end) };
+    Ok(())
+}
+
 pub fn mem_frame_size(virt_addr: VirtualAddress) -> Result<Option<usize>> {
     let mut s = TASK_SCHED.spin_lock();
     let task = s.current_task_mut()?;
     for mem_frame in &task.resource.alloc_frames {
-        if mem_frame.frame_start_virt_addr()? == virt_addr {
+        if mem_frame.frame_start_virt_addr() == virt_addr {
             return Ok(Some(mem_frame.frame_size()));
         }
     }
@@ -282,7 +294,7 @@ pub fn remove_mem_frame(virt_addr: VirtualAddress) -> Result<MemoryFrame> {
     let allocated = &mut s.current_task_mut()?.resource.alloc_frames;
     if let Some(index) = allocated
         .iter()
-        .position(|info| info.frame_start_virt_addr().ok() == Some(virt_addr))
+        .position(|info| info.frame_start_virt_addr() == virt_addr)
     {
         return Ok(allocated.remove(index));
     }
