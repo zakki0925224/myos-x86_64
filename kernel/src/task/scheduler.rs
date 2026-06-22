@@ -124,6 +124,16 @@ impl TaskScheduler {
 
         (prev_ptr, next_ptr)
     }
+
+    fn try_sleep_current_waiting_for(
+        &mut self,
+        child_id: TaskId,
+    ) -> Option<(*const Task, *const Task)> {
+        if self.exit_codes.contains_key(&child_id) {
+            return None;
+        }
+        Some(self.sleep_current_waiting_for(child_id))
+    }
 }
 
 pub fn init() -> Result<()> {
@@ -161,9 +171,13 @@ pub fn spawn_user_task(
 
 pub fn sleep_waiting_for(child_id: TaskId) {
     let saved = Rflags::read_with_cli();
-    let (prev, next) = TASK_SCHED.spin_lock().sleep_current_waiting_for(child_id);
-    unsafe {
-        (*prev).switch_to(&*next);
+    let pair = TASK_SCHED
+        .spin_lock()
+        .try_sleep_current_waiting_for(child_id);
+    if let Some((prev, next)) = pair {
+        unsafe {
+            (*prev).switch_to(&*next);
+        }
     }
     saved.write();
 }

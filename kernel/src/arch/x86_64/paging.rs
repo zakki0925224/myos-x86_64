@@ -10,6 +10,9 @@ use crate::{
     },
 };
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU64, Ordering};
+
+static KERNEL_PML4_PHYS: AtomicU64 = AtomicU64::new(0);
 
 const PAGE_TABLE_ENTRY_LEN: usize = 512;
 pub const PAGE_SIZE: usize = 4096;
@@ -263,28 +266,41 @@ pub struct UserPageTable {
     allocated_frames: Vec<MemoryFrame>,
 }
 
-unsafe fn clone_subtree(
-    src: *const PageTable,
-    depth: usize,
-    allocated: &mut Vec<MemoryFrame>,
-) -> Result<u64> {
+unsafe fn clone_table_entries(src: *const PageTable) -> Result<MemoryFrame> {
     let frame = bitmap::alloc_mem_frame(1)?;
-    frame.zero_out()?;
-    let phys = frame.frame_start_phys_addr();
     let dst = frame.frame_start_virt_addr().as_ptr_mut::<PageTable>();
-    allocated.push(frame);
+    (*dst).entries = (*src).entries;
+    Ok(frame)
+}
 
-    for i in 0..PAGE_TABLE_ENTRY_LEN {
-        let entry = (*src).entries[i];
-        (*dst).entries[i] = entry;
-        if !entry.p() || entry.page_size() || depth == 1 {
-            continue;
+unsafe fn ensure_task_table(
+    owned: &mut Vec<MemoryFrame>,
+    pte: &mut PageTableEntry,
+    rw: ReadWrite,
+    pwt: PageWriteThroughLevel,
+    pcd: bool,
+) -> Result<()> {
+    if !pte.p() {
+        let frame = bitmap::alloc_mem_frame(1)?;
+        frame.zero_out()?;
+        pte.set_entry(frame.frame_start_phys_addr(), rw, EntryMode::User, pwt, pcd);
+        owned.push(frame);
+    } else {
+        let phys = pte.addr();
+        let is_owned = owned.iter().any(|f| f.frame_start_phys_addr() == phys);
+        if !is_owned {
+            let frame = clone_table_entries(phys as *const PageTable)?;
+            pte.set_addr(frame.frame_start_phys_addr());
+            owned.push(frame);
         }
-        let child_phys = clone_subtree(entry.addr() as *const PageTable, depth - 1, allocated)?;
-        (*dst).entries[i].set_addr(child_phys);
+        if pte.rw() < rw {
+            pte.set_rw(rw);
+        }
+        if pte.us() < EntryMode::User {
+            pte.set_us(EntryMode::User);
+        }
     }
-
-    Ok(phys)
+    Ok(())
 }
 
 impl Drop for UserPageTable {
@@ -311,37 +327,21 @@ impl UserPageTable {
     }
 
     pub fn new_cloned_from_kernel() -> Result<Self> {
-        let mut table = Self::new()?;
+        let this = Self::new()?;
 
         unsafe {
             let kernel_pml4 = &*kernel_page_table();
-            let user_pml4 = table
+            let user_pml4 = this
                 .pml4_frame
                 .as_ref()
                 .unwrap()
                 .frame_start_virt_addr()
                 .as_ptr_mut::<PageTable>();
 
-            for i in 0..PAGE_TABLE_ENTRY_LEN {
-                let entry = kernel_pml4.entries[i];
-                if !entry.p() {
-                    continue;
-                }
-                if entry.page_size() {
-                    (*user_pml4).entries[i] = entry;
-                    continue;
-                }
-                let cloned_phys = clone_subtree(
-                    entry.addr() as *const PageTable,
-                    3,
-                    &mut table.allocated_frames,
-                )?;
-                (*user_pml4).entries[i] = entry;
-                (*user_pml4).entries[i].set_addr(cloned_phys);
-            }
+            (*user_pml4).entries = kernel_pml4.entries;
         }
 
-        Ok(table)
+        Ok(this)
     }
 
     pub fn pml4_phys_addr(&self) -> u64 {
@@ -401,37 +401,50 @@ impl UserPageTable {
         pwt: PageWriteThroughLevel,
         pcd: bool,
     ) -> Result<()> {
-        let pml4_table_ptr: *mut PageTable = self
+        let pml4_ptr: *mut PageTable = self
             .pml4_frame
             .as_ref()
             .unwrap()
             .frame_start_virt_addr()
             .as_ptr_mut();
-        map(
-            unsafe { &mut *pml4_table_ptr },
-            start,
-            end,
-            phys_addr,
-            rw,
-            EntryMode::User,
-            pwt,
-            pcd,
-            &mut || bitmap::alloc_mem_frame(1),
-            |frame| self.allocated_frames.push(frame),
-        )
+
+        for i in (start.get()..end.get()).step_by(PAGE_SIZE) {
+            let virt = VirtualAddress::new(i);
+            let page_phys = phys_addr + (i - start.get());
+
+            unsafe {
+                let pml4e = &mut (*pml4_ptr).entries[virt.pml4_entry_index()];
+                ensure_task_table(&mut self.allocated_frames, pml4e, rw, pwt, pcd)?;
+
+                let pml3_ptr = pml4e.addr() as *mut PageTable;
+                let pml3e = &mut (*pml3_ptr).entries[virt.pml3_entry_index()];
+                ensure_task_table(&mut self.allocated_frames, pml3e, rw, pwt, pcd)?;
+
+                let pml2_ptr = pml3e.addr() as *mut PageTable;
+                let pml2e = &mut (*pml2_ptr).entries[virt.pml2_entry_index()];
+                ensure_task_table(&mut self.allocated_frames, pml2e, rw, pwt, pcd)?;
+
+                let pml1_ptr = pml2e.addr() as *mut PageTable;
+                (*pml1_ptr).entries[virt.pml1_entry_index()].set_entry(
+                    page_phys,
+                    rw,
+                    EntryMode::User,
+                    pwt,
+                    pcd,
+                );
+            }
+        }
+
+        Ok(())
     }
 }
 
 pub unsafe fn kernel_page_table() -> *const PageTable {
-    let cr3 = Cr3::read();
-    let ptr = cr3.raw() as *const PageTable;
-    ptr
+    KERNEL_PML4_PHYS.load(Ordering::Acquire) as *const PageTable
 }
 
 unsafe fn kernel_page_table_mut() -> *mut PageTable {
-    let cr3 = Cr3::read();
-    let ptr_mut = cr3.raw() as *mut PageTable;
-    ptr_mut
+    KERNEL_PML4_PHYS.load(Ordering::Acquire) as *mut PageTable
 }
 
 pub fn kernel_init(start: VirtualAddress, end: VirtualAddress) -> Result<()> {
@@ -452,9 +465,11 @@ pub fn kernel_init(start: VirtualAddress, end: VirtualAddress) -> Result<()> {
         |mut frame| frame.leak(),
     )?;
 
+    let pml4_phys = pml4_frame.frame_start_phys_addr();
     let mut cr3 = Cr3::read();
-    cr3.set_raw(pml4_frame.frame_start_phys_addr());
+    cr3.set_raw(pml4_phys);
     cr3.write();
+    KERNEL_PML4_PHYS.store(pml4_phys, Ordering::Release);
     pml4_frame.leak();
 
     Ok(())
