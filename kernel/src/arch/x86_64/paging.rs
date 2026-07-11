@@ -260,12 +260,6 @@ fn map(
     Ok(())
 }
 
-#[derive(Debug)]
-pub struct UserPageTable {
-    pml4_frame: Option<MemoryFrame>,
-    allocated_frames: Vec<MemoryFrame>,
-}
-
 unsafe fn clone_table_entries(src: *const PageTable) -> Result<MemoryFrame> {
     let frame = bitmap::alloc_mem_frame(1)?;
     let dst = frame.frame_start_virt_addr().as_ptr_mut::<PageTable>();
@@ -301,6 +295,12 @@ unsafe fn ensure_task_table(
         }
     }
     Ok(())
+}
+
+#[derive(Debug)]
+pub struct UserPageTable {
+    pml4_frame: Option<MemoryFrame>,
+    allocated_frames: Vec<MemoryFrame>,
 }
 
 impl Drop for UserPageTable {
@@ -346,16 +346,6 @@ impl UserPageTable {
 
     pub fn pml4_phys_addr(&self) -> u64 {
         self.pml4_frame.as_ref().unwrap().frame_start_phys_addr()
-    }
-
-    pub unsafe fn as_page_table(&self) -> &PageTable {
-        &*(self.pml4_phys_addr() as *const PageTable)
-    }
-
-    pub unsafe fn activate(&self) {
-        let mut cr3 = Cr3::read();
-        cr3.set_raw(self.pml4_phys_addr());
-        cr3.write();
     }
 
     pub unsafe fn unmap(&mut self, start: VirtualAddress, end: VirtualAddress) {
@@ -496,25 +486,6 @@ pub unsafe fn kernel_map(
     )
 }
 
-pub unsafe fn kernel_remap(
-    start: VirtualAddress,
-    end: VirtualAddress,
-    rw: ReadWrite,
-    pwt: PageWriteThroughLevel,
-    pcd: bool,
-) -> Result<()> {
-    remap(
-        kernel_page_table_mut(),
-        start,
-        end,
-        start.get(),
-        rw,
-        EntryMode::Supervisor,
-        pwt,
-        pcd,
-    )
-}
-
 pub unsafe fn lookup_pte(
     pml4_table: &PageTable,
     virt_addr: VirtualAddress,
@@ -542,72 +513,7 @@ pub unsafe fn lookup_pte(
     Some(pte)
 }
 
-unsafe fn lookup_pte_mut(
-    pml4_table: &mut PageTable,
-    virt_addr: VirtualAddress,
-) -> Option<&mut PageTableEntry> {
-    let pte = &pml4_table.entries[virt_addr.pml4_entry_index()];
-    if !pte.p() {
-        return None;
-    }
-
-    let pte = &pte.page_table()?.entries[virt_addr.pml3_entry_index()];
-    if !pte.p() {
-        return None;
-    }
-
-    let pte = &pte.page_table()?.entries[virt_addr.pml2_entry_index()];
-    if !pte.p() {
-        return None;
-    }
-
-    let pte = &mut pte.page_table_mut()?.entries[virt_addr.pml1_entry_index()];
-    if !pte.p() {
-        return None;
-    }
-
-    Some(pte)
-}
-
 pub unsafe fn calc_phys_addr(pml4_table: &PageTable, virt_addr: VirtualAddress) -> Option<u64> {
     let pte = lookup_pte(pml4_table, virt_addr)?;
     Some(pte.addr() | virt_addr.get() & 0xfff)
-}
-
-pub unsafe fn remap(
-    pml4_table: *mut PageTable,
-    start: VirtualAddress,
-    end: VirtualAddress,
-    phys_addr: u64,
-    rw: ReadWrite,
-    us: EntryMode,
-    pwt: PageWriteThroughLevel,
-    pcd: bool,
-) -> Result<()> {
-    if start.get() % PAGE_SIZE as u64 != 0 {
-        return Err(PageError::AddressNotAlignedByPageSize(start.get()).into());
-    }
-
-    if end.get() % PAGE_SIZE as u64 != 0 {
-        return Err(PageError::AddressNotAlignedByPageSize(end.get()).into());
-    }
-
-    if phys_addr % PAGE_SIZE as u64 != 0 {
-        return Err(PageError::AddressNotAlignedByPageSize(phys_addr).into());
-    }
-
-    let pml4_table = unsafe { &mut *pml4_table };
-
-    for i in (start.get()..end.get()).step_by(PAGE_SIZE) {
-        let virt_addr: VirtualAddress = i.into();
-
-        let pte_mut = lookup_pte_mut(pml4_table, virt_addr).ok_or(PageError::PageNotMapped)?;
-        pte_mut.set_rw(rw);
-        pte_mut.set_us(us);
-        pte_mut.set_pwt(pwt);
-        pte_mut.set_pcd(pcd);
-        pte_mut.set_addr(phys_addr + (i - start.get()));
-    }
-
-    Ok(())
 }

@@ -142,6 +142,11 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     env::print_info();
     mem::debug_usage();
 
+    // initialize scheduler
+    scheduler::init().unwrap();
+
+    // do not spawn async tasks before initialize scheduler
+    // because kernel task id must be 0
     async_task::spawn_with_priority(graphics(), Priority::High).unwrap();
     async_task::spawn_with_priority(poll_ps2_mouse(), Priority::High).unwrap();
     async_task::spawn(poll_ps2_keyboard()).unwrap();
@@ -150,9 +155,6 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     async_task::spawn(poll_uart()).unwrap();
     async_task::spawn_with_priority(poll_rtl8139(), Priority::Low).unwrap();
     async_task::ready().unwrap();
-
-    // initialize scheduler
-    scheduler::init().unwrap();
 
     // execute init app
     let init_app_exec_args = boot_info.kernel_config.init_app_exec_args;

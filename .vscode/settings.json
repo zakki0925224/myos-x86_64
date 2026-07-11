@@ -15,5 +15,20 @@
         "third-party/qemu/**": true,
         "build/**": true,
         "dump/**": true
-    }
+    },
+    "files.exclude": {
+        "**/target": true,
+        "third-party/qemu": true,
+        "build": true,
+        "dump": true
+    },
+    "search.exclude": {
+        "**/target": true,
+        "third-party/qemu": true,
+        "build": true,
+        "dump": true
+    },
+    "git.ignoredRepositories": [
+        "third-party/qemu"
+    ]
 }

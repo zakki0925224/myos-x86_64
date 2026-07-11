@@ -9,13 +9,16 @@ use crate::{
     },
     debug::dwarf::Dwarf,
     error::{Error, Result},
-    fs::vfs::{self, *},
+    fs::{
+        path::Path,
+        vfs::{self, *},
+    },
     graphics::{multi_layer::LayerId, window_manager},
     kdebug,
     mem::bitmap::{self, MemoryFrame},
     util,
 };
-use alloc::vec::Vec;
+use alloc::{string::String, vec::Vec};
 use common::elf::{self, Elf64};
 use core::{
     fmt,
@@ -39,6 +42,8 @@ impl fmt::Display for TaskId {
 }
 
 impl TaskId {
+    pub const KERNEL: Self = Self(0);
+
     fn new() -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         Self(NEXT.fetch_add(1, Ordering::Relaxed))
@@ -131,11 +136,14 @@ impl TaskState {
 #[derive(Debug)]
 struct Task {
     id: TaskId,
+    name: String,
     state: TaskState,
     context: Context,
     resource: TaskResource,
     dwarf: Option<Dwarf>,
     waiting_for: Option<TaskId>,
+    parent: Option<TaskId>,
+    children: Vec<TaskId>,
 }
 
 impl Drop for Task {
@@ -146,6 +154,7 @@ impl Drop for Task {
 
 impl Task {
     fn new(
+        parent: Option<TaskId>,
         stack_size: usize, // 4KiB align
         elf64: Option<Elf64>,
         args: Option<&[&str]>, // file name + args
@@ -303,6 +312,8 @@ impl Task {
             arg1 = args_mem_virt_addr.get();
         }
 
+        let name = Path::new(args.unwrap_or(&["/kernel"])[0]).name();
+
         // context
         let cr3 = match mode {
             ContextMode::User => user_page_table.pml4_phys_addr(),
@@ -314,6 +325,7 @@ impl Task {
 
         Ok(Self {
             id: TaskId::new(),
+            name,
             state: TaskState::default(),
             context,
             resource: TaskResource::new(
@@ -325,6 +337,8 @@ impl Task {
             ),
             dwarf,
             waiting_for: None,
+            parent,
+            children: Vec::new(),
         })
     }
 

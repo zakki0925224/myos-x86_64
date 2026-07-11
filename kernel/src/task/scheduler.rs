@@ -50,14 +50,29 @@ impl TaskScheduler {
             .ok_or(Error::NotInitialized.with_context("current task"))
     }
 
+    fn find_task_mut(&mut self, id: TaskId) -> Option<&mut Task> {
+        if let Some(task) = self.ready_queue.iter_mut().find(|t| t.id == id) {
+            return Some(task.as_mut());
+        }
+
+        if let Some(task) = self.sleeping_tasks.iter_mut().find(|t| t.id == id) {
+            return Some(task.as_mut());
+        }
+
+        None
+    }
+
     fn spawn(&mut self, task: Task) {
         self.ready_queue.push_back(Box::new(task));
     }
 
     fn pick_next_task(&mut self) -> Option<(*const Task, *const Task)> {
-        let prev_task = self.current_task.take()?;
+        let mut prev_task = self.current_task.take()?;
 
-        if let Some(next_task) = self.ready_queue.pop_front() {
+        if let Some(mut next_task) = self.ready_queue.pop_front() {
+            prev_task.state = TaskState::Ready;
+            next_task.state = TaskState::Running;
+
             self.ready_queue.push_back(prev_task);
             self.current_task = Some(next_task);
 
@@ -80,6 +95,22 @@ impl TaskScheduler {
 
         current.state = TaskState::Exited(exit_code);
 
+        if let Some(parent_id) = current.parent {
+            if let Some(parent_task) = self.find_task_mut(parent_id) {
+                parent_task.children.retain(|id| *id != exiting_id);
+            }
+        }
+
+        let new_parent_id = current.parent.unwrap_or(TaskId::KERNEL);
+        for child_id in current.children.drain(..) {
+            if let Some(child_task) = self.find_task_mut(child_id) {
+                child_task.parent = Some(new_parent_id);
+            }
+            if let Some(new_parent_task) = self.find_task_mut(new_parent_id) {
+                new_parent_task.children.push(child_id);
+            }
+        }
+
         let old = core::mem::take(&mut self.exited_tasks);
         self.exited_tasks.push(current);
         self.exit_codes.insert(exiting_id, exit_code);
@@ -95,10 +126,11 @@ impl TaskScheduler {
             self.ready_queue.push_front(waiter);
         }
 
-        let next_task = self
+        let mut next_task = self
             .ready_queue
             .pop_front()
             .expect("No task to run after exit");
+        next_task.state = TaskState::Running;
         self.current_task = Some(next_task);
 
         let prev_ptr = &**self.exited_tasks.last().unwrap() as *const Task;
@@ -113,10 +145,11 @@ impl TaskScheduler {
         current.state = TaskState::Sleeping;
         self.sleeping_tasks.push(current);
 
-        let next_task = self
+        let mut next_task = self
             .ready_queue
             .pop_front()
             .expect("No task to run after sleep");
+        next_task.state = TaskState::Running;
         self.current_task = Some(next_task);
 
         let prev_ptr = &**self.sleeping_tasks.last().unwrap() as *const Task;
@@ -137,13 +170,19 @@ impl TaskScheduler {
 }
 
 pub fn init() -> Result<()> {
-    let kernel_task = Task::new(0, None, None, ContextMode::Kernel, None, [None, None, None])?;
+    let mut kernel_task = Task::new(
+        None,
+        0,
+        None,
+        None,
+        ContextMode::Kernel,
+        None,
+        [None, None, None],
+    )?;
+    assert!(kernel_task.id == TaskId::KERNEL);
+    kernel_task.state = TaskState::Running;
     TASK_SCHED.spin_lock().current_task = Some(Box::new(kernel_task));
     Ok(())
-}
-
-pub fn spawn(task: Task) {
-    TASK_SCHED.spin_lock().spawn(task)
 }
 
 pub fn spawn_user_task(
@@ -155,7 +194,11 @@ pub fn spawn_user_task(
 ) -> Result<TaskId> {
     let path_string = path.to_string();
     let all_args: Vec<&str> = [&[path_string.as_str()], args].concat();
+    let parent_id = current()
+        .ok_or(Error::NotFound.with_context("current task"))?
+        .id;
     let task = Task::new(
+        Some(parent_id),
         super::USER_TASK_STACK_SIZE,
         Some(elf64),
         Some(&all_args),
@@ -165,7 +208,10 @@ pub fn spawn_user_task(
     )?;
 
     let id = task.id;
-    TASK_SCHED.spin_lock().spawn(task);
+    let mut s = TASK_SCHED.spin_lock();
+    s.spawn(task);
+    s.current_task_mut()?.children.push(id);
+
     Ok(id)
 }
 
@@ -403,18 +449,44 @@ pub fn preempt_sched(interrupted: &InterruptedContext) -> *const Context {
 #[test_case]
 fn test_multitask_scheduler_round_robin() {
     let mut sched = TaskScheduler::new();
-    let kernel_task =
-        Task::new(0, None, None, ContextMode::Kernel, None, [None, None, None]).unwrap();
+    let kernel_task = Task::new(
+        None,
+        0,
+        None,
+        None,
+        ContextMode::Kernel,
+        None,
+        [None, None, None],
+    )
+    .unwrap();
     sched.current_task = Some(Box::new(kernel_task));
 
     // current: KernelTask(TID: 0)
     // ReadyQueue: []
 
-    let t1 = Task::new(0, None, None, ContextMode::Kernel, None, [None, None, None]).unwrap();
+    let t1 = Task::new(
+        None,
+        0,
+        None,
+        None,
+        ContextMode::Kernel,
+        None,
+        [None, None, None],
+    )
+    .unwrap();
     let t1_id = t1.id;
     sched.spawn(t1);
 
-    let t2 = Task::new(0, None, None, ContextMode::Kernel, None, [None, None, None]).unwrap();
+    let t2 = Task::new(
+        None,
+        0,
+        None,
+        None,
+        ContextMode::Kernel,
+        None,
+        [None, None, None],
+    )
+    .unwrap();
     let t2_id = t2.id;
     sched.spawn(t2);
 
@@ -462,11 +534,28 @@ fn test_multitask_scheduler_round_robin() {
 #[test_case]
 fn test_multitask_scheduler_exit() {
     let mut sched = TaskScheduler::new();
-    let kernel_task =
-        Task::new(0, None, None, ContextMode::Kernel, None, [None, None, None]).unwrap();
+    let kernel_task = Task::new(
+        None,
+        0,
+        None,
+        None,
+        ContextMode::Kernel,
+        None,
+        [None, None, None],
+    )
+    .unwrap();
     sched.current_task = Some(Box::new(kernel_task));
 
-    let t1 = Task::new(0, None, None, ContextMode::Kernel, None, [None, None, None]).unwrap();
+    let t1 = Task::new(
+        None,
+        0,
+        None,
+        None,
+        ContextMode::Kernel,
+        None,
+        [None, None, None],
+    )
+    .unwrap();
     let t1_id = t1.id;
     sched.spawn(t1);
 

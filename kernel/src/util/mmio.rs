@@ -79,7 +79,7 @@ impl<T: Sized> IoBox<T> {
 
         // disable cache
         let start: VirtualAddress = (this.as_ref() as *const T as u64).into();
-        let end = start.offset(size_of::<T>().div_ceil(PAGE_SIZE));
+        let end = start.offset(size_of::<T>().div_ceil(PAGE_SIZE) * PAGE_SIZE);
 
         unsafe {
             paging::kernel_map(
@@ -89,6 +89,7 @@ impl<T: Sized> IoBox<T> {
                 PageWriteThroughLevel::WriteThrough,
                 true, // disable cache
             )
+            .unwrap();
         };
 
         this
