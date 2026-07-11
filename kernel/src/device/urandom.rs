@@ -16,8 +16,6 @@ struct UrandomDriver {
 }
 
 impl UrandomDriver {
-    const DEFAULT_SIZE: usize = 256;
-
     const fn new() -> Self {
         Self {
             device_driver_info: DeviceDriverInfo::new("urandom"),
@@ -67,10 +65,10 @@ impl DeviceDriverFunction for UrandomDriver {
         Ok(())
     }
 
-    fn read(&mut self) -> Result<Vec<u8>> {
+    fn read(&mut self, _offset: usize, max_len: usize) -> Result<Vec<u8>> {
         let uptime_durtion = device::local_apic_timer::global_uptime();
         let seed = uptime_durtion.as_nanos() as u64;
-        let buf = util::random::random_bytes_pcg32(Self::DEFAULT_SIZE, seed);
+        let buf = util::random::random_bytes_pcg32(max_len, seed);
         Ok(buf)
     }
 
@@ -103,9 +101,9 @@ pub fn close() -> Result<()> {
     driver.close()
 }
 
-pub fn read() -> Result<Vec<u8>> {
+pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
     let mut driver = URANDOM_DRIVER.try_lock()?;
-    driver.read()
+    driver.read(offset, max_len)
 }
 
 pub fn write(data: &[u8]) -> Result<()> {

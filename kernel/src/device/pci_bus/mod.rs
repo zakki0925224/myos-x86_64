@@ -196,7 +196,7 @@ impl DeviceDriverFunction for PciBusDriver {
         Ok(())
     }
 
-    fn read(&mut self) -> Result<Vec<u8>> {
+    fn read(&mut self, offset: usize, max_len: usize) -> Result<Vec<u8>> {
         let mut s = String::new();
 
         for d in &self.pci_devices {
@@ -209,7 +209,10 @@ impl DeviceDriverFunction for PciBusDriver {
             s.push_str(&format!(" {:?} - {}\n", header_type, device_name));
         }
 
-        Ok(s.into_bytes())
+        let bytes = s.into_bytes();
+        let start = offset.min(bytes.len());
+        let end = start.saturating_add(max_len).min(bytes.len());
+        Ok(bytes[start..end].to_vec())
     }
 
     fn write(&mut self, _data: &[u8]) -> Result<()> {
@@ -242,8 +245,8 @@ pub fn close() -> Result<()> {
     PCI_BUS_DRIVER.try_lock()?.close()
 }
 
-pub fn read() -> Result<Vec<u8>> {
-    PCI_BUS_DRIVER.try_lock()?.read()
+pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
+    PCI_BUS_DRIVER.try_lock()?.read(offset, max_len)
 }
 
 pub fn write(data: &[u8]) -> Result<()> {

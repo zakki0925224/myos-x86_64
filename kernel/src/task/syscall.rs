@@ -418,7 +418,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
         }
         FileDescriptorNumber::STDIN => {
             if let Some(fd_num) = task::scheduler::current_pipe_fd().and_then(|fds| fds[0]) {
-                let data = vfs::read_file(fd_num)?;
+                let data = vfs::read_file(fd_num, buf_len)?;
                 unsafe {
                     buf.copy_from_nonoverlapping(data.as_ptr(), data.len());
                 }
@@ -479,15 +479,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
             }
         }
         fd => {
-            let data = vfs::read_file(fd)?;
-
-            if buf_len < data.len() {
-                return Err(Error::InvalidBufferSize {
-                    required: data.len(),
-                    actual: buf_len,
-                }
-                .into());
-            }
+            let data = vfs::read_file(fd, buf_len)?;
 
             unsafe {
                 buf.copy_from_nonoverlapping(data.as_ptr(), data.len());

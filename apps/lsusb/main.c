@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <stdlib.h>
 
 int main(int argc, char* argv[]) {
     FILE* file = fopen("/dev/usb-bus", "r");
@@ -9,22 +8,14 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    size_t file_size = file->stat->size;
-
-    char* f_buf = (char*)malloc(file_size + 1);
-    if (f_buf == NULL) {
-        printf("lsusb: failed to allocate memory\n");
-        fclose(file);
-        return -1;
+    char chunk[512];
+    size_t n;
+    while ((n = fread(chunk, 1, sizeof(chunk), file)) > 0) {
+        fwrite(chunk, 1, n, stdout);
     }
 
-    fread(f_buf, 1, file_size, file);
+    printf("\n");
     fclose(file);
-
-    f_buf[file_size] = '\0';
-    printf("%s\n", f_buf);
-
-    free(f_buf);
 
     return 0;
 }

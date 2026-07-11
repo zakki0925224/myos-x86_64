@@ -47,8 +47,8 @@ pub trait DeviceDriverFunction {
     fn open(&mut self) -> Result<()>;
     // close device
     fn close(&mut self) -> Result<()>;
-    // read data from device
-    fn read(&mut self) -> Result<Vec<u8>>;
+    // read up to `max_len` bytes starting at `offset` from device
+    fn read(&mut self, offset: usize, max_len: usize) -> Result<Vec<u8>>;
     // write data to device
     fn write(&mut self, data: &[u8]) -> Result<()>;
 }

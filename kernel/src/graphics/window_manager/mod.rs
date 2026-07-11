@@ -100,7 +100,7 @@ impl WindowManager {
         if self.mouse_pointer.is_none() {
             let mouse_pointer_bmp_fd =
                 vfs::open_file(&((&self.mouse_pointer_bmp_path).into()), false)?;
-            let bmp_data = vfs::read_file(mouse_pointer_bmp_fd)?;
+            let bmp_data = vfs::read_file(mouse_pointer_bmp_fd, usize::MAX)?;
             let pointer_bmp = BitmapImage::new(&bmp_data);
             vfs::close_file(mouse_pointer_bmp_fd)?;
             self.create_mouse_pointer(&pointer_bmp)?;

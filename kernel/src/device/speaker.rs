@@ -111,7 +111,7 @@ impl DeviceDriverFunction for SpeakerDriver {
         Ok(())
     }
 
-    fn read(&mut self) -> Result<Vec<u8>> {
+    fn read(&mut self, _offset: usize, _max_len: usize) -> Result<Vec<u8>> {
         Ok(Vec::new())
     }
 
@@ -148,8 +148,8 @@ pub fn close() -> Result<()> {
     SPEAKER_DRIVER.try_lock()?.close()
 }
 
-pub fn read() -> Result<Vec<u8>> {
-    SPEAKER_DRIVER.try_lock()?.read()
+pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
+    SPEAKER_DRIVER.try_lock()?.read(offset, max_len)
 }
 
 pub fn write(data: &[u8]) -> Result<()> {

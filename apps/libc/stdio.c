@@ -11,9 +11,9 @@ static f_stat __stdin_stat = {.size = 0};
 static f_stat __stdout_stat = {.size = 0};
 static f_stat __stderr_stat = {.size = 0};
 
-static FILE __stdin = {.fd = FDN_STDIN, .stat = &__stdin_stat, .buf = NULL, .pos = 0, .flags = 0};
-static FILE __stdout = {.fd = FDN_STDOUT, .stat = &__stdout_stat, .buf = NULL, .pos = 0, .flags = 0};
-static FILE __stderr = {.fd = FDN_STDERR, .stat = &__stderr_stat, .buf = NULL, .pos = 0, .flags = 0};
+static FILE __stdin = {.fd = FDN_STDIN, .stat = &__stdin_stat, .pos = 0, .flags = 0};
+static FILE __stdout = {.fd = FDN_STDOUT, .stat = &__stdout_stat, .pos = 0, .flags = 0};
+static FILE __stderr = {.fd = FDN_STDERR, .stat = &__stderr_stat, .pos = 0, .flags = 0};
 
 // line buffer for stdin.
 #define STDIN_LINE_BUF_SIZE 512
@@ -57,7 +57,6 @@ FILE* fopen(const char* filepath, const char* mode) {
 
     FILE* file = (FILE*)malloc(sizeof(FILE));
     file->fd = fd;
-    file->buf = NULL;
     file->stat = stat;
     file->pos = 0;
     file->flags = 0;
@@ -71,9 +70,6 @@ int fclose(FILE* stream) {
     int64_t res = sys_close(stream->fd);
     if (res == -1)
         return -1;
-
-    if (stream->buf != NULL)
-        free(stream->buf);
 
     if (stream->stat != NULL)
         free(stream->stat);
@@ -93,15 +89,7 @@ int fflush(FILE* stream) {
     if (stream == NULL)
         return -1;
 
-    if (stream->buf == NULL || stream->pos == 0)
-        return 0;
-
-    int ret = sys_write(stream->fd, stream->buf, stream->pos);
-    if (ret == -1)
-        return -1;
-    free(stream->buf);
-    stream->buf = NULL;
-    stream->pos = 0;
+    // no-op
     return 0;
 }
 
@@ -170,60 +158,63 @@ size_t fread(void* buf, size_t size, size_t count, FILE* stream) {
         return read_bytes / size;
     }
 
-    size_t f_size = stream->stat->size;
-
-    if (stream->buf == NULL) {
-        stream->buf = (char*)malloc(f_size);
-        if (stream->buf == NULL)
-            return 0;
-
-        if (sys_read(stream->fd, stream->buf, f_size) == -1) {
-            free(stream->buf);
-            return 0;
-        }
+    size_t total = size * count;
+    int ret = sys_read(stream->fd, buf, total);
+    if (ret <= 0) {
+        stream->flags |= _FILE_EOF_FLAG;
+        return 0;
     }
 
-    size_t remaining = f_size - stream->pos;
-    size_t bytes_to_read = size * count > remaining ? remaining : size * count;
+    stream->pos += ret;
 
-    memcpy(buf, stream->buf + stream->pos, bytes_to_read);
-    stream->pos += bytes_to_read;
-
-    if (bytes_to_read < size * count) {
+    if ((size_t)ret < total) {
         stream->flags |= _FILE_EOF_FLAG;
     }
 
-    return bytes_to_read / size;
+    return (size_t)ret / size;
 }
 
 int fseek(FILE* stream, long int offset, int whence) {
-    if (stream == NULL)
+    if (stream == NULL || stream->fd == FDN_STDIN)
         return -1;
 
-    // fseek clears EOF flag
-    stream->flags &= ~_FILE_EOF_FLAG;
+    long int f_size = (long int)stream->stat->size;
+    long int target;
 
-    size_t f_size = stream->stat->size;
     switch (whence) {
         case SEEK_SET:
-            if (offset < 0 || offset > f_size)
-                return -1;
-            stream->pos = offset;
+            target = offset;
             break;
         case SEEK_CUR:
-            if (stream->pos + offset < 0 || stream->pos + offset > f_size)
-                return -1;
-            stream->pos += offset;
+            target = stream->pos + offset;
             break;
         case SEEK_END:
-            if (f_size + offset < 0)
-                return -1;
-            stream->pos = f_size + offset;
+            target = f_size + offset;
             break;
         default:
             return -1;
     }
 
+    if (target < 0 || target > f_size)
+        return -1;
+
+    if (target < stream->pos)
+        return -1;
+
+    char scratch[64];
+    while (stream->pos < target) {
+        size_t chunk = (size_t)(target - stream->pos);
+        if (chunk > sizeof(scratch))
+            chunk = sizeof(scratch);
+
+        int ret = sys_read(stream->fd, scratch, chunk);
+        if (ret <= 0)
+            return -1;
+
+        stream->pos += ret;
+    }
+
+    stream->flags &= ~_FILE_EOF_FLAG;
     return 0;
 }
 
@@ -234,28 +225,16 @@ size_t fwrite(const void* buf, size_t size, size_t count, FILE* stream) {
     if (stream == NULL)
         return 0;
 
-    if (stream->fd == FDN_STDOUT || stream->fd == FDN_STDERR) {
-        int res = sys_write(stream->fd, buf, size * count);
-        if (res == -1)
-            return 0;
-        return count;
+    size_t total = size * count;
+    int res = sys_write(stream->fd, buf, total);
+    if (res == -1)
+        return 0;
+
+    if (stream->fd != FDN_STDOUT && stream->fd != FDN_STDERR) {
+        stream->pos += res;
     }
 
-    size_t bytes_to_write = size * count;
-    if (stream->buf == NULL) {
-        stream->buf = (char*)malloc(bytes_to_write);
-        if (stream->buf == NULL)
-            return 0;
-    } else {
-        stream->buf = (char*)realloc(stream->buf, stream->pos + bytes_to_write);
-        if (stream->buf == NULL)
-            return 0;
-    }
-
-    memcpy(stream->buf + stream->pos, buf, bytes_to_write);
-    stream->pos += bytes_to_write;
-
-    return count;
+    return (size_t)res / size;
 }
 
 int setvbuf(FILE* stream, char* buf, int mode, size_t size) {

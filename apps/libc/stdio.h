@@ -25,7 +25,6 @@ typedef struct
 {
     int fd;
     f_stat* stat;
-    char* buf;
     long int pos;
     int flags;
 } FILE;

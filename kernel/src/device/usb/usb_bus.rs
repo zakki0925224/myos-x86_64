@@ -210,7 +210,7 @@ impl DeviceDriverFunction for UsbBusDriver {
         Ok(())
     }
 
-    fn read(&mut self) -> Result<Vec<u8>> {
+    fn read(&mut self, offset: usize, max_len: usize) -> Result<Vec<u8>> {
         let mut s = String::new();
 
         for d in &self.usb_devices {
@@ -228,7 +228,10 @@ impl DeviceDriverFunction for UsbBusDriver {
             ));
         }
 
-        Ok(s.into_bytes())
+        let bytes = s.into_bytes();
+        let start = offset.min(bytes.len());
+        let end = start.saturating_add(max_len).min(bytes.len());
+        Ok(bytes[start..end].to_vec())
     }
 
     fn write(&mut self, _data: &[u8]) -> Result<()> {
@@ -259,9 +262,9 @@ pub fn close() -> Result<()> {
     driver.close()
 }
 
-pub fn read() -> Result<Vec<u8>> {
+pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
     let mut driver = USB_BUS_DRIVER.try_lock()?;
-    driver.read()
+    driver.read(offset, max_len)
 }
 
 pub fn write(data: &[u8]) -> Result<()> {

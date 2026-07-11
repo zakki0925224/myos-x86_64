@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <stdlib.h>
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -12,18 +11,14 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    size_t file_size = file->stat->size;
-    char* buf = (char*)malloc(file_size);
-    if (buf == NULL) {
-        printf("cat: failed to allocate memory\n");
-        fclose(file);
-        return -1;
+    char chunk[512];
+    size_t n;
+    while ((n = fread(chunk, 1, sizeof(chunk), file)) > 0) {
+        fwrite(chunk, 1, n, stdout);
     }
-    fread(buf, 1, file_size, file);
 
-    printf("%s\n", buf);
+    printf("\n");
     fclose(file);
-    free(buf);
 
     return 0;
 }

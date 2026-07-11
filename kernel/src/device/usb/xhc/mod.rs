@@ -970,7 +970,7 @@ impl DeviceDriverFunction for XhcDriver {
         unimplemented!()
     }
 
-    fn read(&mut self) -> Result<Vec<u8>> {
+    fn read(&mut self, _offset: usize, _max_len: usize) -> Result<Vec<u8>> {
         unimplemented!()
     }
 
@@ -1002,9 +1002,9 @@ pub fn close() -> Result<()> {
     driver.close()
 }
 
-pub fn read() -> Result<Vec<u8>> {
+pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
     let mut driver = XHC_DRIVER.try_lock()?;
-    driver.read()
+    driver.read(offset, max_len)
 }
 
 pub fn write(data: &[u8]) -> Result<()> {

@@ -57,16 +57,38 @@ impl Fat {
         Ok(dir.target_cluster_num)
     }
 
-    pub fn file(
+    pub fn metadata(
         &self,
         file_name: &str,
         current_dir_cluster_num: Option<usize>,
-    ) -> Result<(FileMetaData, Vec<u8>)> {
+    ) -> Result<FileMetaData> {
         let files = self.scan_dir(current_dir_cluster_num);
         let file = files
             .iter()
             .find(|f| f.attr == Attribute::Archive && f.name.trim() == file_name)
             .ok_or(Error::NotFound.with_context("file"))?;
+
+        Ok(file.clone())
+    }
+
+    pub fn metadata_by_abs_path(&self, path: &Path) -> Result<FileMetaData> {
+        let mut current_dir_cluster_num = self.root_cluster_num;
+        let path = path.normalize();
+        let parent_path = path.parent();
+
+        for dir_name in parent_path.names() {
+            current_dir_cluster_num = self.cluster_num(dir_name, Some(current_dir_cluster_num))?;
+        }
+
+        self.metadata(&path.name(), Some(current_dir_cluster_num))
+    }
+
+    pub fn file(
+        &self,
+        file_name: &str,
+        current_dir_cluster_num: Option<usize>,
+    ) -> Result<(FileMetaData, Vec<u8>)> {
+        let file = self.metadata(file_name, current_dir_cluster_num)?;
 
         let dir_entries = self
             .volume
@@ -74,7 +96,7 @@ impl Fat {
         let mut bytes: Vec<u8> = dir_entries.iter().flat_map(|de| *de.raw()).collect();
         bytes.resize(file.size, 0);
 
-        Ok((file.clone(), bytes))
+        Ok((file, bytes))
     }
 
     pub fn file_by_abs_path(&self, path: &Path) -> Result<(FileMetaData, Vec<u8>)> {

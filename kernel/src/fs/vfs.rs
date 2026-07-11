@@ -12,6 +12,7 @@ use alloc::{
     vec::Vec,
 };
 use core::{
+    cmp::min,
     fmt,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -23,7 +24,7 @@ pub struct DeviceFileDescriptor {
     pub device_driver_info: fn() -> Result<DeviceDriverInfo>,
     pub open: fn() -> Result<()>,
     pub close: fn() -> Result<()>,
-    pub read: fn() -> Result<Vec<u8>>,
+    pub read: fn(usize, usize) -> Result<Vec<u8>>,
     pub write: fn(&[u8]) -> Result<()>,
 }
 
@@ -101,7 +102,8 @@ enum FileDescriptorStatus {
 pub struct FileDescriptor {
     num: FileDescriptorNumber,
     status: FileDescriptorStatus,
-    file_id: VfsFileId,
+    id: VfsFileId,
+    offset: usize,
     pipe_end: Option<PipeEnd>,
 }
 
@@ -125,7 +127,7 @@ struct FileInfo {
     fs: Option<FileSystem>,
     parent: VfsFileId,
     children: Vec<VfsFileId>,
-    data: Option<Vec<u8>>,
+    buf: Option<Vec<u8>>,
     pipe_buf: Option<PipeBuffer>,
 }
 
@@ -137,33 +139,19 @@ impl FileInfo {
             fs: None,
             parent,
             children: Vec::new(),
-            data: None,
+            buf: None,
             pipe_buf: None,
         }
     }
 
     fn check_integrity(&self) -> Result<()> {
-        if self.ty != VfsFileType::Directory && !self.children.is_empty() {
-            return Err(VirtualFileSystemError::InvalidFileType {
-                ty: self.ty.clone(),
-                path: None,
-            }
-            .into());
+        if self.ty != VfsFileType::Directory && (!self.children.is_empty() || self.fs.is_some()) {
+            return Err(VirtualFileSystemError::invalid_type(&self.ty, None).into());
         }
 
-        if self.fs.is_some() && self.ty != VfsFileType::Directory {
-            return Err(VirtualFileSystemError::InvalidFileType {
-                ty: self.ty.clone(),
-                path: None,
-            }
-            .into());
-        }
-
-        if self.name.is_empty() {
-            return Err(VirtualFileSystemError::InvalidFileName.into());
-        }
-
-        if ["", Path::CURRENT_DIR, Path::PARENT_DIR].contains(&self.name.as_str()) {
+        if self.name.is_empty()
+            || [Path::CURRENT_DIR, Path::PARENT_DIR].contains(&self.name.as_str())
+        {
             return Err(VirtualFileSystemError::InvalidFileName.into());
         }
 
@@ -180,6 +168,15 @@ pub enum VirtualFileSystemError {
     ReleasedFileResource(FileDescriptorNumber),
     InvalidFileName,
     InvalidFileDescriptorNumber,
+}
+
+impl VirtualFileSystemError {
+    fn invalid_type(ty: &VfsFileType, path: Option<Path>) -> Self {
+        Self::InvalidFileType {
+            ty: ty.clone(),
+            path,
+        }
+    }
 }
 
 impl core::fmt::Display for VirtualFileSystemError {
@@ -342,11 +339,9 @@ impl VirtualFileSystem {
                     path.clone(),
                 )))?;
         if file_ref.ty != VfsFileType::Directory {
-            return Err(VirtualFileSystemError::InvalidFileType {
-                ty: file_ref.ty.clone(),
-                path: Some(path.clone()),
-            }
-            .into());
+            return Err(
+                VirtualFileSystemError::invalid_type(&file_ref.ty, Some(path.clone())).into(),
+            );
         }
 
         self.cwd_id = Some(file_id);
@@ -364,11 +359,9 @@ impl VirtualFileSystem {
         )?;
 
         if parent_ref.ty != VfsFileType::Directory {
-            return Err(VirtualFileSystemError::InvalidFileType {
-                ty: parent_ref.ty.clone(),
-                path: Some(path.clone()),
-            }
-            .into());
+            return Err(
+                VirtualFileSystemError::invalid_type(&parent_ref.ty, Some(path.clone())).into(),
+            );
         }
 
         let file_name = path.name();
@@ -407,11 +400,9 @@ impl VirtualFileSystem {
         )?;
 
         if mp_file_ref.ty != VfsFileType::Directory {
-            return Err(VirtualFileSystemError::InvalidFileType {
-                ty: mp_file_ref.ty.clone(),
-                path: Some(path.clone()),
-            }
-            .into());
+            return Err(
+                VirtualFileSystemError::invalid_type(&mp_file_ref.ty, Some(path.clone())).into(),
+            );
         }
 
         // mount point's children are removed
@@ -532,18 +523,16 @@ impl VirtualFileSystem {
             return Err(VirtualFileSystemError::NoSuchFileOrDirectory(Some(path.clone())).into());
         }
 
-        match &file_ref.ty {
-            VfsFileType::VirtualFile | VfsFileType::DeviceFile(_) => (),
-            _ => {
-                return Err(VirtualFileSystemError::InvalidFileType {
-                    ty: file_ref.ty.clone(),
-                    path: Some(path.clone()),
-                }
-                .into());
-            }
+        if !matches!(
+            file_ref.ty,
+            VfsFileType::VirtualFile | VfsFileType::DeviceFile(_)
+        ) {
+            return Err(
+                VirtualFileSystemError::invalid_type(&file_ref.ty, Some(path.clone())).into(),
+            );
         }
 
-        if let Some(fd) = self.fds.iter().find(|fd| fd.file_id == file_id) {
+        if let Some(fd) = self.fds.iter().find(|fd| fd.id == file_id) {
             return Err(VirtualFileSystemError::BlockingFileResource(fd.num).into());
         }
 
@@ -551,16 +540,13 @@ impl VirtualFileSystem {
         let fd = FileDescriptor {
             num: fd_num,
             status: FileDescriptorStatus::Open,
-            file_id,
+            id: file_id,
+            offset: 0,
             pipe_end: None,
         };
 
-        // device file
-        match &file_ref.ty {
-            VfsFileType::DeviceFile(desc) => {
-                (desc.open)()?;
-            }
-            _ => (),
+        if let VfsFileType::DeviceFile(desc) = &file_ref.ty {
+            (desc.open)()?;
         }
 
         self.fds.push(fd.clone());
@@ -569,17 +555,11 @@ impl VirtualFileSystem {
 
     fn close_file(&mut self, fd_num: FileDescriptorNumber) -> Result<()> {
         if let Some(index) = self.fds.iter().position(|f| f.num == fd_num) {
-            let file_id = self.fds[index].file_id;
-            let file_ref = self
-                .find_file(file_id)
-                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
+            let file_id = self.fds[index].id;
+            let file_ref = self.file_ref(file_id)?;
 
-            // device file
-            match &file_ref.ty {
-                VfsFileType::DeviceFile(desc) => {
-                    (desc.close)()?;
-                }
-                _ => (),
+            if let VfsFileType::DeviceFile(desc) = &file_ref.ty {
+                (desc.close)()?;
             }
 
             // pipe
@@ -600,39 +580,43 @@ impl VirtualFileSystem {
         Ok(())
     }
 
-    fn read_file(&mut self, fd_num: FileDescriptorNumber) -> Result<Vec<u8>> {
-        let fd = self
-            .fds
+    fn file_desc(&self, fd_num: FileDescriptorNumber) -> Result<&FileDescriptor> {
+        self.fds
             .iter()
             .find(|f| f.num == fd_num && f.status == FileDescriptorStatus::Open)
-            .ok_or(VirtualFileSystemError::ReleasedFileResource(fd_num))?;
-        let file_id = fd.file_id;
+            .ok_or(VirtualFileSystemError::ReleasedFileResource(fd_num).into())
+    }
 
-        if matches!(
-            self.find_file(file_id).map(|f| &f.ty),
-            Some(VfsFileType::Pipe)
-        ) {
-            let file_ref_mut = self
-                .find_file_mut(file_id)
-                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
-            let pipe = file_ref_mut
-                .pipe_buf
-                .as_mut()
-                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
-            let data: Vec<u8> = pipe.buf.drain(..).collect();
-            return Ok(data);
-        }
+    fn file_desc_mut(&mut self, fd_num: FileDescriptorNumber) -> Result<&mut FileDescriptor> {
+        self.fds
+            .iter_mut()
+            .find(|f| f.num == fd_num && f.status == FileDescriptorStatus::Open)
+            .ok_or(VirtualFileSystemError::ReleasedFileResource(fd_num).into())
+    }
 
-        let file_ref = self
-            .find_file(file_id)
-            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
+    fn file_ref(&self, file_id: VfsFileId) -> Result<&FileInfo> {
+        self.find_file(file_id)
+            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None).into())
+    }
+
+    fn file_ref_mut(&mut self, file_id: VfsFileId) -> Result<&mut FileInfo> {
+        self.find_file_mut(file_id)
+            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None).into())
+    }
+
+    fn resolve_file(&self, file_id: VfsFileId) -> Result<(&FileInfo, Path)> {
+        let file_ref = self.file_ref(file_id)?;
         let file_path = self
             .abs_path_by_file(file_ref)
             .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
+        Ok((file_ref, file_path))
+    }
+
+    fn file_bytes(&self, file_ref: &FileInfo, file_path: &Path) -> Result<Vec<u8>> {
         match &file_ref.ty {
             VfsFileType::VirtualFile => {
-                if let Some(data) = &file_ref.data {
-                    Ok(data.clone())
+                if let Some(buf) = &file_ref.buf {
+                    Ok(buf.clone())
                 } else if let Some((fs, fs_path)) = self.find_fs(file_ref) {
                     match fs {
                         FileSystem::Fat(fat) => {
@@ -644,50 +628,74 @@ impl VirtualFileSystem {
                     Ok(Vec::new())
                 }
             }
-            VfsFileType::DeviceFile(desc) => (desc.read)(),
-            _ => Err(VirtualFileSystemError::InvalidFileType {
-                ty: file_ref.ty.clone(),
-                path: Some(file_path),
-            }
-            .into()),
+            _ => Err(
+                VirtualFileSystemError::invalid_type(&file_ref.ty, Some(file_path.clone())).into(),
+            ),
         }
     }
 
-    fn write_file(&mut self, fd_num: FileDescriptorNumber, data: &[u8]) -> Result<()> {
-        let fd = if let Some(fd) = self
-            .fds
-            .iter()
-            .find(|f| f.num == fd_num && f.status == FileDescriptorStatus::Open)
-        {
-            fd
-        } else {
-            return Err(VirtualFileSystemError::ReleasedFileResource(fd_num).into());
-        };
+    fn read_file(&mut self, fd_num: FileDescriptorNumber, max_len: usize) -> Result<Vec<u8>> {
+        let file_id = self.file_desc(fd_num)?.id;
 
-        let file_id = fd.file_id;
-        let file_path;
-        {
-            let file_ref = self
-                .find_file(file_id)
+        if matches!(
+            self.find_file(file_id).map(|f| &f.ty),
+            Some(VfsFileType::Pipe)
+        ) {
+            let pipe = self
+                .file_ref_mut(file_id)?
+                .pipe_buf
+                .as_mut()
                 .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
-            file_path = self
-                .abs_path_by_file(file_ref)
-                .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
+            let bytes: Vec<u8> = pipe.buf.drain(..min(max_len, pipe.buf.len())).collect();
+            return Ok(bytes);
         }
 
-        let file_ref_mut = self
-            .find_file_mut(file_id)
-            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
+        let offset = self.file_desc(fd_num)?.offset;
+
+        let device_read = match self.find_file(file_id).map(|f| &f.ty) {
+            Some(VfsFileType::DeviceFile(desc)) => Some(desc.read),
+            _ => None,
+        };
+
+        if let Some(device_read) = device_read {
+            let bytes = device_read(offset, max_len)?;
+            self.file_desc_mut(fd_num)?.offset = offset + bytes.len();
+            return Ok(bytes);
+        }
+
+        let (file_ref, file_path) = self.resolve_file(file_id)?;
+        let bytes = self.file_bytes(file_ref, &file_path)?;
+        let start = min(offset, bytes.len());
+        let end = min(start.saturating_add(max_len), bytes.len());
+        let bytes_slice = &bytes.as_slice()[start..end];
+        self.file_desc_mut(fd_num)?.offset = start + bytes_slice.len();
+
+        Ok(bytes_slice.to_vec())
+    }
+
+    fn write_file(&mut self, fd_num: FileDescriptorNumber, data: &[u8]) -> Result<()> {
+        let file_id = self.file_desc(fd_num)?.id;
+        let offset = self.file_desc(fd_num)?.offset;
+        let is_virtual_file = matches!(self.file_ref(file_id)?.ty, VfsFileType::VirtualFile);
+        let (_, file_path) = self.resolve_file(file_id)?;
+        let file_ref_mut = self.file_ref_mut(file_id)?;
 
         match &mut file_ref_mut.ty {
             VfsFileType::VirtualFile => {
-                file_ref_mut.data = Some(data.to_vec());
-
                 // TODO
                 kwarn!(
                     "VFS: Write to File system is unimplemented. Using temporary buffer: {}",
                     file_path
                 );
+
+                let buf_mut = file_ref_mut.buf.get_or_insert_with(Vec::new);
+                let end = offset + data.len();
+
+                if end > buf_mut.len() {
+                    buf_mut.resize(end, 0);
+                }
+
+                buf_mut[offset..end].copy_from_slice(data);
             }
             VfsFileType::DeviceFile(desc) => (desc.write)(data)?,
             VfsFileType::Pipe => {
@@ -698,58 +706,40 @@ impl VirtualFileSystem {
                 pipe.buf.extend(data);
             }
             _ => {
-                return Err(VirtualFileSystemError::InvalidFileType {
-                    ty: file_ref_mut.ty.clone(),
-                    path: Some(file_path),
-                }
-                .into())
+                return Err(
+                    VirtualFileSystemError::invalid_type(&file_ref_mut.ty, Some(file_path)).into(),
+                )
             }
+        }
+
+        if is_virtual_file {
+            self.file_desc_mut(fd_num)?.offset = offset + data.len();
         }
 
         Ok(())
     }
 
     fn file_size(&self, fd_num: FileDescriptorNumber) -> Result<usize> {
-        let fd = if let Some(fd) = self
-            .fds
-            .iter()
-            .find(|f| f.num == fd_num && f.status == FileDescriptorStatus::Open)
-        {
-            fd
-        } else {
-            return Err(VirtualFileSystemError::ReleasedFileResource(fd_num).into());
-        };
+        let file_id = self.file_desc(fd_num)?.id;
+        let (file_ref, file_path) = self.resolve_file(file_id)?;
 
-        let file_ref = self
-            .find_file(fd.file_id)
-            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
-        let file_path = self
-            .abs_path_by_file(file_ref)
-            .ok_or(VirtualFileSystemError::NoSuchFileOrDirectory(None))?;
         match &file_ref.ty {
             VfsFileType::VirtualFile => {
-                if let Some(data) = &file_ref.data {
-                    Ok(data.len())
+                if let Some(buf) = &file_ref.buf {
+                    Ok(buf.len())
                 } else if let Some((fs, fs_path)) = self.find_fs(file_ref) {
                     match fs {
                         FileSystem::Fat(fat) => {
-                            let (_, bytes) = fat.file_by_abs_path(&file_path.diff(&fs_path))?;
-                            Ok(bytes.len())
+                            let metadata = fat.metadata_by_abs_path(&file_path.diff(&fs_path))?;
+                            Ok(metadata.size)
                         }
                     }
                 } else {
                     Ok(0)
                 }
             }
-            VfsFileType::DeviceFile(desc) => {
-                let len = (desc.read)()?.len();
-                Ok(len)
-            }
-            _ => Err(VirtualFileSystemError::InvalidFileType {
-                ty: file_ref.ty.clone(),
-                path: Some(file_path),
-            }
-            .into()),
+            VfsFileType::DeviceFile(_) => Ok(0),
+            _ => Err(VirtualFileSystemError::invalid_type(&file_ref.ty, Some(file_path)).into()),
         }
     }
 
@@ -764,13 +754,15 @@ impl VirtualFileSystem {
         let read_fd = FileDescriptor {
             num: FileDescriptorNumber::new(),
             status: FileDescriptorStatus::Open,
-            file_id,
+            id: file_id,
+            offset: 0,
             pipe_end: Some(PipeEnd::Read),
         };
         let write_fd = FileDescriptor {
             num: FileDescriptorNumber::new(),
             status: FileDescriptorStatus::Open,
-            file_id,
+            id: file_id,
+            offset: 0,
             pipe_end: Some(PipeEnd::Write),
         };
         self.fds.push(read_fd.clone());
@@ -808,7 +800,7 @@ pub fn entry_names(path: &Path) -> Result<Vec<String>> {
 pub fn cwd_path() -> Result<Path> {
     let vfs = VFS.spin_lock();
     let cwd_id = vfs.cwd_id.ok_or(Error::NotInitialized)?;
-    let file_ref = vfs.find_file(cwd_id).ok_or(Error::NotInitialized)?;
+    let file_ref = vfs.file_ref(cwd_id)?;
     let path = vfs
         .abs_path_by_file(file_ref)
         .ok_or(Error::NotInitialized)?;
@@ -827,9 +819,9 @@ pub fn close_file(fd_num: FileDescriptorNumber) -> Result<()> {
     vfs.close_file(fd_num)
 }
 
-pub fn read_file(fd_num: FileDescriptorNumber) -> Result<Vec<u8>> {
+pub fn read_file(fd_num: FileDescriptorNumber, buf_len: usize) -> Result<Vec<u8>> {
     let mut vfs = VFS.spin_lock();
-    vfs.read_file(fd_num)
+    vfs.read_file(fd_num, buf_len)
 }
 
 pub fn write_file(fd_num: FileDescriptorNumber, data: &[u8]) -> Result<()> {
@@ -842,6 +834,7 @@ pub fn file_size(fd_num: FileDescriptorNumber) -> Result<usize> {
     vfs.file_size(fd_num)
 }
 
+// TODO
 pub fn create_file(path: &Path) -> Result<()> {
     let mut vfs = VFS.spin_lock();
     vfs.add_file(path, VfsFileType::VirtualFile)

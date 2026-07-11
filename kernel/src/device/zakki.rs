@@ -63,9 +63,12 @@ impl DeviceDriverFunction for ZakkiDriver {
         Ok(())
     }
 
-    fn read(&mut self) -> Result<Vec<u8>> {
+    fn read(&mut self, offset: usize, max_len: usize) -> Result<Vec<u8>> {
         kinfo!("{}: Read!", self.device_driver_info.name);
-        Ok(MESSAGE.as_bytes().to_vec())
+        let bytes = MESSAGE.as_bytes();
+        let start = offset.min(bytes.len());
+        let end = start.saturating_add(max_len).min(bytes.len());
+        Ok(bytes[start..end].to_vec())
     }
 
     fn write(&mut self, _data: &[u8]) -> Result<()> {
@@ -96,9 +99,9 @@ fn close() -> Result<()> {
     driver.close()
 }
 
-fn read() -> Result<Vec<u8>> {
+fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
     let mut driver = ZAKKI_DRIVER.try_lock()?;
-    driver.read()
+    driver.read(offset, max_len)
 }
 
 fn write(data: &[u8]) -> Result<()> {
