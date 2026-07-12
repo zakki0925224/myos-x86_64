@@ -1,6 +1,14 @@
 use super::path::Path;
-use crate::error::{Error, Result};
-use alloc::{collections::vec_deque::VecDeque, string::String, vec::Vec};
+use crate::{
+    error::{Error, Result},
+    fs::vfs::{FileSystem, FsFileType, FsMetaData, FsType},
+};
+use alloc::{
+    collections::vec_deque::VecDeque,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::cmp::min;
 use dir_entry::*;
 use volume::FatVolume;
 
@@ -11,17 +19,68 @@ pub mod fs_info_sector;
 pub mod volume;
 
 #[derive(Debug, Clone)]
-pub struct FileMetaData {
-    pub name: String,
-    pub attr: Attribute,
-    pub size: usize,
-    pub target_cluster_num: usize,
+struct FileMetaData {
+    name: String,
+    attr: Attribute,
+    size: usize,
+    target_cluster_num: usize,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct Fat {
     volume: FatVolume,
     root_cluster_num: usize,
+}
+
+impl FileSystem for Fat {
+    fn read_entry_names(&self, path: &Path) -> Result<Vec<String>> {
+        let path = path.normalize();
+        let mut current_dir_cluster_num = None;
+
+        for dir_name in path.names() {
+            current_dir_cluster_num = Some(self.cluster_num(dir_name, current_dir_cluster_num)?);
+        }
+
+        let names = self
+            .scan_dir(current_dir_cluster_num)
+            .into_iter()
+            .map(|f| f.name.trim().to_string())
+            .collect();
+
+        Ok(names)
+    }
+
+    fn read_file(&self, path: &Path, offset: usize, max_len: usize) -> Result<Vec<u8>> {
+        let (_, bytes) = self.file_by_abs_path(path)?;
+
+        let start = min(offset, bytes.len());
+        let end = min(start.saturating_add(max_len), bytes.len());
+
+        Ok(bytes[start..end].to_vec())
+    }
+
+    fn write_file(&self, _path: &Path, _offset: usize, _data: &[u8]) -> Result<()> {
+        // FAT driver is read-only for now
+        Err(Error::NotSupported.into())
+    }
+
+    fn metadata(&self, path: &Path) -> Result<FsMetaData> {
+        let meta = self.metadata_by_abs_path(path)?;
+
+        let file_type = match meta.attr {
+            Attribute::Directory => FsFileType::Directory,
+            _ => FsFileType::File,
+        };
+
+        Ok(FsMetaData {
+            file_type,
+            size: meta.size,
+        })
+    }
+
+    fn fstype(&self) -> FsType {
+        FsType::Fat
+    }
 }
 
 impl Fat {
@@ -34,11 +93,7 @@ impl Fat {
         }
     }
 
-    pub fn cluster_num(
-        &self,
-        dir_name: &str,
-        current_dir_cluster_num: Option<usize>,
-    ) -> Result<usize> {
+    fn cluster_num(&self, dir_name: &str, current_dir_cluster_num: Option<usize>) -> Result<usize> {
         if current_dir_cluster_num.is_none()
             || current_dir_cluster_num == Some(self.root_cluster_num)
         {
@@ -57,7 +112,7 @@ impl Fat {
         Ok(dir.target_cluster_num)
     }
 
-    pub fn metadata(
+    fn metadata_in_dir(
         &self,
         file_name: &str,
         current_dir_cluster_num: Option<usize>,
@@ -71,7 +126,24 @@ impl Fat {
         Ok(file.clone())
     }
 
-    pub fn metadata_by_abs_path(&self, path: &Path) -> Result<FileMetaData> {
+    // unlike metadata_in_dir, matches both files and directories by name
+    fn entry_in_dir(
+        &self,
+        name: &str,
+        current_dir_cluster_num: Option<usize>,
+    ) -> Result<FileMetaData> {
+        let files = self.scan_dir(current_dir_cluster_num);
+        let entry = files
+            .iter()
+            .find(|f| {
+                matches!(f.attr, Attribute::Archive | Attribute::Directory) && f.name.trim() == name
+            })
+            .ok_or(Error::NotFound.with_context("entry"))?;
+
+        Ok(entry.clone())
+    }
+
+    fn metadata_by_abs_path(&self, path: &Path) -> Result<FileMetaData> {
         let mut current_dir_cluster_num = self.root_cluster_num;
         let path = path.normalize();
         let parent_path = path.parent();
@@ -80,15 +152,15 @@ impl Fat {
             current_dir_cluster_num = self.cluster_num(dir_name, Some(current_dir_cluster_num))?;
         }
 
-        self.metadata(&path.name(), Some(current_dir_cluster_num))
+        self.entry_in_dir(&path.name(), Some(current_dir_cluster_num))
     }
 
-    pub fn file(
+    fn file(
         &self,
         file_name: &str,
         current_dir_cluster_num: Option<usize>,
     ) -> Result<(FileMetaData, Vec<u8>)> {
-        let file = self.metadata(file_name, current_dir_cluster_num)?;
+        let file = self.metadata_in_dir(file_name, current_dir_cluster_num)?;
 
         let dir_entries = self
             .volume
@@ -99,7 +171,7 @@ impl Fat {
         Ok((file, bytes))
     }
 
-    pub fn file_by_abs_path(&self, path: &Path) -> Result<(FileMetaData, Vec<u8>)> {
+    fn file_by_abs_path(&self, path: &Path) -> Result<(FileMetaData, Vec<u8>)> {
         let mut current_dir_cluster_num = self.root_cluster_num;
         let path = path.normalize();
         let parent_path = path.parent();
@@ -112,7 +184,7 @@ impl Fat {
         Ok(file)
     }
 
-    pub fn scan_dir(&self, dir_cluster_num: Option<usize>) -> Vec<FileMetaData> {
+    fn scan_dir(&self, dir_cluster_num: Option<usize>) -> Vec<FileMetaData> {
         let dir_cluster_num = match dir_cluster_num {
             Some(cluster_num) => cluster_num,
             None => self.root_cluster_num,
