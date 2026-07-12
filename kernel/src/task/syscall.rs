@@ -8,7 +8,7 @@ use crate::{
     error::{Error, Result},
     fs::{
         self,
-        vfs::{self, FileDescriptorNumber},
+        vfs::{self, FileDescriptorNumber, SeekFrom},
     },
     graphics::{multi_layer::LayerId, window_manager},
     kdebug, kerror, kinfo,
@@ -398,6 +398,19 @@ fn syscall_handler_inner(
             if let Err(err) = sys_pipe(pipefd) {
                 kerror!("syscall: pipe: {:?}", err);
                 return -1;
+            }
+        }
+        SN_LSEEK => {
+            let fd_num = arg0 as i32;
+            let offset = arg1 as i64;
+            let whence = arg2 as u32;
+
+            match sys_lseek(fd_num, offset, whence) {
+                Ok(new_offset) => return new_offset,
+                Err(err) => {
+                    kerror!("syscall: lseek: {:?}", err);
+                    return -1;
+                }
             }
         }
         num => {
@@ -1035,6 +1048,20 @@ fn sys_pipe(pipefd: *mut i32) -> Result<()> {
     task::scheduler::add_fd_num(read_fd)?;
     task::scheduler::add_fd_num(write_fd)?;
     Ok(())
+}
+
+fn sys_lseek(fd_num: i32, offset: i64, whence: u32) -> Result<i64> {
+    let fd_num = FileDescriptorNumber::try_new(fd_num)?;
+
+    let pos = match whence {
+        SEEK_SET => SeekFrom::Start(offset),
+        SEEK_CUR => SeekFrom::Current(offset),
+        SEEK_END => SeekFrom::End(offset),
+        _ => return Err(Error::InvalidData.with_context("lseek whence")),
+    };
+
+    let new_offset = vfs::seek(fd_num, pos)?;
+    Ok(new_offset as i64)
 }
 
 pub fn enable() {

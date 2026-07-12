@@ -4,149 +4,37 @@ Standard C Library for MyOS
 
 ## Syscalls
 
-### read
+`whence` (sys_lseek) is one of `SEEK_SET` (0), `SEEK_CUR` (1), or `SEEK_END` (2).
 
-Reads from a file.
-
-### write
-
-Writes to a file.
-
-### open
-
-Opens a file.
-
-### close
-
-Closes a file.
-
-### exit
-
-Exits the application with a status (noreturn).
-
-### sbrk
-
-Allocates memory, aligned to 4KB.
-
-### free
-
-Frees memory allocated by sbrk.
-
-### uname
-
-Retrieves system information.
-
-### break
-
-Triggers a trap at the current instruction (noreturn).
-
-### stat
-
-Gets file information.
-
-### uptime
-
-Returns the system uptime in milliseconds.
-
-### exec
-
-Spawns a new process from an ELF file. Returns the pid of the spawned process, or -1 on error.
-
-### wait
-
-Waits for the process with the given pid to exit. Returns the exit code of the process, or -1 on error.
-
-### getpid
-
-Returns the pid of the current process.
-
-### getcwd
-
-Gets the absolute path of the current working directory.
-
-### chdir
-
-Changes the current working directory.
-
-### sbrksz
-
-Get the size of memory acquired by sbrk.
-
-### getenames
-
-Retrieves a list of entry names in a directory, separated by null characters (\0).
-
-### iomsg
-
-Sends a generic I/O message to the system for various advanced operations.
-The message buffer should be formatted according to the specific command.
-A reply buffer can be provided to receive the result or response from the system.
-
-### socket
-
-Creates an endpoint for communication.
-
-### bind
-
-Binds a port to a socket.
-
-### sendto
-
-Sends a message on a socket.
-
-### recvfrom
-
-Receives a message from a socket.
-
-### send
-
-Sends a message on a connected socket.
-
-### recv
-
-Receives a message from a connected socket.
-
-### connect
-
-Initiates a connection on a socket.
-
-### listen
-
-Listens for connections on a socket.
-
-### accept
-
-Accepts a connection on a socket.
-
-## Syscall tables
-
-| number | name          | syscall num(%rax) | arg1(%rdi)            | arg2(%rsi)                   | arg3(%rdx)             | arg4(%r10) | arg5(%r8)                         | arg6(%r9)      | ret(%rax)                           |
-| ------ | ------------- | ----------------- | --------------------- | ---------------------------- | ---------------------- | ---------- | --------------------------------- | -------------- | ----------------------------------- |
-| 0      | sys_read      | 0x00              | int fd                | void \*buf                   | size_t buf_len         | -          | -                                 | -              | int (read bytes, -1 on error)       |
-| 1      | sys_write     | 0x01              | int fd                | const void \*buf             | size_t buf_len         | -          | -                                 | -              | int (written bytes, -1 on error)    |
-| 2      | sys_open      | 0x02              | const char \*filepath | int flags                    | -                      | -          | -                                 | -              | int (fd, -1 on error)               |
-| 3      | sys_close     | 0x03              | int fd                | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
-| 4      | sys_exit      | 0x04              | int status            | -                            | -                      | -          | -                                 | -              | void (noreturn)                     |
-| 5      | sys_sbrk      | 0x05              | size_t len            | -                            | -                      | -          | -                                 | -              | void\* (pointer, NULL on error)     |
-| 6      | sys_uname     | 0x06              | struct utsname \*buf  | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
-| 7      | sys_break     | 0x07              | -                     | -                            | -                      | -          | -                                 | -              | void (noreturn)                     |
-| 8      | sys_stat      | 0x08              | int fd                | struct stat \*buf            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
-| 9      | sys_uptime    | 0x09              | -                     | -                            | -                      | -          | -                                 | -              | uint64_t (uptime ms)                |
-| 10     | sys_exec      | 0x0a              | const char \*args     | int flags                    | -                      | -          | -                                 | -              | pid_t (pid on success, -1 on error) |
-| 11     | sys_getcwd    | 0x0b              | char \*buf            | size_t buf_len               | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
-| 12     | sys_chdir     | 0x0c              | const char \*path     | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
-| 13     | sys_free      | 0x0d              | void \*ptr            | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
-| 14     | sys_wait      | 0x0e              | pid_t pid             | -                            | -                      | -          | -                                 | -              | int (exit code, -1 on error)        |
-| 15     | sys_sbrksz    | 0x0f              | const void \*target   | -                            | -                      | -          | -                                 | -              | size_t (size, 0 on error)           |
-| 16     | sys_getpid    | 0x10              | -                     | -                            | -                      | -          | -                                 | -              | pid_t (current pid)                 |
-| 17     | sys_getenames | 0x11              | const char \*path     | char \*buf                   | size_t buf_len         | -          | -                                 | -              | int (0 on success, -1 on error)     |
-| 18     | sys_iomsg     | 0x12              | const void \*msgbuf   | void \*replymsgbuf           | size_t replymsgbuf_len | -          | -                                 | -              | int (0 on success, -1 on error)     |
-| 19     | sys_socket    | 0x13              | int domain            | int type                     | int protocol           | -          | -                                 | -              | int (sockfd, -1 on error)           |
-| 20     | sys_bind      | 0x14              | int sockfd            | const struct sockaddr \*addr | size_t addrlen         | -          | -                                 | -              | int (0 on success, -1 on error)     |
-| 21     | sys_sendto    | 0x15              | int sockfd            | const void \*buf             | size_t len             | int flags  | const struct sockaddr \*dest_addr | size_t addrlen | int (sent bytes, -1 on error)       |
-| 22     | sys_recvfrom  | 0x16              | int sockfd            | void \*buf                   | size_t len             | int flags  | struct sockaddr \*src_addr        | size_t addrlen | int (received bytes, -1 on error)   |
-| 23     | sys_send      | 0x17              | int sockfd            | const void \*buf             | size_t len             | int flags  | -                                 | -              | int (sent bytes, -1 on error)       |
-| 24     | sys_recv      | 0x18              | int sockfd            | void \*buf                   | size_t len             | int flags  | -                                 | -              | int (received bytes, -1 on error)   |
-| 25     | sys_connect   | 0x19              | int sockfd            | const struct sockaddr \*addr | size_t addrlen         | -          | -                                 | -              | int (0 on success, -1 on error)     |
-| 26     | sys_listen    | 0x1a              | int sockfd            | int backlog                  | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
-| 27     | sys_accept    | 0x1b              | int sockfd            | struct sockaddr \*addr       | size_t \*addrlen       | -          | -                                 | -              | int (sockfd, -1 on error)           |
+| number | name          | description                                              | syscall num(%rax) | arg1(%rdi)            | arg2(%rsi)                   | arg3(%rdx)             | arg4(%r10) | arg5(%r8)                         | arg6(%r9)      | ret(%rax)                           |
+| ------ | ------------- | -------------------------------------------------------- | ----------------- | --------------------- | ---------------------------- | ---------------------- | ---------- | --------------------------------- | -------------- | ----------------------------------- |
+| 0      | sys_read      | Reads from a file.                                       | 0x00              | int fd                | void \*buf                   | size_t buf_len         | -          | -                                 | -              | int (read bytes, -1 on error)       |
+| 1      | sys_write     | Writes to a file.                                        | 0x01              | int fd                | const void \*buf             | size_t buf_len         | -          | -                                 | -              | int (written bytes, -1 on error)    |
+| 2      | sys_open      | Opens a file.                                            | 0x02              | const char \*filepath | int flags                    | -                      | -          | -                                 | -              | int (fd, -1 on error)               |
+| 3      | sys_close     | Closes a file.                                           | 0x03              | int fd                | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
+| 4      | sys_exit      | Exits the application with a status (noreturn).          | 0x04              | int status            | -                            | -                      | -          | -                                 | -              | void (noreturn)                     |
+| 5      | sys_sbrk      | Allocates memory, aligned to 4KB.                        | 0x05              | size_t len            | -                            | -                      | -          | -                                 | -              | void\* (pointer, NULL on error)     |
+| 6      | sys_uname     | Retrieves system information.                            | 0x06              | struct utsname \*buf  | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
+| 7      | sys_break     | Triggers a trap at the current instruction (noreturn).   | 0x07              | -                     | -                            | -                      | -          | -                                 | -              | void (noreturn)                     |
+| 8      | sys_stat      | Gets file information.                                   | 0x08              | int fd                | struct stat \*buf            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
+| 9      | sys_uptime    | Returns the system uptime in milliseconds.               | 0x09              | -                     | -                            | -                      | -          | -                                 | -              | uint64_t (uptime ms)                |
+| 10     | sys_exec      | Spawns a new process from an ELF file.                   | 0x0a              | const char \*args     | int flags                    | -                      | -          | -                                 | -              | pid_t (pid on success, -1 on error) |
+| 11     | sys_getcwd    | Gets the absolute path of the current working directory. | 0x0b              | char \*buf            | size_t buf_len               | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
+| 12     | sys_chdir     | Changes the current working directory.                   | 0x0c              | const char \*path     | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
+| 13     | sys_free      | Frees memory allocated by sbrk.                          | 0x0d              | void \*ptr            | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
+| 14     | sys_wait      | Waits for the process with the given pid to exit.        | 0x0e              | pid_t pid             | -                            | -                      | -          | -                                 | -              | int (exit code, -1 on error)        |
+| 15     | sys_sbrksz    | Gets the size of memory acquired by sbrk.                | 0x0f              | const void \*target   | -                            | -                      | -          | -                                 | -              | size_t (size, 0 on error)           |
+| 16     | sys_getpid    | Returns the pid of the current process.                  | 0x10              | -                     | -                            | -                      | -          | -                                 | -              | pid_t (current pid)                 |
+| 17     | sys_getenames | Lists entry names in a directory, NUL-separated.         | 0x11              | const char \*path     | char \*buf                   | size_t buf_len         | -          | -                                 | -              | int (0 on success, -1 on error)     |
+| 18     | sys_iomsg     | Sends a generic I/O message for advanced operations.     | 0x12              | const void \*msgbuf   | void \*replymsgbuf           | size_t replymsgbuf_len | -          | -                                 | -              | int (0 on success, -1 on error)     |
+| 19     | sys_socket    | Creates an endpoint for communication.                   | 0x13              | int domain            | int type                     | int protocol           | -          | -                                 | -              | int (sockfd, -1 on error)           |
+| 20     | sys_bind      | Binds a port to a socket.                                | 0x14              | int sockfd            | const struct sockaddr \*addr | size_t addrlen         | -          | -                                 | -              | int (0 on success, -1 on error)     |
+| 21     | sys_sendto    | Sends a message on a socket.                             | 0x15              | int sockfd            | const void \*buf             | size_t len             | int flags  | const struct sockaddr \*dest_addr | size_t addrlen | int (sent bytes, -1 on error)       |
+| 22     | sys_recvfrom  | Receives a message from a socket.                        | 0x16              | int sockfd            | void \*buf                   | size_t len             | int flags  | struct sockaddr \*src_addr        | size_t addrlen | int (received bytes, -1 on error)   |
+| 23     | sys_send      | Sends a message on a connected socket.                   | 0x17              | int sockfd            | const void \*buf             | size_t len             | int flags  | -                                 | -              | int (sent bytes, -1 on error)       |
+| 24     | sys_recv      | Receives a message from a connected socket.              | 0x18              | int sockfd            | void \*buf                   | size_t len             | int flags  | -                                 | -              | int (received bytes, -1 on error)   |
+| 25     | sys_connect   | Initiates a connection on a socket.                      | 0x19              | int sockfd            | const struct sockaddr \*addr | size_t addrlen         | -          | -                                 | -              | int (0 on success, -1 on error)     |
+| 26     | sys_listen    | Listens for connections on a socket.                     | 0x1a              | int sockfd            | int backlog                  | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
+| 27     | sys_accept    | Accepts a connection on a socket.                        | 0x1b              | int sockfd            | struct sockaddr \*addr       | size_t \*addrlen       | -          | -                                 | -              | int (sockfd, -1 on error)           |
+| 28     | sys_pipe      | Creates an unnamed pipe.                                 | 0x1c              | int pipefd[2]         | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)     |
+| 29     | sys_lseek     | Repositions a file descriptor's offset.                  | 0x1d              | int fd                | off_t offset                 | int whence             | -          | -                                 | -              | off_t (new offset, -1 on error)     |

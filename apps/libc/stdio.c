@@ -178,42 +178,11 @@ int fseek(FILE* stream, long int offset, int whence) {
     if (stream == NULL || stream->fd == FDN_STDIN)
         return -1;
 
-    long int f_size = (long int)stream->stat->size;
-    long int target;
-
-    switch (whence) {
-        case SEEK_SET:
-            target = offset;
-            break;
-        case SEEK_CUR:
-            target = stream->pos + offset;
-            break;
-        case SEEK_END:
-            target = f_size + offset;
-            break;
-        default:
-            return -1;
-    }
-
-    if (target < 0 || target > f_size)
+    off_t new_pos = sys_lseek(stream->fd, (off_t)offset, whence);
+    if (new_pos < 0)
         return -1;
 
-    if (target < stream->pos)
-        return -1;
-
-    char scratch[64];
-    while (stream->pos < target) {
-        size_t chunk = (size_t)(target - stream->pos);
-        if (chunk > sizeof(scratch))
-            chunk = sizeof(scratch);
-
-        int ret = sys_read(stream->fd, scratch, chunk);
-        if (ret <= 0)
-            return -1;
-
-        stream->pos += ret;
-    }
-
+    stream->pos = (long int)new_pos;
     stream->flags &= ~_FILE_EOF_FLAG;
     return 0;
 }

@@ -40,6 +40,7 @@
 #define SN_LISTEN 26
 #define SN_ACCEPT 27
 #define SN_PIPE 28
+#define SN_LSEEK 29
 
 // defined file descriptor numbers
 #define FDN_STDIN 0
@@ -92,5 +93,6 @@ int sys_connect(int sockfd, const struct sockaddr* addr, size_t addrlen);
 int sys_listen(int sockfd, int backlog);
 int sys_accept(int sockfd, struct sockaddr* addr, size_t* addrlen);
 int sys_pipe(int pipefd[2]);
+off_t sys_lseek(int fd, off_t offset, int whence);
 
 #endif

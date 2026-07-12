@@ -1,7 +1,7 @@
 use super::path::Path;
 use crate::{
     error::{Error, Result},
-    fs::vfs::{FileSystem, FsFileType, FsMetaData, FsType},
+    fs::vfs::{FileSystem, FsFileType, FsMetaData},
 };
 use alloc::{
     collections::vec_deque::VecDeque,
@@ -26,7 +26,6 @@ struct FileMetaData {
     target_cluster_num: usize,
 }
 
-#[derive(PartialEq, Eq)]
 pub struct Fat {
     volume: FatVolume,
     root_cluster_num: usize,
@@ -77,10 +76,6 @@ impl FileSystem for Fat {
             size: meta.size,
         })
     }
-
-    fn fstype(&self) -> FsType {
-        FsType::Fat
-    }
 }
 
 impl Fat {
@@ -112,31 +107,18 @@ impl Fat {
         Ok(dir.target_cluster_num)
     }
 
-    fn metadata_in_dir(
-        &self,
-        file_name: &str,
-        current_dir_cluster_num: Option<usize>,
-    ) -> Result<FileMetaData> {
-        let files = self.scan_dir(current_dir_cluster_num);
-        let file = files
-            .iter()
-            .find(|f| f.attr == Attribute::Archive && f.name.trim() == file_name)
-            .ok_or(Error::NotFound.with_context("file"))?;
-
-        Ok(file.clone())
-    }
-
-    // unlike metadata_in_dir, matches both files and directories by name
     fn entry_in_dir(
         &self,
         name: &str,
         current_dir_cluster_num: Option<usize>,
+        include_dirs: bool,
     ) -> Result<FileMetaData> {
         let files = self.scan_dir(current_dir_cluster_num);
         let entry = files
             .iter()
             .find(|f| {
-                matches!(f.attr, Attribute::Archive | Attribute::Directory) && f.name.trim() == name
+                (f.attr == Attribute::Archive || (include_dirs && f.attr == Attribute::Directory))
+                    && f.name.trim() == name
             })
             .ok_or(Error::NotFound.with_context("entry"))?;
 
@@ -152,7 +134,7 @@ impl Fat {
             current_dir_cluster_num = self.cluster_num(dir_name, Some(current_dir_cluster_num))?;
         }
 
-        self.entry_in_dir(&path.name(), Some(current_dir_cluster_num))
+        self.entry_in_dir(&path.name(), Some(current_dir_cluster_num), true)
     }
 
     fn file(
@@ -160,7 +142,7 @@ impl Fat {
         file_name: &str,
         current_dir_cluster_num: Option<usize>,
     ) -> Result<(FileMetaData, Vec<u8>)> {
-        let file = self.metadata_in_dir(file_name, current_dir_cluster_num)?;
+        let file = self.entry_in_dir(file_name, current_dir_cluster_num, false)?;
 
         let dir_entries = self
             .volume

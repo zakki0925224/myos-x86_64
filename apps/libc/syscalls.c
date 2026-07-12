@@ -131,3 +131,7 @@ int sys_accept(int sockfd, struct sockaddr* addr, size_t* addrlen) {
 int sys_pipe(int pipefd[2]) {
     return (int)syscall(SN_PIPE, (uint64_t)pipefd, 0, 0, 0, 0, 0);
 }
+
+off_t sys_lseek(int fd, off_t offset, int whence) {
+    return (off_t)syscall(SN_LSEEK, (uint64_t)fd, (uint64_t)offset, (uint64_t)whence, 0, 0, 0);
+}
