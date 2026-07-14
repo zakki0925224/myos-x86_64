@@ -1,7 +1,7 @@
 use super::path::Path;
 use crate::{
     error::{Error, Result},
-    fs::vfs::{FileSystem, FsFileType, FsMetaData},
+    fs::vfs::{FileSystem, FsFileType, FsMetaData, VirtualFileSystemError},
 };
 use alloc::{
     collections::vec_deque::VecDeque,
@@ -58,9 +58,9 @@ impl FileSystem for Fat {
         Ok(bytes[start..end].to_vec())
     }
 
-    fn write_file(&self, _path: &Path, _offset: usize, _data: &[u8]) -> Result<()> {
+    fn write_file(&self, path: &Path, _offset: usize, _data: &[u8]) -> Result<()> {
         // FAT driver is read-only for now
-        Err(Error::NotSupported.into())
+        Err(VirtualFileSystemError::ReadOnly(Some(path.clone())).into())
     }
 
     fn metadata(&self, path: &Path) -> Result<FsMetaData> {

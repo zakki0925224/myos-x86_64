@@ -431,11 +431,23 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
         }
         FileDescriptorNumber::STDIN => {
             if let Some(fd_num) = task::scheduler::current_pipe_fd().and_then(|fds| fds[0]) {
-                let data = vfs::read_file(fd_num, buf_len)?;
-                unsafe {
-                    buf.copy_from_nonoverlapping(data.as_ptr(), data.len());
+                // block until data arrives or all write ends are closed (EOF)
+                loop {
+                    tty::check_sigint();
+                    match vfs::read_file(fd_num, buf_len) {
+                        Ok(data) => {
+                            unsafe {
+                                buf.copy_from_nonoverlapping(data.as_ptr(), data.len());
+                            }
+                            return Ok(data.len());
+                        }
+                        Err(err) if matches!(err.kind(), Error::BufferEmpty) => {
+                            task::scheduler::sched();
+                            x86_64::stihlt();
+                        }
+                        Err(err) => return Err(err),
+                    }
                 }
-                return Ok(data.len());
             }
 
             if buf_len > 1 {
@@ -492,7 +504,12 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
             }
         }
         fd => {
-            let data = vfs::read_file(fd, buf_len)?;
+            let data = match vfs::read_file(fd, buf_len) {
+                Ok(data) => data,
+                // reading a raw pipe fd stays non-blocking: empty means "no data yet"
+                Err(err) if matches!(err.kind(), Error::BufferEmpty) => Vec::new(),
+                Err(err) => return Err(err),
+            };
 
             unsafe {
                 buf.copy_from_nonoverlapping(data.as_ptr(), data.len());

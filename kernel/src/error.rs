@@ -161,6 +161,10 @@ impl core::fmt::Display for Error_ {
 }
 
 impl Error_ {
+    pub fn kind(&self) -> &Error {
+        &self.kind
+    }
+
     pub fn should_retry(&self) -> bool {
         matches!(self.kind, Error::Locked)
     }

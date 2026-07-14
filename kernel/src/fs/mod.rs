@@ -1,7 +1,10 @@
 use crate::{
     arch::VirtualAddress,
     error::Result,
-    fs::fat::{volume::FatVolume, Fat},
+    fs::{
+        fat::{volume::FatVolume, Fat},
+        procfs::ProcFs,
+    },
     kinfo,
 };
 use alloc::boxed::Box;
@@ -10,6 +13,7 @@ use common::kernel_config::KernelConfig;
 pub mod fat;
 pub mod file;
 pub mod path;
+pub mod procfs;
 pub mod vfs;
 
 pub fn init(initramfs_virt_addr: VirtualAddress, kernel_config: &KernelConfig) -> Result<()> {
@@ -21,6 +25,9 @@ pub fn init(initramfs_virt_addr: VirtualAddress, kernel_config: &KernelConfig) -
 
     vfs::mount_fs(&"/mnt/initramfs".into(), Box::new(fat_fs))?;
     kinfo!("fs: Mounted initramfs to VFS");
+
+    vfs::mount_fs(&"/proc".into(), Box::new(ProcFs))?;
+    kinfo!("fs: Mounted procfs to VFS");
 
     let dirname = kernel_config.init_cwd_path.into();
     vfs::chdir(&dirname)?;
