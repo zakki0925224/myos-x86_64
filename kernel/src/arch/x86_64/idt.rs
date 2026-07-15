@@ -352,7 +352,7 @@ extern "x86-interrupt" fn general_protection_fault_handler(
         stack_frame
     );
 
-    if task::scheduler::debug_current() {
+    if task::scheduler::current_debug_print() {
         task::scheduler::exit_current(122);
     }
 
@@ -380,7 +380,7 @@ extern "x86-interrupt" fn page_fault_handler(
         pte
     );
 
-    if task::scheduler::debug_current() {
+    if task::scheduler::current_debug_print() {
         task::scheduler::exit_current(122);
     }
 

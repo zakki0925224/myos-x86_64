@@ -48,6 +48,10 @@ impl TaskId {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         Self(NEXT.fetch_add(1, Ordering::Relaxed))
     }
+
+    pub fn get(&self) -> usize {
+        self.0
+    }
 }
 
 impl From<usize> for TaskId {
@@ -120,17 +124,35 @@ impl TaskResource {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TaskState {
+pub enum TaskState {
     Running,
     Ready,
     Sleeping,
     Exited(i32),
 }
 
+impl fmt::Display for TaskState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Running => write!(f, "Running"),
+            Self::Ready => write!(f, "Ready"),
+            Self::Sleeping => write!(f, "Sleeping"),
+            Self::Exited(code) => write!(f, "Exited({})", code),
+        }
+    }
+}
+
 impl TaskState {
     const fn default() -> Self {
         Self::Ready
     }
+}
+
+pub struct TaskSnapshot {
+    pub id: TaskId,
+    pub name: String,
+    pub state: TaskState,
+    pub parent: Option<TaskId>,
 }
 
 #[derive(Debug)]

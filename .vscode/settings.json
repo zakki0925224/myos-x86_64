@@ -1,15 +1,10 @@
 {
     "rust-analyzer.check.allTargets": false,
     "rust-analyzer.linkedProjects": [
-        "./kernel/Cargo.toml",
-        "./bootloader/Cargo.toml",
-        "./common/Cargo.toml",
-        "./apps/libc-rs/Cargo.toml",
-        "./apps/mandelbrot/Cargo.toml",
-        "./apps/imgvw/Cargo.toml",
-        "./apps/lifegame/Cargo.toml",
-        "./apps/web/Cargo.toml"
+        "./kernel/Cargo.toml"
     ],
+    "rust-analyzer.check.workspace": false,
+    "rust-analyzer.cargo.targetDir": true,
     "files.watcherExclude": {
         "**/target/**": true,
         "third-party/qemu/**": true,

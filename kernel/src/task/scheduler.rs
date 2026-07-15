@@ -50,7 +50,29 @@ impl TaskScheduler {
             .ok_or(Error::NotInitialized.with_context("current task"))
     }
 
+    fn find_task(&self, id: TaskId) -> Option<&Task> {
+        if let Some(task) = self.current_task.as_deref() {
+            if task.id == id {
+                return Some(task);
+            }
+        }
+
+        if let Some(task) = self.ready_queue.iter().find(|t| t.id == id) {
+            return Some(task.as_ref());
+        }
+
+        if let Some(task) = self.sleeping_tasks.iter().find(|t| t.id == id) {
+            return Some(task.as_ref());
+        }
+
+        None
+    }
+
     fn find_task_mut(&mut self, id: TaskId) -> Option<&mut Task> {
+        if self.current_task.as_deref().map_or(false, |t| t.id == id) {
+            return self.current_task.as_deref_mut();
+        }
+
         if let Some(task) = self.ready_queue.iter_mut().find(|t| t.id == id) {
             return Some(task.as_mut());
         }
@@ -194,9 +216,7 @@ pub fn spawn_user_task(
 ) -> Result<TaskId> {
     let path_string = path.to_string();
     let all_args: Vec<&str> = [&[path_string.as_str()], args].concat();
-    let parent_id = current()
-        .ok_or(Error::NotFound.with_context("current task"))?
-        .id;
+    let parent_id = current_task_id().ok_or(Error::NotFound.with_context("current task"))?;
     let task = Task::new(
         Some(parent_id),
         super::USER_TASK_STACK_SIZE,
@@ -250,11 +270,9 @@ pub fn sched() {
     saved.write();
 }
 
-pub fn current() -> Option<&'static Task> {
-    unsafe {
-        let ptr = TASK_SCHED.spin_lock().current_task.as_deref()? as *const Task;
-        Some(&*ptr)
-    }
+pub fn current_task_id() -> Option<TaskId> {
+    let s = TASK_SCHED.spin_lock();
+    Some(s.current_task.as_deref()?.id)
 }
 
 pub fn exit_current(exit_code: i32) -> ! {
@@ -273,7 +291,7 @@ pub fn take_exit_code(id: TaskId) -> Option<i32> {
     TASK_SCHED.spin_lock().exit_codes.remove(&id)
 }
 
-pub fn add_layer_id(layer_id: LayerId) -> Result<()> {
+pub fn current_add_layer_id(layer_id: LayerId) -> Result<()> {
     let mut s = TASK_SCHED.spin_lock();
     s.current_task_mut()?
         .resource
@@ -282,7 +300,7 @@ pub fn add_layer_id(layer_id: LayerId) -> Result<()> {
     Ok(())
 }
 
-pub fn remove_layer_id(layer_id: LayerId) -> Result<()> {
+pub fn current_remove_layer_id(layer_id: LayerId) -> Result<()> {
     let mut s = TASK_SCHED.spin_lock();
     s.current_task_mut()?
         .resource
@@ -291,13 +309,13 @@ pub fn remove_layer_id(layer_id: LayerId) -> Result<()> {
     Ok(())
 }
 
-pub fn add_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
+pub fn current_add_fd(fd_num: FileDescriptorNumber) -> Result<()> {
     let mut s = TASK_SCHED.spin_lock();
     s.current_task_mut()?.resource.fd_nums.push(fd_num);
     Ok(())
 }
 
-pub fn remove_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
+pub fn current_remove_fd(fd_num: FileDescriptorNumber) -> Result<()> {
     let mut s = TASK_SCHED.spin_lock();
     s.current_task_mut()?
         .resource
@@ -306,13 +324,13 @@ pub fn remove_fd_num(fd_num: FileDescriptorNumber) -> Result<()> {
     Ok(())
 }
 
-pub fn add_mem_frame(mem_frame: MemoryFrame) -> Result<()> {
+pub fn current_add_mem_frame(mem_frame: MemoryFrame) -> Result<()> {
     let mut s = TASK_SCHED.spin_lock();
     s.current_task_mut()?.resource.alloc_frames.push(mem_frame);
     Ok(())
 }
 
-pub fn map_current_user_page(frame: &MemoryFrame) -> Result<()> {
+pub fn current_map_user_page(frame: &MemoryFrame) -> Result<()> {
     let mut s = TASK_SCHED.spin_lock();
     let task = s.current_task_mut()?;
     let phys = frame.frame_start_phys_addr();
@@ -329,7 +347,7 @@ pub fn map_current_user_page(frame: &MemoryFrame) -> Result<()> {
     Ok(())
 }
 
-pub fn unmap_current_user_page(frame: &MemoryFrame) -> Result<()> {
+pub fn current_unmap_user_page(frame: &MemoryFrame) -> Result<()> {
     let mut s = TASK_SCHED.spin_lock();
     let task = s.current_task_mut()?;
     let start: VirtualAddress = frame.frame_start_phys_addr().into();
@@ -338,7 +356,7 @@ pub fn unmap_current_user_page(frame: &MemoryFrame) -> Result<()> {
     Ok(())
 }
 
-pub fn mem_frame_size(virt_addr: VirtualAddress) -> Result<Option<usize>> {
+pub fn current_mem_frame_size(virt_addr: VirtualAddress) -> Result<Option<usize>> {
     let mut s = TASK_SCHED.spin_lock();
     let task = s.current_task_mut()?;
     for mem_frame in &task.resource.alloc_frames {
@@ -349,7 +367,7 @@ pub fn mem_frame_size(virt_addr: VirtualAddress) -> Result<Option<usize>> {
     Ok(None)
 }
 
-pub fn remove_mem_frame(virt_addr: VirtualAddress) -> Result<MemoryFrame> {
+pub fn current_remove_mem_frame(virt_addr: VirtualAddress) -> Result<MemoryFrame> {
     let mut s = TASK_SCHED.spin_lock();
     let allocated = &mut s.current_task_mut()?.resource.alloc_frames;
     if let Some(index) = allocated
@@ -361,7 +379,7 @@ pub fn remove_mem_frame(virt_addr: VirtualAddress) -> Result<MemoryFrame> {
     Err(Error::InvalidData.with_context("virtual address"))
 }
 
-pub fn debug_current() -> bool {
+pub fn current_debug_print() -> bool {
     let s = TASK_SCHED.spin_lock();
     if let Some(task) = s.current_task.as_ref() {
         super::debug_task(task);
@@ -444,6 +462,30 @@ pub fn preempt_sched(interrupted: &InterruptedContext) -> *const Context {
         Some((_, next)) => unsafe { &(*next).context as *const Context },
         None => core::ptr::null(),
     }
+}
+
+pub fn task_ids() -> Vec<TaskId> {
+    let mut ids = Vec::new();
+    let s = TASK_SCHED.spin_lock();
+    s.ready_queue.iter().for_each(|t| ids.push(t.id));
+
+    if let Some(t) = &s.current_task {
+        ids.push(t.id);
+    }
+
+    s.sleeping_tasks.iter().for_each(|t| ids.push(t.id));
+
+    ids
+}
+
+pub fn task_snapshot(id: TaskId) -> Option<TaskSnapshot> {
+    let s = TASK_SCHED.spin_lock();
+    s.find_task(id).map(|t| TaskSnapshot {
+        id: t.id,
+        name: t.name.clone(),
+        state: t.state,
+        parent: t.parent,
+    })
 }
 
 #[test_case]
