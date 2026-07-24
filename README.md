@@ -35,6 +35,7 @@ This is a replacement project for the previous **[myos](https://github.com/zakki
     - [x] VFS (Virtual File System)
     - [x] FAT32 (Read only)
     - [x] Device file system (/dev)
+    - [x] Process file system (/proc)
     - [x] Initramfs (FAT32, read/write in memory)
 - Networking
     - [x] Ethernet (Raw frames)
@@ -60,11 +61,11 @@ This is a replacement project for the previous **[myos](https://github.com/zakki
 ## Third party
 
 - OVMF from [EDK II](https://github.com/tianocore/edk2.git) (included)
-- [Cozette](https://github.com/slavfox/Cozette.git) (download released binary when build)
+- [Cozette](https://github.com/the-moonwitch/Cozette.git) (download released binary when build)
 - [QEMU](https://gitlab.com/qemu-project/qemu.git) (for debugging)
 - [doom-for-myos](https://github.com/zakki0925224/doom-for-myos) (forked from [ozkl/doomgeneric](https://github.com/ozkl/doomgeneric))
 - [lua-for-myos](https://github.com/zakki0925224/lua-for-myos) (forked from [lua/lua](https://github.com/lua/lua))
-- [doom1.wad](https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad)
+- [doom1.wad](https://github.com/Akbar30Bill/DOOM_wads/blob/master/doom1.wad)
 
 ## How to run
 
@@ -85,7 +86,7 @@ This is a replacement project for the previous **[myos](https://github.com/zakki
 
 - For build Cozette
     - python3-venv
-    - bdf2psf (convert bdf file due to [bug in cozette.psf](https://github.com/slavfox/Cozette/issues/112))
+    - bdf2psf (convert bdf file due to [bug in cozette.psf](https://github.com/the-moonwitch/Cozette/issues/112))
 
 - For build QEMU
     - ninja-build

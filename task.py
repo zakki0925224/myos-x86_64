@@ -1,3 +1,4 @@
+import hashlib
 import os
 import subprocess
 import sys
@@ -23,6 +24,7 @@ FONT_FILE = "font.psf"
 COZETTE_BDF = "cozette.bdf"
 OVMF_CODE_FILE = "OVMF_CODE.fd"
 DOOM_WAD_FILE = "doom1.wad"
+DOOM_WAD_SHA1 = "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d"
 INITRAMFS_IMG_FILE = "initramfs.img"
 
 QEMU_ARCH = "qemu-system-x86_64"
@@ -101,6 +103,14 @@ def _run_cmd(
 
     if exit_code != 0 and not ignore_error:
         exit(exit_code)
+
+
+def _sha1sum(path: str) -> str:
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _init():
@@ -239,11 +249,16 @@ def _build_apps():
     _run_cmd(f"cp -r {d}/bin ./{INITRAMFS_DIR}/{APPS_DIR}/")
 
     # download doom1.wad and copy to initramfs dir
-    if not os.path.exists(f"./{THIRD_PARTY_DIR}/{DOOM_WAD_FILE}"):
+    wad_path = f"./{THIRD_PARTY_DIR}/{DOOM_WAD_FILE}"
+    if not os.path.exists(wad_path):
         _run_cmd(
-            f"wget -P ./{THIRD_PARTY_DIR} https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad"
+            f"wget -P ./{THIRD_PARTY_DIR} https://raw.githubusercontent.com/Akbar30Bill/DOOM_wads/master/doom1.wad"
         )
-    _run_cmd(f"cp ./{THIRD_PARTY_DIR}/{DOOM_WAD_FILE} ./{INITRAMFS_DIR}")
+    if _sha1sum(wad_path) != DOOM_WAD_SHA1:
+        os.remove(wad_path)
+        print(f"\033[31m{DOOM_WAD_FILE}: SHA1 mismatch, expected {DOOM_WAD_SHA1}\033[0m")
+        sys.exit(1)
+    _run_cmd(f"cp {wad_path} ./{INITRAMFS_DIR}")
 
     _run_cmd(f'find ./{INITRAMFS_DIR} -type d -name "target" | xargs rm -rf')
 
