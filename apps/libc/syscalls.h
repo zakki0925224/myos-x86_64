@@ -51,10 +51,6 @@
 #define OPEN_FLAG_NONE 0x0
 #define OPEN_FLAG_CREATE 0x1
 
-// sys_exec flags
-#define EXEC_FLAG_NONE 0x0
-#define EXEC_FLAG_DEBUG 0x1
-
 // sys_exec pipe
 #define EXEC_PIPE_NONE (int[]){-1, -1, -1}
 
@@ -74,7 +70,7 @@ int sys_uname(utsname* buf);
 void sys_break(void);
 int sys_stat(int fd, f_stat* buf);
 uint64_t sys_uptime(void);
-pid_t sys_exec(const char* args, int flags, int pipefd[3]);
+pid_t sys_exec(const char* args, int pipefd[3]);
 int sys_getcwd(char* buf, size_t buf_len);
 int sys_chdir(const char* path);
 int sys_free(void* ptr);

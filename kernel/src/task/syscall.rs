@@ -201,10 +201,9 @@ fn syscall_handler_inner(
         }
         SN_EXEC => {
             let args = arg0 as *const u8;
-            let flags = arg1 as i32;
-            let pipefd = arg2 as *const i32;
+            let pipefd = arg1 as *const i32;
 
-            match sys_exec(args, flags, pipefd) {
+            match sys_exec(args, pipefd) {
                 Ok(exit_code) => return exit_code as i64,
                 Err(err) => {
                     kerror!("syscall: exec: {:?}", err);
@@ -649,7 +648,7 @@ fn sys_uptime() -> i64 {
     util::time::global_uptime().as_millis() as i64
 }
 
-fn sys_exec(args: *const u8, flags: i32, pipefd: *const i32) -> Result<pid_t> {
+fn sys_exec(args: *const u8, pipefd: *const i32) -> Result<pid_t> {
     let args = unsafe { util::cstring::from_cstring_ptr(args) };
     let args: Vec<&str> = args.split(' ').collect();
 
@@ -664,8 +663,7 @@ fn sys_exec(args: *const u8, flags: i32, pipefd: *const i32) -> Result<pid_t> {
         ]
     };
 
-    let enable_debug = (flags as u32) & EXEC_FLAG_DEBUG != 0;
-    let child_id = task::exec::exec_elf(&args[0].into(), &args[1..], enable_debug, pipe_fd)?;
+    let child_id = task::exec::exec_elf(&args[0].into(), &args[1..], pipe_fd)?;
 
     Ok(child_id.0 as pid_t)
 }
@@ -726,8 +724,8 @@ fn sys_sbrksz(target: *const u8) -> Result<usize> {
 }
 
 fn sys_getpid() -> Result<pid_t> {
-    let task_id = task::scheduler::current_task_id()
-        .ok_or(Error::NotFound.with_context("current task"))?;
+    let task_id =
+        task::scheduler::current_task_id().ok_or(Error::NotFound.with_context("current task"))?;
 
     Ok(task_id.get() as pid_t)
 }

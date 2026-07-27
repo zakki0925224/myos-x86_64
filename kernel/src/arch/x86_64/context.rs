@@ -209,15 +209,7 @@ impl Context {
         }
     }
 
-    pub fn init(
-        &mut self,
-        rip: u64,
-        rdi: u64,
-        rsi: u64,
-        rsp: u64,
-        mode: ContextMode,
-        trap_flag: bool,
-    ) {
+    pub fn init(&mut self, rip: u64, rdi: u64, rsi: u64, rsp: u64, mode: ContextMode) {
         let (cs, ss) = match mode {
             ContextMode::Kernel => (KERNEL_MODE_CS_VALUE, KERNEL_MODE_SS_VALUE),
             ContextMode::User => (USER_MODE_CS_VALUE, USER_MODE_SS_VALUE),
@@ -232,7 +224,6 @@ impl Context {
 
         self.rflags = Rflags::default();
         self.rflags.set_if_(true); // enable interrupts
-        self.rflags.set_tf(trap_flag);
 
         self.cs = cs as u64;
         self.ss = ss as u64;

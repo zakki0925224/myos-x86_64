@@ -309,33 +309,8 @@ pub fn notify_end_of_int() {
     SLAVE_PIC_ADDR.out8(PIC_END_OF_INT_CMD);
 }
 
-extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
-    kinfo!("int: DEBUG");
-
-    let debugger_result;
-
-    if let Some(dwarf) = task::scheduler::current_dwarf() {
-        match debug::user_app_debugger(&stack_frame, &dwarf) {
-            Ok(res) => debugger_result = res,
-            Err(err) => {
-                kerror!("int: Error in user_app_debugger: {:?}", err);
-                debugger_result = debug::DebuggerResult::Quit;
-            }
-        }
-    } else {
-        kerror!("int: No DWARF found for user task, quit debug mode...");
-        debugger_result = debug::DebuggerResult::Quit;
-    }
-
-    match debugger_result {
-        debug::DebuggerResult::Continue => {
-            todo!();
-        }
-        debug::DebuggerResult::Quit => {
-            todo!();
-        }
-        _ => (),
-    }
+extern "x86-interrupt" fn debug_handler(_stack_frame: InterruptStackFrame) {
+    panic!("int: DEBUG");
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
@@ -351,6 +326,10 @@ extern "x86-interrupt" fn general_protection_fault_handler(
         error_code,
         stack_frame
     );
+
+    if let Some(dwarf) = task::scheduler::current_dwarf() {
+        kerror!("int: {}", debug::symbolicate(&dwarf, stack_frame.ins_ptr));
+    }
 
     if task::scheduler::current_debug_print() {
         task::scheduler::exit_current(122);
@@ -368,7 +347,7 @@ extern "x86-interrupt" fn page_fault_handler(
     let pml4_table = if !is_user {
         unsafe { &*paging::kernel_page_table() }
     } else {
-        todo!()
+        unsafe { &*(Cr3::read().raw() as *const paging::PageTable) }
     };
     let pte = unsafe { paging::lookup_pte(pml4_table, accessed_virt_addr) };
 
@@ -379,6 +358,10 @@ extern "x86-interrupt" fn page_fault_handler(
         stack_frame,
         pte
     );
+
+    if let Some(dwarf) = task::scheduler::current_dwarf() {
+        kerror!("int: {}", debug::symbolicate(&dwarf, stack_frame.ins_ptr));
+    }
 
     if task::scheduler::current_debug_print() {
         task::scheduler::exit_current(122);

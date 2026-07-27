@@ -56,8 +56,8 @@ uint64_t sys_uptime(void) {
     return syscall(SN_UPTIME, 0, 0, 0, 0, 0, 0);
 }
 
-pid_t sys_exec(const char* args, int flags, int pipefd[3]) {
-    return (pid_t)syscall(SN_EXEC, (uint64_t)args, (uint64_t)flags, (uint64_t)pipefd, 0, 0, 0);
+pid_t sys_exec(const char* args, int pipefd[3]) {
+    return (pid_t)syscall(SN_EXEC, (uint64_t)args, (uint64_t)pipefd, 0, 0, 0, 0);
 }
 
 int sys_getcwd(char* buf, size_t buf_len) {

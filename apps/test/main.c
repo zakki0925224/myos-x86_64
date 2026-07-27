@@ -207,8 +207,18 @@ int test_pipe() {
     return 0;
 }
 
+int test_crash() {
+    printf("=== Crash Test ===\n");
+
+    int* p = (int*)0x0;
+    *p = 42;  // null pointer dereference -> page fault
+
+    return 0;
+}
+
 int main(int argc, const char* argv[]) {
     // return test_tcp_server();
     // return test_tcp_client();
-    return test_pipe();
+    // return test_pipe();
+    return test_crash();
 }

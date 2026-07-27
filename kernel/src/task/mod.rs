@@ -342,7 +342,7 @@ impl Task {
             ContextMode::Kernel => Cr3::read().raw(),
         };
         let mut context = Context::new();
-        context.init(rip, arg0, arg1, rsp, mode, dwarf.is_some());
+        context.init(rip, arg0, arg1, rsp, mode);
         context.cr3 = cr3;
 
         Ok(Self {
