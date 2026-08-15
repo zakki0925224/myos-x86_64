@@ -150,9 +150,49 @@ double atof(const char* nptr) {
     return -1.0;
 }
 
+static char* find_unquoted_pipe(char* s) {
+    int in_dquote = 0, in_squote = 0;
+    for (char* p = s; *p; p++) {
+        if (*p == '"' && !in_squote) {
+            in_dquote = !in_dquote;
+        } else if (*p == '\'' && !in_dquote) {
+            in_squote = !in_squote;
+        } else if (*p == '|' && !in_dquote && !in_squote) {
+            return p;
+        }
+    }
+    return NULL;
+}
+
 int system(const char* command) {
     if (command == NULL) {
         return 1;
+    }
+
+    char cmd_buf[256];
+    strncpy(cmd_buf, command, sizeof(cmd_buf) - 1);
+    cmd_buf[sizeof(cmd_buf) - 1] = '\0';
+
+    char* pipe_pos = find_unquoted_pipe(cmd_buf);
+    if (pipe_pos != NULL) {
+        *pipe_pos = '\0';
+        char* left = cmd_buf;
+        char* right = pipe_pos + 1;
+        while (*right == ' ') right++;
+
+        int pipefd[2];
+        if (sys_pipe(pipefd) < 0) {
+            return -1;
+        }
+
+        pid_t pid1 = sys_exec(left, (int[]){-1, pipefd[1], -1});
+        pid_t pid2 = sys_exec(right, (int[]){pipefd[0], -1, -1});
+        if (pid1 == -1 || pid2 == -1) {
+            return -1;
+        }
+
+        sys_wait(pid1);
+        return sys_wait(pid2);
     }
 
     pid_t pid = sys_exec(command, EXEC_PIPE_NONE);

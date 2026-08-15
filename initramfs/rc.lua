@@ -1,3 +1,3 @@
 services = {
-    { name = "sh", cmd = "/mnt/initramfs/apps/bin/sh /mnt/initramfs/apps/bin", required = true },
+    { name = "sh", cmd = "/mnt/initramfs/apps/bin/lush /mnt/initramfs/apps/bin", required = true },
 }
