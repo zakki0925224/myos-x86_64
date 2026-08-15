@@ -163,12 +163,14 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
         let splited: Vec<&str> = args.split(" ").collect();
 
         if splited.is_empty() || splited[0] == "" {
-            kerror!("Invalid init app exec args: {:?}", args);
+            panic!("Invalid init app exec args: {:?}", args);
         } else if let Err(err) =
             exec::exec_elf(&splited[0].into(), &splited[1..], [None, None, None])
         {
-            kerror!("{:?}", err);
+            panic!("{:?}", err);
         }
+    } else {
+        panic!("Init app exec args not found");
     }
 
     loop {

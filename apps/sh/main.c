@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syscalls.h>
-#include <window.h>
 
 #define BUF_LEN 128
 #define HISTORY_MAX 16
@@ -168,9 +167,7 @@ void exec_cmd(char* cmd) {
         printf("sh: Built-in commands:\n");
         printf("  help\n");
         printf("  exit\n");
-        printf("  break\n");
         printf("  exec\n");
-        printf("  window\n");
         printf("  clear\n");
 
         if (strlen(envpath) > 0) {
@@ -179,9 +176,6 @@ void exec_cmd(char* cmd) {
         }
     } else if (strcmp(splitted_buf[0], "exit") == 0) {
         exit(0);
-    } else if (strcmp(splitted_buf[0], "break") == 0) {
-        sys_break();
-        // __asm__ volatile("int3");
     } else if (strcmp(splitted_buf[0], "exec") == 0) {
         if (cmdargs_len < 2) {
             printf("sh: exec: missing argument\n");
@@ -206,12 +200,6 @@ void exec_cmd(char* cmd) {
 
         int exit_code = sys_wait(pid);
         printf("sh: exit code: %d\n", exit_code);
-    } else if (strcmp(splitted_buf[0], "window") == 0) {
-        component_descriptor* cdesc = create_component_window("test window", 200, 50, 300, 200);
-        if (cdesc == NULL) {
-            printf("sh: window: failed to create window\n");
-            return;
-        }
     } else if (strcmp(splitted_buf[0], "clear") == 0) {
         printf("\e[2J");
         printf("\e[1;1H");
