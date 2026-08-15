@@ -47,10 +47,12 @@ This is a replacement project for the previous **[myos](https://github.com/zakki
     - [x] Socket API
 - Window Manager
 - [Userland applications](/apps/) implemented in C or Rust (libc for myos available [here](/apps/libc/))
-    - [x] [Shell](/apps/sh/)
-    - [x] [Web browser](/apps/web)
-    - [x] DOOM challenge!
-    - (and others...)
+    - sh - basic shell
+    - lush - Lua-powered shell
+    - Web browser
+    - DOOM
+    - Lua interpreter
+    - and others...
 
 ## Screenshots
 
