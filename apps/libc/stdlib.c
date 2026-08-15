@@ -151,8 +151,16 @@ double atof(const char* nptr) {
 }
 
 int system(const char* command) {
-    printf("[DEBUG]system called (command: %s)\n", command);
-    return -1;
+    if (command == NULL) {
+        return 1;
+    }
+
+    pid_t pid = sys_exec(command, EXEC_PIPE_NONE);
+    if (pid == -1) {
+        return -1;
+    }
+
+    return sys_wait(pid);
 }
 
 int remove(const char* filepath) {

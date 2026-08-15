@@ -1,11 +1,9 @@
 use crate::{
-    debug::dwarf,
     error::Result,
     fs::{
         path::Path,
         vfs::{self, FileDescriptorNumber},
     },
-    kerror,
     task::TaskId,
 };
 use common::elf::Elf64;
@@ -24,13 +22,14 @@ pub fn exec_elf(
 
     vfs::close_file(fd_num)?;
 
-    let dwarf = match dwarf::parse(&elf64) {
-        Ok(d) => Some(d),
-        Err(err) => {
-            kerror!("exec: Failed to parse DWARF: {:?}", err);
-            None
-        }
-    };
+    // let dwarf = match dwarf::parse(&elf64) {
+    //     Ok(d) => Some(d),
+    //     Err(err) => {
+    //         kerror!("exec: Failed to parse DWARF: {:?}", err);
+    //         None
+    //     }
+    // };
+    let dwarf = None;
 
     super::scheduler::spawn_user_task(elf64, elf_path, args, dwarf, pipe_fd)
 }

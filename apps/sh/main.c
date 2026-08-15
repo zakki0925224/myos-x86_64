@@ -192,13 +192,11 @@ void exec_cmd(char* cmd) {
             }
         }
 
-        pid_t pid = sys_exec(args, EXEC_PIPE_NONE);
-        if (pid == -1) {
+        int exit_code = system(args);
+        if (exit_code == -1) {
             printf("sh: exec: failed\n");
             return;
         }
-
-        int exit_code = sys_wait(pid);
         printf("sh: exit code: %d\n", exit_code);
     } else if (strcmp(splitted_buf[0], "clear") == 0) {
         printf("\e[2J");
@@ -218,13 +216,11 @@ void exec_cmd(char* cmd) {
             }
         }
 
-        pid_t pid = sys_exec(args, EXEC_PIPE_NONE);
-        if (pid == -1) {
+        int exit_code = system(args);
+        if (exit_code == -1) {
             printf("sh: exec: failed\n");
             return;
         }
-
-        int exit_code = sys_wait(pid);
         printf("sh: exit code: %d\n", exit_code);
     }
     // unreachable
