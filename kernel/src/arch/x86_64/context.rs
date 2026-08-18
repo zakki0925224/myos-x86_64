@@ -229,6 +229,53 @@ impl Context {
         self.ss = ss as u64;
     }
 
+    pub fn capture_from_interrupted(&mut self, interrupted: &InterruptedContext) {
+        self.rip = interrupted.rip;
+        self.rflags.set_raw(interrupted.rflags);
+        self.cs = interrupted.cs;
+        self.ss = interrupted.ss;
+        self.rsp = interrupted.rsp;
+        self.rax = interrupted.rax;
+        self.rbx = interrupted.rbx;
+        self.rcx = interrupted.rcx;
+        self.rdx = interrupted.rdx;
+        self.rdi = interrupted.rdi;
+        self.rsi = interrupted.rsi;
+        self.rbp = interrupted.rbp;
+        self.r8 = interrupted.r8;
+        self.r9 = interrupted.r9;
+        self.r10 = interrupted.r10;
+        self.r11 = interrupted.r11;
+        self.r12 = interrupted.r12;
+        self.r13 = interrupted.r13;
+        self.r14 = interrupted.r14;
+        self.r15 = interrupted.r15;
+        self.cr3 = Cr3::read().raw();
+
+        let mut fs: u64 = 0;
+        let mut gs: u64 = 0;
+        unsafe {
+            core::arch::asm!(
+                "mov {0:x}, fs",
+                "mov {1:x}, gs",
+                inout(reg) fs,
+                inout(reg) gs,
+                options(nostack, nomem),
+            );
+        }
+        self.fs = fs;
+        self.gs = gs;
+
+        let fpu_ptr = self.fpu_context.as_mut_ptr();
+        unsafe {
+            core::arch::asm!(
+                "fxsave64 [{0}]",
+                in(reg) fpu_ptr,
+                options(nostack),
+            );
+        }
+    }
+
     #[inline(always)]
     pub fn switch_to(&self, next_ctx: &Context) {
         switch_context(next_ctx, self);

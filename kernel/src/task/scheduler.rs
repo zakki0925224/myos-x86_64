@@ -1,7 +1,7 @@
 use crate::{
     arch::x86_64::{
         context::{Context, ContextMode, InterruptedContext},
-        registers::{Cr3, Register, Rflags},
+        registers::Rflags,
     },
     debug::dwarf::Dwarf,
     error::{Error, Result},
@@ -304,56 +304,19 @@ pub fn with_current_resource<R>(f: impl FnOnce(&mut TaskResource) -> R) -> Resul
     Ok(f(&mut s.current_task_mut()?.resource))
 }
 
+pub fn capture_current_syscall_frame(interrupted: &InterruptedContext) {
+    let mut s = TASK_SCHED.spin_lock();
+    if let Some(current) = s.current_task.as_mut() {
+        current.context.capture_from_interrupted(interrupted);
+    }
+}
+
 pub fn preempt_sched(interrupted: &InterruptedContext) -> *const Context {
     let (pair, stale) = {
         let mut s = TASK_SCHED.spin_lock();
 
         if let Some(current) = s.current_task.as_mut() {
-            let ctx = &mut current.context;
-            ctx.rip = interrupted.rip;
-            ctx.rflags.set_raw(interrupted.rflags);
-            ctx.cs = interrupted.cs;
-            ctx.ss = interrupted.ss;
-            ctx.rsp = interrupted.rsp;
-            ctx.rax = interrupted.rax;
-            ctx.rbx = interrupted.rbx;
-            ctx.rcx = interrupted.rcx;
-            ctx.rdx = interrupted.rdx;
-            ctx.rdi = interrupted.rdi;
-            ctx.rsi = interrupted.rsi;
-            ctx.rbp = interrupted.rbp;
-            ctx.r8 = interrupted.r8;
-            ctx.r9 = interrupted.r9;
-            ctx.r10 = interrupted.r10;
-            ctx.r11 = interrupted.r11;
-            ctx.r12 = interrupted.r12;
-            ctx.r13 = interrupted.r13;
-            ctx.r14 = interrupted.r14;
-            ctx.r15 = interrupted.r15;
-            ctx.cr3 = Cr3::read().raw();
-
-            let mut fs: u64 = 0;
-            let mut gs: u64 = 0;
-            unsafe {
-                core::arch::asm!(
-                    "mov {0:x}, fs",
-                    "mov {1:x}, gs",
-                    inout(reg) fs,
-                    inout(reg) gs,
-                    options(nostack, nomem),
-                );
-            }
-            ctx.fs = fs;
-            ctx.gs = gs;
-
-            let fpu_ptr = ctx.fpu_context.as_mut_ptr();
-            unsafe {
-                core::arch::asm!(
-                    "fxsave64 [{0}]",
-                    in(reg) fpu_ptr,
-                    options(nostack),
-                );
-            }
+            current.context.capture_from_interrupted(interrupted);
         }
 
         let pair = s.pick_next_task();

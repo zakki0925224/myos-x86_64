@@ -2,6 +2,7 @@ use crate::{
     arch::{
         x86_64::{
             self,
+            context::InterruptedContext,
             gdt::*,
             paging::{PageWriteThroughLevel, ReadWrite, PAGE_SIZE},
             registers::*,
@@ -71,6 +72,29 @@ impl IomsgHeaderExt for iomsg_header {
 #[unsafe(naked)]
 extern "sysv64" fn asm_syscall_handler() {
     naked_asm!(
+        "push 0x1b", // ss
+        "push 0",    // rsp placeholder
+        "push r11",  // rflags
+        "push 0x23", // cs
+        "push rcx",  // rip
+        "push rax",
+        "push rbx",
+        "push rcx",
+        "push rdx",
+        "push rsi",
+        "push rdi",
+        "push rbp",
+        "push r8",
+        "push r9",
+        "push r10",
+        "push r11",
+        "push r12",
+        "push r13",
+        "push r14",
+        "push r15",
+        "lea r12, [rsp + 160]", // rsp before any of the above pushes (20 * 8 bytes)
+        "mov [rsp + 144], r12", // patch the rsp field with it
+        "mov r12, rsp",         // r12 = &InterruptedContext, kept live across the call below
         "push rbp",
         "push rcx",
         "push r11",     // rflags
@@ -82,34 +106,42 @@ extern "sysv64" fn asm_syscall_handler() {
         "and r11, ~0x100", // clear TF
         "push r11",
         "popfq",
-        "push r9",      // save r9 (arg6) temporarily
-        "mov r9, r8",   // 6th arg (was r8/arg5)
-        "mov r8, rcx",  // 5th arg (was rcx/r10/arg4)
-        "mov rcx, rdx", // 4th arg (was rdx/arg3)
-        "mov rdx, rsi", // 3rd arg (was rsi/arg2)
-        "mov rsi, rdi", // 2nd arg (was rdi/arg1)
-        "mov rdi, rax", // 1st arg (syscall number from rax)
+        "push r12",            // &InterruptedContext
+        "mov r12, [r12 + 24]", // restore r12's true original value
+        "push r9",             // save r9 (arg6) temporarily
+        "mov r9, r8",          // 6th arg (was r8/arg5)
+        "mov r8, rcx",         // 5th arg (was rcx/r10/arg4)
+        "mov rcx, rdx",        // 4th arg (was rdx/arg3)
+        "mov rdx, rsi",        // 3rd arg (was rsi/arg2)
+        "mov rsi, rdi",        // 2nd arg (was rdi/arg1)
+        "mov rdi, rax",        // 1st arg (syscall number from rax)
         "call syscall_handler",
-        "pop r9", // restore r9
+        "pop r9",
         "mov rsp, rbp",
         "pop r11",
         "pop rcx",
         "pop rbp",
+        "add rsp, 160", // drop the InterruptedContext frame built at entry
         "sysretq"
     );
 }
 
 #[no_mangle]
 extern "sysv64" fn syscall_handler(
-    syscall_num: u64, // (sysv abi) rax - syscall number
-    arg0: u64,        // (sysv abi) rdi
-    arg1: u64,        // (sysv abi) rsi
-    arg2: u64,        // (sysv abi) rdx
-    arg3: u64,        // (sysv abi) rcx from r10
-    arg4: u64,        // (sysv abi) r8
-    arg5: u64,        // (sysv abi) r9
+    syscall_num: u64,                       // (sysv abi) rax - syscall number
+    arg0: u64,                              // (sysv abi) rdi
+    arg1: u64,                              // (sysv abi) rsi
+    arg2: u64,                              // (sysv abi) rdx
+    arg3: u64,                              // (sysv abi) rcx from r10
+    arg4: u64,                              // (sysv abi) r8
+    arg5: u64,                              // (sysv abi) r9
+    interrupted: *const InterruptedContext, // (sysv abi) stack arg
 ) -> i64 /* rax */ {
     tty::check_sigint();
+
+    unsafe {
+        task::scheduler::capture_current_syscall_frame(&*interrupted);
+    }
 
     let result = syscall_handler_inner(syscall_num, arg0, arg1, arg2, arg3, arg4, arg5);
     result
