@@ -1,17 +1,11 @@
 use crate::{
-    arch::{
-        x86_64::{
-            context::{Context, ContextMode, InterruptedContext},
-            paging::{PageWriteThroughLevel, ReadWrite},
-            registers::{Cr3, Register, Rflags},
-        },
-        VirtualAddress,
+    arch::x86_64::{
+        context::{Context, ContextMode, InterruptedContext},
+        registers::{Cr3, Register, Rflags},
     },
     debug::dwarf::Dwarf,
     error::{Error, Result},
     fs::{path::Path, vfs::FileDescriptorNumber},
-    graphics::multi_layer::LayerId,
-    mem::bitmap::MemoryFrame,
     sync::mutex::Mutex,
     task::*,
 };
@@ -291,94 +285,6 @@ pub fn take_exit_code(id: TaskId) -> Option<i32> {
     TASK_SCHED.spin_lock().exit_codes.remove(&id)
 }
 
-pub fn current_add_layer_id(layer_id: LayerId) -> Result<()> {
-    let mut s = TASK_SCHED.spin_lock();
-    s.current_task_mut()?
-        .resource
-        .created_layer_ids
-        .push(layer_id);
-    Ok(())
-}
-
-pub fn current_remove_layer_id(layer_id: LayerId) -> Result<()> {
-    let mut s = TASK_SCHED.spin_lock();
-    s.current_task_mut()?
-        .resource
-        .created_layer_ids
-        .retain(|id| *id != layer_id);
-    Ok(())
-}
-
-pub fn current_add_fd(fd_num: FileDescriptorNumber) -> Result<()> {
-    let mut s = TASK_SCHED.spin_lock();
-    s.current_task_mut()?.resource.fd_nums.push(fd_num);
-    Ok(())
-}
-
-pub fn current_remove_fd(fd_num: FileDescriptorNumber) -> Result<()> {
-    let mut s = TASK_SCHED.spin_lock();
-    s.current_task_mut()?
-        .resource
-        .fd_nums
-        .retain(|fd| *fd != fd_num);
-    Ok(())
-}
-
-pub fn current_add_mem_frame(mem_frame: MemoryFrame) -> Result<()> {
-    let mut s = TASK_SCHED.spin_lock();
-    s.current_task_mut()?.resource.alloc_frames.push(mem_frame);
-    Ok(())
-}
-
-pub fn current_map_user_page(frame: &MemoryFrame) -> Result<()> {
-    let mut s = TASK_SCHED.spin_lock();
-    let task = s.current_task_mut()?;
-    let phys = frame.frame_start_phys_addr();
-    let start: VirtualAddress = phys.into();
-    let end = start.offset(frame.frame_size());
-    task.resource.page_table.map(
-        start,
-        end,
-        phys,
-        ReadWrite::Write,
-        PageWriteThroughLevel::WriteThrough,
-        false,
-    )?;
-    Ok(())
-}
-
-pub fn current_unmap_user_page(frame: &MemoryFrame) -> Result<()> {
-    let mut s = TASK_SCHED.spin_lock();
-    let task = s.current_task_mut()?;
-    let start: VirtualAddress = frame.frame_start_phys_addr().into();
-    let end = start.offset(frame.frame_size());
-    unsafe { task.resource.page_table.unmap(start, end) };
-    Ok(())
-}
-
-pub fn current_mem_frame_size(virt_addr: VirtualAddress) -> Result<Option<usize>> {
-    let mut s = TASK_SCHED.spin_lock();
-    let task = s.current_task_mut()?;
-    for mem_frame in &task.resource.alloc_frames {
-        if mem_frame.frame_start_virt_addr() == virt_addr {
-            return Ok(Some(mem_frame.frame_size()));
-        }
-    }
-    Ok(None)
-}
-
-pub fn current_remove_mem_frame(virt_addr: VirtualAddress) -> Result<MemoryFrame> {
-    let mut s = TASK_SCHED.spin_lock();
-    let allocated = &mut s.current_task_mut()?.resource.alloc_frames;
-    if let Some(index) = allocated
-        .iter()
-        .position(|info| info.frame_start_virt_addr() == virt_addr)
-    {
-        return Ok(allocated.remove(index));
-    }
-    Err(Error::InvalidData.with_context("virtual address"))
-}
-
 pub fn current_debug_print() -> bool {
     let s = TASK_SCHED.spin_lock();
     if let Some(task) = s.current_task.as_ref() {
@@ -397,6 +303,11 @@ pub fn current_pipe_fd() -> Option<[Option<FileDescriptorNumber>; 3]> {
     let sched = TASK_SCHED.spin_lock();
     let task = sched.current_task.as_ref()?;
     Some(task.resource.pipe_fd)
+}
+
+pub fn with_current_resource<R>(f: impl FnOnce(&mut TaskResource) -> R) -> Result<R> {
+    let mut s = TASK_SCHED.spin_lock();
+    Ok(f(&mut s.current_task_mut()?.resource))
 }
 
 pub fn preempt_sched(interrupted: &InterruptedContext) -> *const Context {

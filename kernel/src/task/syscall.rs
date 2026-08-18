@@ -1,6 +1,11 @@
 use crate::{
     arch::{
-        x86_64::{self, gdt::*, paging::PAGE_SIZE, registers::*},
+        x86_64::{
+            self,
+            gdt::*,
+            paging::{PageWriteThroughLevel, ReadWrite, PAGE_SIZE},
+            registers::*,
+        },
         VirtualAddress,
     },
     device::tty,
@@ -550,7 +555,7 @@ fn sys_open(filepath: *const u8, flags: i32) -> Result<i32> {
         .into();
     let create = (flags as u32) & OPEN_FLAG_CREATE != 0;
     let fd_num = vfs::open_file(&filepath, create)?;
-    task::scheduler::current_add_fd(fd_num)?;
+    task::scheduler::with_current_resource(|r| r.fd_nums.push(fd_num))?;
 
     Ok(fd_num.get() as i32)
 }
@@ -558,7 +563,7 @@ fn sys_open(filepath: *const u8, flags: i32) -> Result<i32> {
 fn sys_close(fd_num: i32) -> Result<()> {
     if let Ok(fd) = FileDescriptorNumber::try_new(fd_num) {
         if vfs::close_file(fd).is_ok() {
-            task::scheduler::current_remove_fd(fd)?;
+            task::scheduler::with_current_resource(|r| r.fd_nums.retain(|f| *f != fd))?;
             return Ok(());
         }
     }
@@ -582,9 +587,23 @@ fn sys_sbrk(len: usize) -> Result<*const u8> {
     }
 
     let mem_frame = bitmap::alloc_mem_frame((len + PAGE_SIZE).div_ceil(PAGE_SIZE))?;
-    task::scheduler::current_map_user_page(&mem_frame)?;
+    let phys = mem_frame.frame_start_phys_addr();
+    let start: VirtualAddress = phys.into();
+    let end = start.offset(mem_frame.frame_size());
+
+    let _ = task::scheduler::with_current_resource(|r| {
+        r.page_table.map(
+            start,
+            end,
+            phys,
+            ReadWrite::Write,
+            PageWriteThroughLevel::WriteThrough,
+            false,
+        )
+    })?;
+
     let virt_addr = mem_frame.frame_start_virt_addr();
-    task::scheduler::current_add_mem_frame(mem_frame)?;
+    task::scheduler::with_current_resource(|r| r.alloc_frames.push(mem_frame))?;
 
     Ok(virt_addr.as_ptr())
 }
@@ -698,8 +717,23 @@ fn sys_chdir(path: *const u8) -> Result<()> {
 fn sys_free(ptr: *const u8) -> Result<()> {
     let virt_addr: VirtualAddress = (ptr as u64).into();
 
-    let mem_frame = task::scheduler::current_remove_mem_frame(virt_addr)?;
-    task::scheduler::current_unmap_user_page(&mem_frame)?;
+    let mem_frame = task::scheduler::with_current_resource(|r| {
+        if let Some(index) = r
+            .alloc_frames
+            .iter()
+            .position(|info| info.frame_start_virt_addr() == virt_addr)
+        {
+            return Ok(r.alloc_frames.remove(index));
+        }
+
+        Err(Error::InvalidData.with_context("virtual address"))
+    })??;
+
+    // unmap
+    let start: VirtualAddress = mem_frame.frame_start_phys_addr().into();
+    let end = start.offset(mem_frame.frame_size());
+    task::scheduler::with_current_resource(|r| unsafe { r.page_table.unmap(start, end) })?;
+
     bitmap::dealloc_mem_frame(mem_frame)?;
 
     Ok(())
@@ -717,7 +751,12 @@ fn sys_wait(pid: pid_t) -> Result<i32> {
 
 fn sys_sbrksz(target: *const u8) -> Result<usize> {
     let target_virt_addr: VirtualAddress = (target as u64).into();
-    let size = task::scheduler::current_mem_frame_size(target_virt_addr)?;
+    let size = task::scheduler::with_current_resource(|r| {
+        r.alloc_frames
+            .iter()
+            .find(|&f| f.frame_start_virt_addr() == target_virt_addr)
+            .map(|f| f.frame_size())
+    })?;
     let size = size.ok_or(Error::NotFound.with_context("memory frame size"))?;
 
     Ok(size)
@@ -780,7 +819,9 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
 
             let layer_id = LayerId::from(layer_id as usize);
             window_manager::remove_component(layer_id)?;
-            task::scheduler::current_remove_layer_id(layer_id)?;
+            task::scheduler::with_current_resource(|r| {
+                r.created_layer_ids.retain(|id| *id != layer_id)
+            })?;
 
             // reply
             let reply_header = iomsg_header::new(IomsgCommand::RemoveComponent, 0);
@@ -820,7 +861,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             }
 
             let layer_id = window_manager::create_window(title, xy, wh)?;
-            task::scheduler::current_add_layer_id(layer_id.clone())?;
+            task::scheduler::with_current_resource(|r| r.created_layer_ids.push(layer_id))?;
 
             // reply
             let reply_header =
@@ -1060,8 +1101,10 @@ fn sys_pipe(pipefd: *mut i32) -> Result<()> {
         pipefd.add(1).write(write_fd.get() as i32);
     }
 
-    task::scheduler::current_add_fd(read_fd)?;
-    task::scheduler::current_add_fd(write_fd)?;
+    task::scheduler::with_current_resource(|r| {
+        r.fd_nums.push(read_fd);
+        r.fd_nums.push(write_fd);
+    })?;
     Ok(())
 }
 
