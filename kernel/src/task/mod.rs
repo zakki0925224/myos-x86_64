@@ -67,7 +67,7 @@ struct TaskResource {
     stack_frame: Option<MemoryFrame>,
     program_frames: Vec<MemoryFrame>,
     alloc_frames: Vec<MemoryFrame>,
-    created_layer_ids: Vec<LayerId>,
+    layer_ids: Vec<LayerId>,
     fd_nums: Vec<FileDescriptorNumber>,
     pipe_fd: [Option<FileDescriptorNumber>; 3],
 }
@@ -91,7 +91,7 @@ impl Drop for TaskResource {
         }
 
         // destroy all created windows
-        for layer_id in self.created_layer_ids.iter() {
+        for layer_id in self.layer_ids.iter() {
             let _ = window_manager::remove_component(*layer_id);
         }
 
@@ -116,10 +116,18 @@ impl TaskResource {
             stack_frame,
             program_frames,
             alloc_frames: Vec::new(),
-            created_layer_ids: Vec::new(),
+            layer_ids: Vec::new(),
             fd_nums: Vec::new(),
             pipe_fd,
         }
+    }
+
+    pub fn owns_fd(&self, fd: FileDescriptorNumber) -> bool {
+        self.fd_nums.contains(&fd)
+    }
+
+    pub fn owns_layer_id(&self, layer_id: LayerId) -> bool {
+        self.layer_ids.contains(&layer_id)
     }
 }
 

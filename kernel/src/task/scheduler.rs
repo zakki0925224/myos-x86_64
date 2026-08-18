@@ -299,12 +299,6 @@ pub fn current_dwarf() -> Option<Dwarf> {
     TASK_SCHED.spin_lock().current_task.as_ref()?.dwarf.clone()
 }
 
-pub fn current_pipe_fd() -> Option<[Option<FileDescriptorNumber>; 3]> {
-    let sched = TASK_SCHED.spin_lock();
-    let task = sched.current_task.as_ref()?;
-    Some(task.resource.pipe_fd)
-}
-
 pub fn with_current_resource<R>(f: impl FnOnce(&mut TaskResource) -> R) -> Result<R> {
     let mut s = TASK_SCHED.spin_lock();
     Ok(f(&mut s.current_task_mut()?.resource))

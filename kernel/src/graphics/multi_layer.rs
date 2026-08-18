@@ -13,7 +13,7 @@ static LAYER_MAN: Mutex<LayerManager> = Mutex::new(LayerManager::new());
 #[derive(Debug)]
 pub enum LayerError {
     OutsideBufferArea { layer_id: usize, point: Point },
-    InvalidLayerId(usize),
+    InvalidLayerId(Option<usize>),
 }
 
 impl core::fmt::Display for LayerError {
@@ -26,8 +26,11 @@ impl core::fmt::Display for LayerError {
                     point, layer_id
                 )
             }
-            Self::InvalidLayerId(id) => {
+            Self::InvalidLayerId(Some(id)) => {
                 write!(f, "Invalid layer ID: {}", id)
+            }
+            Self::InvalidLayerId(None) => {
+                write!(f, "Invalid layer ID number")
             }
         }
     }
@@ -60,9 +63,12 @@ impl LayerId {
     }
 }
 
-impl From<usize> for LayerId {
-    fn from(value: usize) -> Self {
-        Self(value)
+impl LayerId {
+    pub fn try_new(value: i32) -> Result<Self> {
+        if value < 0 {
+            return Err(LayerError::InvalidLayerId(None).into());
+        }
+        Ok(Self(value as usize))
     }
 }
 
@@ -187,7 +193,7 @@ impl LayerManager {
     fn remove_layer(&mut self, layer_id: LayerId) -> Result<()> {
         let removed = match self.layers.iter().find(|l| l.id == layer_id) {
             Some(l) => l,
-            None => return Err(LayerError::InvalidLayerId(layer_id.0).into()),
+            None => return Err(LayerError::InvalidLayerId(Some(layer_id.0)).into()),
         };
 
         let r_x1 = removed.pos.x;
@@ -223,7 +229,7 @@ impl LayerManager {
     fn bring_layer_to_front(&mut self, layer_id: LayerId) -> Result<()> {
         let index = match self.layers.iter().position(|l| l.id == layer_id) {
             Some(i) => i,
-            None => return Err(LayerError::InvalidLayerId(layer_id.0).into()),
+            None => return Err(LayerError::InvalidLayerId(Some(layer_id.0)).into()),
         };
         let layer = self.layers.remove(index);
 
@@ -249,7 +255,7 @@ impl LayerManager {
         self.layers
             .iter_mut()
             .find(|l| l.id == layer_id)
-            .ok_or(LayerError::InvalidLayerId(layer_id.0).into())
+            .ok_or(LayerError::InvalidLayerId(Some(layer_id.0)).into())
     }
 
     fn draw_to_frame_buf(&mut self) -> Result<()> {

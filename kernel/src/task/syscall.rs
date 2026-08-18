@@ -427,14 +427,16 @@ fn syscall_handler_inner(
 }
 
 fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
-    let fd_num = FileDescriptorNumber::try_new(fd_num)?;
+    let fd_num = resolve_owned_fd(fd_num)?;
 
     match fd_num {
         FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => {
             return Err(Error::NotFound.with_context("file descriptor"));
         }
         FileDescriptorNumber::STDIN => {
-            if let Some(fd_num) = task::scheduler::current_pipe_fd().and_then(|fds| fds[0]) {
+            if let Some(fd_num) =
+                task::scheduler::with_current_resource(|r| r.pipe_fd).and_then(|fds| Ok(fds[0]))?
+            {
                 // block until data arrives or all write ends are closed (EOF)
                 loop {
                     tty::check_sigint();
@@ -525,12 +527,14 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
 }
 
 fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<usize> {
-    let fd_num = FileDescriptorNumber::try_new(fd_num)?;
+    let fd_num = resolve_owned_fd(fd_num)?;
     let buf_slice = unsafe { slice::from_raw_parts(buf, buf_len) };
 
     match fd_num {
         FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => {
-            if let Some(fd_num) = task::scheduler::current_pipe_fd().and_then(|fds| fds[1]) {
+            if let Some(fd_num) =
+                task::scheduler::with_current_resource(|r| r.pipe_fd).and_then(|fds| Ok(fds[1]))?
+            {
                 vfs::write_file(fd_num, buf_slice)?;
                 return Ok(buf_len);
             }
@@ -561,7 +565,7 @@ fn sys_open(filepath: *const u8, flags: i32) -> Result<i32> {
 }
 
 fn sys_close(fd_num: i32) -> Result<()> {
-    if let Ok(fd) = FileDescriptorNumber::try_new(fd_num) {
+    if let Ok(fd) = resolve_owned_fd(fd_num) {
         if vfs::close_file(fd).is_ok() {
             task::scheduler::with_current_resource(|r| r.fd_nums.retain(|f| *f != fd))?;
             return Ok(());
@@ -651,7 +655,7 @@ fn sys_break() {
 }
 
 fn sys_stat(fd_num: i32, buf: *mut f_stat) -> Result<()> {
-    let fd_num = FileDescriptorNumber::try_new(fd_num)?;
+    let fd_num = resolve_owned_fd(fd_num)?;
     let stat_mut = unsafe { &mut *buf };
 
     let size = match fd_num {
@@ -813,15 +817,9 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
                 return Err(Error::InvalidBufferSize { required, actual }.into());
             }
 
-            if layer_id < 0 {
-                return Err(Error::InvalidData.with_context("layer ID"));
-            }
-
-            let layer_id = LayerId::from(layer_id as usize);
+            let layer_id = resolve_owned_layer_id(layer_id)?;
             window_manager::remove_component(layer_id)?;
-            task::scheduler::with_current_resource(|r| {
-                r.created_layer_ids.retain(|id| *id != layer_id)
-            })?;
+            task::scheduler::with_current_resource(|r| r.layer_ids.retain(|id| *id != layer_id))?;
 
             // reply
             let reply_header = iomsg_header::new(IomsgCommand::RemoveComponent, 0);
@@ -861,7 +859,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             }
 
             let layer_id = window_manager::create_window(title, xy, wh)?;
-            task::scheduler::with_current_resource(|r| r.created_layer_ids.push(layer_id))?;
+            task::scheduler::with_current_resource(|r| r.layer_ids.push(layer_id))?;
 
             // reply
             let reply_header =
@@ -903,11 +901,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
                 return Err(Error::InvalidBufferSize { required, actual }.into());
             }
 
-            if layer_id < 0 {
-                return Err(Error::InvalidData.with_context("layer ID"));
-            }
-
-            let layer_id = LayerId::from(layer_id as usize);
+            let layer_id = resolve_owned_layer_id(layer_id)?;
             let wh = Size::new(image_width, image_height);
             let framebuf_virt_addr: VirtualAddress = (framebuf_ptr as u64).into();
 
@@ -1109,7 +1103,7 @@ fn sys_pipe(pipefd: *mut i32) -> Result<()> {
 }
 
 fn sys_lseek(fd_num: i32, offset: i64, whence: u32) -> Result<i64> {
-    let fd_num = FileDescriptorNumber::try_new(fd_num)?;
+    let fd_num = resolve_owned_fd(fd_num)?;
 
     let pos = match whence {
         SEEK_SET => SeekFrom::Start(offset),
@@ -1153,4 +1147,28 @@ pub fn enable() {
     assert_eq!(SystemCallFlagMaskRegister::read().value(), 0);
 
     kinfo!("syscall: Enabled syscall");
+}
+
+fn resolve_owned_fd(fd_num: i32) -> Result<FileDescriptorNumber> {
+    let fd = FileDescriptorNumber::try_new(fd_num)?;
+
+    match fd {
+        FileDescriptorNumber::STDIN
+        | FileDescriptorNumber::STDOUT
+        | FileDescriptorNumber::STDERR => Ok(fd),
+        fd => {
+            let owned = task::scheduler::with_current_resource(|r| r.owns_fd(fd))?;
+            owned
+                .then_some(fd)
+                .ok_or(Error::NotFound.with_context("file descriptor"))
+        }
+    }
+}
+
+fn resolve_owned_layer_id(layer_id: i32) -> Result<LayerId> {
+    let id = LayerId::try_new(layer_id)?;
+    let owned = task::scheduler::with_current_resource(|r| r.owns_layer_id(id))?;
+    owned
+        .then_some(id)
+        .ok_or(Error::NotFound.with_context("layer id"))
 }
