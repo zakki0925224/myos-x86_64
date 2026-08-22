@@ -69,14 +69,25 @@ impl IomsgHeaderExt for iomsg_header {
     }
 }
 
+static mut KERNEL_STACK_TOP: u64 = 0;
+static mut USER_RSP: u64 = 0;
+
+pub fn set_kernel_stack_top(top: u64) {
+    unsafe {
+        KERNEL_STACK_TOP = top;
+    }
+}
+
 #[unsafe(naked)]
 extern "sysv64" fn asm_syscall_handler() {
     naked_asm!(
-        "push 0x1b", // ss
-        "push 0",    // rsp placeholder
-        "push r11",  // rflags
-        "push 0x23", // cs
-        "push rcx",  // rip
+        "mov [rip + {user_rsp}], rsp",
+        "mov rsp, [rip + {kernel_stack_top}]",
+        "push 0x1b",                         // ss
+        "push qword ptr [rip + {user_rsp}]", // rsp
+        "push r11",                          // rflags
+        "push 0x23",                         // cs
+        "push rcx",                          // rip
         "push rax",
         "push rbx",
         "push rcx",
@@ -92,20 +103,14 @@ extern "sysv64" fn asm_syscall_handler() {
         "push r13",
         "push r14",
         "push r15",
-        "lea r12, [rsp + 160]", // rsp before any of the above pushes (20 * 8 bytes)
-        "mov [rsp + 144], r12", // patch the rsp field with it
-        "mov r12, rsp",         // r12 = &InterruptedContext, kept live across the call below
+        "sti",          // the frame is built, the kernel stack is safe to be interrupted
+        "mov r12, rsp", // r12 = &InterruptedContext, kept live across the call below
         "push rbp",
         "push rcx",
         "push r11",     // rflags
         "mov rcx, r10", // rcx was updated by syscall instruction
         "mov rbp, rsp",
         "and rsp, -16",
-        "pushfq",
-        "pop r11",
-        "and r11, ~0x100", // clear TF
-        "push r11",
-        "popfq",
         "push r12",            // &InterruptedContext
         "mov r12, [r12 + 24]", // restore r12's true original value
         "push r9",             // save r9 (arg6) temporarily
@@ -121,8 +126,11 @@ extern "sysv64" fn asm_syscall_handler() {
         "pop r11",
         "pop rcx",
         "pop rbp",
-        "add rsp, 160", // drop the InterruptedContext frame built at entry
-        "sysretq"
+        "cli",                  // do not run on the user stack with interrupts enabled
+        "mov rsp, [rsp + 144]", // back to the user stack
+        "sysretq",              // sysretq restores rflags
+        user_rsp = sym USER_RSP,
+        kernel_stack_top = sym KERNEL_STACK_TOP,
     );
 }
 
@@ -1179,10 +1187,12 @@ pub fn enable() {
         target_addr
     );
 
+    // TF | IF | DF | AC
+    let fmask_value: u64 = (1 << 8) | (1 << 9) | (1 << 10) | (1 << 18);
     let mut fmask = SystemCallFlagMaskRegister::read();
-    fmask.set_value(0);
+    fmask.set_value(fmask_value);
     fmask.write();
-    assert_eq!(SystemCallFlagMaskRegister::read().value(), 0);
+    assert_eq!(SystemCallFlagMaskRegister::read().value(), fmask_value);
 
     kinfo!("syscall: Enabled syscall");
 }

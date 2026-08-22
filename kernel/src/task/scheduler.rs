@@ -2,6 +2,7 @@ use crate::{
     arch::x86_64::{
         context::{Context, ContextMode, InterruptedContext},
         registers::Rflags,
+        tss,
     },
     debug::dwarf::Dwarf,
     error::{Error, Result},
@@ -187,6 +188,12 @@ impl TaskScheduler {
     }
 }
 
+fn set_kernel_stack(task: &Task) {
+    let top = task.kernel_stack_top();
+    tss::set_rsp0(top);
+    syscall::set_kernel_stack_top(top);
+}
+
 pub fn init() -> Result<()> {
     let mut kernel_task = Task::new(
         None,
@@ -199,6 +206,7 @@ pub fn init() -> Result<()> {
     )?;
     assert!(kernel_task.id == TaskId::KERNEL);
     kernel_task.state = TaskState::Running;
+    set_kernel_stack(&kernel_task);
     TASK_SCHED.spin_lock().current_task = Some(Box::new(kernel_task));
     Ok(())
 }
@@ -238,6 +246,7 @@ pub fn sleep_waiting_for(child_id: TaskId) {
         .try_sleep_current_waiting_for(child_id);
     if let Some((prev, next)) = pair {
         unsafe {
+            set_kernel_stack(&*next);
             (*prev).switch_to(&*next);
         }
     }
@@ -257,7 +266,10 @@ pub fn sched() {
     drop(stale);
 
     if let Some((prev, next)) = switch_pair {
-        unsafe { (*prev).switch_to(&*next) };
+        unsafe {
+            set_kernel_stack(&*next);
+            (*prev).switch_to(&*next)
+        };
     } else {
         saved.write();
         panic!("No next task!")
@@ -277,6 +289,7 @@ pub fn exit_current(exit_code: i32) -> ! {
     drop(old);
 
     unsafe {
+        set_kernel_stack(&*next);
         (*prev).switch_to(&*next);
     }
 
@@ -329,7 +342,10 @@ pub fn preempt_sched(interrupted: &InterruptedContext) -> *const Context {
     drop(stale);
 
     match pair {
-        Some((_, next)) => unsafe { &(*next).context as *const Context },
+        Some((_, next)) => unsafe {
+            set_kernel_stack(&*next);
+            &(*next).context as *const Context
+        },
         None => core::ptr::null(),
     }
 }

@@ -151,7 +151,7 @@ pub fn init() {
     gdt3.set_data_seg(SegmentType::DataReadWrite, 3, 0, 0x000f_ffff);
     gdt4.set_code_seg(SegmentType::CodeExecuteRead, 3, 0, 0x000f_ffff);
 
-    let tss_addr = tss::init().unwrap();
+    let tss_addr = tss::init();
     {
         let mut gdt = GDT.try_lock().unwrap();
         gdt.set_desc(1, gdt1);

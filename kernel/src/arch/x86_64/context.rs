@@ -5,11 +5,6 @@ use core::arch::{asm, naked_asm};
 const KERNEL_STACK_SIZE: usize = 1024 * 1024;
 static KERNEL_STACK: KernelStack = KernelStack::new();
 
-const SWITCH_STACK_SIZE: usize = 512;
-#[repr(align(16))]
-struct SwitchStack([u8; SWITCH_STACK_SIZE]);
-static mut SWITCH_STACK: SwitchStack = SwitchStack([0; SWITCH_STACK_SIZE]);
-
 #[repr(align(16))]
 struct KernelStack([u8; KERNEL_STACK_SIZE]);
 
@@ -77,8 +72,6 @@ extern "sysv64" fn switch_context(next_ctx: &Context, current_ctx: &Context) {
         "mov [rsi + 0xb0], r14",
         "mov [rsi + 0xb8], r15",
         "fxsave64 [rsi + 0xc0]", // fpu_context
-        "lea rsp, [rip + {switch_stack}]",
-        "add rsp, {switch_stack_size}",
         // stack frame
         "push qword ptr [rdi + 0x28]", // ss
         "push qword ptr [rdi + 0x70]", // rsp
@@ -109,8 +102,6 @@ extern "sysv64" fn switch_context(next_ctx: &Context, current_ctx: &Context) {
         "mov r15, [rdi + 0xb8]",
         "mov rdi, [rdi + 0x60]",
         "iretq",
-        switch_stack = sym SWITCH_STACK,
-        switch_stack_size = const SWITCH_STACK_SIZE,
     );
 }
 
@@ -118,8 +109,6 @@ extern "sysv64" fn switch_context(next_ctx: &Context, current_ctx: &Context) {
 #[unsafe(naked)]
 pub unsafe extern "C" fn restore_context_and_iret(ctx: *const Context) {
     naked_asm!(
-        "lea rsp, [rip + {switch_stack}]",
-        "add rsp, {switch_stack_size}",
         "push qword ptr [rdi + 0x28]", // ss
         "push qword ptr [rdi + 0x70]", // rsp
         "push qword ptr [rdi + 0x10]", // rflags
@@ -148,8 +137,6 @@ pub unsafe extern "C" fn restore_context_and_iret(ctx: *const Context) {
         "mov r15, [rdi + 0xb8]",
         "mov rdi, [rdi + 0x60]",
         "iretq",
-        switch_stack = sym SWITCH_STACK,
-        switch_stack_size = const SWITCH_STACK_SIZE,
     );
 }
 

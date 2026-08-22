@@ -31,6 +31,7 @@ pub mod scheduler;
 pub mod syscall;
 
 pub const USER_TASK_STACK_SIZE: usize = 1024 * 1024; // 1MiB
+const TASK_KERNEL_STACK_SIZE: usize = 64 * 1024; // 64KiB
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TaskId(usize);
@@ -63,6 +64,7 @@ impl From<usize> for TaskId {
 #[derive(Debug)]
 pub(crate) struct TaskResource {
     page_table: UserPageTable,
+    kernel_stack: Option<MemoryFrame>,
     args_frame: Option<MemoryFrame>,
     stack_frame: Option<MemoryFrame>,
     program_frames: Vec<MemoryFrame>,
@@ -74,6 +76,10 @@ pub(crate) struct TaskResource {
 
 impl Drop for TaskResource {
     fn drop(&mut self) {
+        if let Some(kernel_stack) = self.kernel_stack.take() {
+            bitmap::dealloc_mem_frame(kernel_stack).unwrap();
+        }
+
         if let Some(args_frame) = self.args_frame.take() {
             bitmap::dealloc_mem_frame(args_frame).unwrap();
         }
@@ -105,6 +111,7 @@ impl Drop for TaskResource {
 impl TaskResource {
     fn new(
         page_table: UserPageTable,
+        kernel_stack: MemoryFrame,
         args_frame: Option<MemoryFrame>,
         stack_frame: Option<MemoryFrame>,
         program_frames: Vec<MemoryFrame>,
@@ -112,6 +119,7 @@ impl TaskResource {
     ) -> Self {
         Self {
             page_table,
+            kernel_stack: Some(kernel_stack),
             args_frame,
             stack_frame,
             program_frames,
@@ -124,6 +132,7 @@ impl TaskResource {
 
     fn from_fork(
         page_table: UserPageTable,
+        kernel_stack: MemoryFrame,
         cloned: Vec<(VirtualAddress, MemoryFrame)>,
         parent_alloc_frames: &[MemoryFrame],
     ) -> Self {
@@ -144,6 +153,7 @@ impl TaskResource {
 
         Self {
             page_table,
+            kernel_stack: Some(kernel_stack),
             args_frame: None,
             stack_frame: None,
             program_frames,
@@ -370,6 +380,8 @@ impl Task {
             arg1 = args_mem_virt_addr.get();
         }
 
+        let kernel_stack = bitmap::alloc_mem_frame(TASK_KERNEL_STACK_SIZE / PAGE_SIZE)?;
+
         let name = Path::new(args.unwrap_or(&["/kernel"])[0]).name();
 
         // context
@@ -388,6 +400,7 @@ impl Task {
             context,
             resource: TaskResource::new(
                 user_page_table,
+                kernel_stack,
                 args_frame,
                 stack_frame,
                 program_frames,
@@ -402,6 +415,7 @@ impl Task {
 
     fn fork_from(parent: &Self, mut context: Context) -> Result<Self> {
         let (page_table, cloned) = parent.resource.page_table.fork_from()?;
+        let kernel_stack = bitmap::alloc_mem_frame(TASK_KERNEL_STACK_SIZE / PAGE_SIZE)?;
         context.cr3 = page_table.pml4_phys_addr();
         context.rax = 0; // return value
 
@@ -410,12 +424,30 @@ impl Task {
             name: parent.name.clone(),
             state: TaskState::default(),
             context,
-            resource: TaskResource::from_fork(page_table, cloned, &parent.resource.alloc_frames),
+            resource: TaskResource::from_fork(
+                page_table,
+                kernel_stack,
+                cloned,
+                &parent.resource.alloc_frames,
+            ),
             dwarf: parent.dwarf.clone(),
             waiting_for: None,
             parent: Some(parent.id),
             children: Vec::new(),
         })
+    }
+
+    fn kernel_stack_top(&self) -> u64 {
+        let frame = self
+            .resource
+            .kernel_stack
+            .as_ref()
+            .expect("Kernel stack was already freed");
+
+        frame
+            .frame_start_virt_addr()
+            .offset(frame.frame_size())
+            .get()
     }
 
     fn switch_to(&self, next_task: &Self) {
@@ -436,6 +468,8 @@ pub fn debug_task(task: &Task) {
             stack.frame_size(),
         );
     }
+
+    kdebug!("kernel stack: (top){:#x}", task.kernel_stack_top());
 
     kdebug!("context:");
     kdebug!(
