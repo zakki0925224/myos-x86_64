@@ -15,13 +15,19 @@ impl Debug for VirtualAddress {
 
 impl From<u64> for VirtualAddress {
     fn from(addr: u64) -> Self {
-        Self::new(addr)
+        Self(addr)
     }
 }
 
 impl VirtualAddress {
     pub fn new(addr: u64) -> Self {
         Self(addr)
+    }
+
+    pub fn from_entry_index(idx4: usize, idx3: usize, idx2: usize, idx1: usize) -> Self {
+        let addr =
+            (idx4 as u64) << 39 | (idx3 as u64) << 30 | (idx2 as u64) << 21 | (idx1 as u64) << 12;
+        Self(((addr << 16) as i64 >> 16) as u64)
     }
 
     pub fn get(&self) -> u64 {

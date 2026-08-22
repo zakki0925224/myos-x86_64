@@ -344,6 +344,80 @@ impl UserPageTable {
         Ok(this)
     }
 
+    pub fn fork_from(&self) -> Result<(Self, Vec<(VirtualAddress, MemoryFrame)>)> {
+        let mut child = Self::new_cloned_from_kernel()?;
+        let mut cloned = Vec::new();
+
+        let parent_pml4: &PageTable = unsafe {
+            &*(self
+                .pml4_frame
+                .as_ref()
+                .unwrap()
+                .frame_start_virt_addr()
+                .as_ptr())
+        };
+
+        for idx4 in 0..PAGE_TABLE_ENTRY_LEN {
+            let pml4e = &parent_pml4.entries[idx4];
+            if !pml4e.p() || pml4e.us() != EntryMode::User {
+                continue;
+            }
+
+            let parent_pml3 = unsafe { &*(pml4e.addr() as *const PageTable) };
+            for idx3 in 0..PAGE_TABLE_ENTRY_LEN {
+                let pml3e = &parent_pml3.entries[idx3];
+                if !pml3e.p() || pml3e.us() != EntryMode::User {
+                    continue;
+                }
+
+                let parent_pml2 = unsafe { &*(pml3e.addr() as *const PageTable) };
+                for idx2 in 0..PAGE_TABLE_ENTRY_LEN {
+                    let pml2e = &parent_pml2.entries[idx2];
+                    if !pml2e.p() || pml2e.us() != EntryMode::User {
+                        continue;
+                    }
+
+                    if pml2e.page_size() {
+                        return Err(PageError::HugePageNotSupported.into());
+                    }
+
+                    let parent_pml1 = unsafe { &*(pml2e.addr() as *const PageTable) };
+                    for idx1 in 0..PAGE_TABLE_ENTRY_LEN {
+                        let pml1e = &parent_pml1.entries[idx1];
+                        if !pml1e.p() || pml1e.us() != EntryMode::User {
+                            continue;
+                        }
+
+                        let virt_addr = VirtualAddress::from_entry_index(idx4, idx3, idx2, idx1);
+                        let new_frame = bitmap::alloc_mem_frame(1)?;
+                        unsafe {
+                            new_frame
+                                .frame_start_virt_addr()
+                                .as_ptr_mut::<u8>()
+                                .copy_from_nonoverlapping(
+                                    VirtualAddress::new(pml1e.addr()).as_ptr::<u8>(),
+                                    PAGE_SIZE,
+                                );
+                        }
+
+                        child.map(
+                            virt_addr,
+                            virt_addr.offset(PAGE_SIZE),
+                            new_frame.frame_start_phys_addr(),
+                            pml1e.rw(),
+                            pml1e.pwt(),
+                            pml1e.pcd(),
+                        )?;
+
+                        cloned.push((virt_addr, new_frame));
+                    }
+                }
+            }
+        }
+
+        Ok((child, cloned))
+    }
+
     pub fn pml4_phys_addr(&self) -> u64 {
         self.pml4_frame.as_ref().unwrap().frame_start_phys_addr()
     }

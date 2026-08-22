@@ -356,6 +356,21 @@ pub fn task_snapshot(id: TaskId) -> Option<TaskSnapshot> {
     })
 }
 
+pub fn fork_current() -> Result<TaskId> {
+    Rflags::read_with_cli();
+    fork_current_locked()
+}
+
+fn fork_current_locked() -> Result<TaskId> {
+    let mut s = TASK_SCHED.spin_lock();
+    let parent = s.current_task_mut()?;
+    let child = Task::fork_from(parent, parent.context)?;
+    let child_id = child.id;
+    s.spawn(child);
+    s.current_task_mut()?.children.push(child_id);
+    Ok(child_id)
+}
+
 #[test_case]
 fn test_multitask_scheduler_round_robin() {
     let mut sched = TaskScheduler::new();

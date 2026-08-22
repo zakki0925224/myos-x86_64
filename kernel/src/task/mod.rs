@@ -122,6 +122,38 @@ impl TaskResource {
         }
     }
 
+    fn from_fork(
+        page_table: UserPageTable,
+        cloned: Vec<(VirtualAddress, MemoryFrame)>,
+        parent_alloc_frames: &[MemoryFrame],
+    ) -> Self {
+        let mut alloc_frames = Vec::new();
+        let mut program_frames = Vec::new();
+
+        for (virt_addr, frame) in cloned {
+            let is_heap = parent_alloc_frames
+                .iter()
+                .any(|f| f.frame_start_virt_addr() == virt_addr);
+
+            if is_heap {
+                alloc_frames.push(frame);
+            } else {
+                program_frames.push(frame);
+            }
+        }
+
+        Self {
+            page_table,
+            args_frame: None,
+            stack_frame: None,
+            program_frames,
+            alloc_frames,
+            layer_ids: Vec::new(),
+            fd_nums: Vec::new(),
+            pipe_fd: [None, None, None],
+        }
+    }
+
     pub fn owns_fd(&self, fd: FileDescriptorNumber) -> bool {
         self.fd_nums.contains(&fd)
     }
@@ -372,7 +404,25 @@ impl Task {
         })
     }
 
-    fn switch_to(&self, next_task: &Task) {
+    fn fork_from(parent: &Self, mut context: Context) -> Result<Self> {
+        let (page_table, cloned) = parent.resource.page_table.fork_from()?;
+        context.cr3 = page_table.pml4_phys_addr();
+        context.rax = 0; // return value
+
+        Ok(Self {
+            id: TaskId::new(),
+            name: parent.name.clone(),
+            state: TaskState::default(),
+            context,
+            resource: TaskResource::from_fork(page_table, cloned, &parent.resource.alloc_frames),
+            dwarf: parent.dwarf.clone(),
+            waiting_for: None,
+            parent: Some(parent.id),
+            children: Vec::new(),
+        })
+    }
+
+    fn switch_to(&self, next_task: &Self) {
         // kdebug!("task: Switch context tid: {} to {}", self.id, next_task.id);
 
         self.context.switch_to(&next_task.context);

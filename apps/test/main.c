@@ -216,9 +216,52 @@ int test_crash() {
     return 0;
 }
 
+int global_counter = 100;
+
+int test_fork() {
+    printf("=== Fork Test ===\n");
+
+    global_counter = 100;
+    int local_var = 1;
+
+    pid_t pid = sys_fork();
+    if (pid < 0) {
+        printf("FAIL: sys_fork\n");
+        return -1;
+    }
+
+    if (pid == 0) {
+        // child
+        local_var++;
+        global_counter++;
+        printf("child: pid=%d, local_var=%d, global_counter=%d\n", sys_getpid(), local_var, global_counter);
+        sys_exit(local_var == 2 && global_counter == 101 ? 0 : 1);
+    }
+
+    // parent
+    printf("parent: forked child pid=%d\n", pid);
+    printf("parent: local_var=%d, global_counter=%d (should be unchanged)\n", local_var, global_counter);
+
+    int status = sys_wait(pid);
+    printf("parent: child exited with status=%d\n", status);
+
+    if (status != 0) {
+        printf("FAIL: child reported bad state\n");
+        return -1;
+    }
+    if (local_var != 1 || global_counter != 100) {
+        printf("FAIL: parent's memory was mutated by child (no address space isolation)\n");
+        return -1;
+    }
+
+    printf("OK\n");
+    return 0;
+}
+
 int main(int argc, const char* argv[]) {
     // return test_tcp_server();
     // return test_tcp_client();
     // return test_pipe();
-    return test_crash();
+    // return test_crash();
+    return test_fork();
 }

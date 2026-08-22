@@ -3,6 +3,7 @@ pub enum PageError {
     PageNotMapped,
     AddressNotAlignedByPageSize(u64),
     AddressNotMapped(u64),
+    HugePageNotSupported,
 }
 
 impl core::fmt::Display for PageError {
@@ -15,6 +16,7 @@ impl core::fmt::Display for PageError {
             Self::AddressNotMapped(addr) => {
                 write!(f, "Address not mapped: {:#x}", *addr)
             }
+            Self::HugePageNotSupported => write!(f, "Huge page not supported"),
         }
     }
 }

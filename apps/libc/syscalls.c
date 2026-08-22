@@ -135,3 +135,7 @@ int sys_pipe(int pipefd[2]) {
 off_t sys_lseek(int fd, off_t offset, int whence) {
     return (off_t)syscall(SN_LSEEK, (uint64_t)fd, (uint64_t)offset, (uint64_t)whence, 0, 0, 0);
 }
+
+pid_t sys_fork(void) {
+    return (pid_t)syscall(SN_FORK, 0, 0, 0, 0, 0, 0);
+}

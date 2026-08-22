@@ -449,6 +449,13 @@ fn syscall_handler_inner(
                 }
             }
         }
+        SN_FORK => match sys_fork() {
+            Ok(pid) => return pid as i64,
+            Err(err) => {
+                kerror!("syscall: fork: {:?}", err);
+                return -1;
+            }
+        },
         num => {
             kerror!("syscall: Syscall number {:#x} is not defined", num);
             return -1;
@@ -1146,6 +1153,11 @@ fn sys_lseek(fd_num: i32, offset: i64, whence: u32) -> Result<i64> {
 
     let new_offset = vfs::seek(fd_num, pos)?;
     Ok(new_offset as i64)
+}
+
+fn sys_fork() -> Result<pid_t> {
+    let child_id = task::scheduler::fork_current()?;
+    Ok(child_id.get() as pid_t)
 }
 
 pub fn enable() {
