@@ -1,6 +1,6 @@
 use crate::{graphics::frame_buf_console, print, theme::GLOBAL_THEME, util};
 
-static mut LOGGER: SimpleLogger = SimpleLogger::new(LogLevel::max());
+static LOGGER: SimpleLogger = SimpleLogger::new(LogLevel::max());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LogLevel {
@@ -75,86 +75,71 @@ impl SimpleLogger {
     }
 }
 
-pub unsafe fn log(level: LogLevel, args: core::fmt::Arguments, file: &str, line: u32, col: u32) {
+pub fn log(level: LogLevel, args: core::fmt::Arguments, file: &str, line: u32, col: u32) {
     LOGGER.log(level, args, file, line, col);
 }
 
 #[macro_export]
 macro_rules! kinfo {
     ($($arg:tt)*) => {
-        #[allow(unused_unsafe)]
-        unsafe {
-            $crate::debug::logger::log(
-                $crate::debug::logger::LogLevel::Info,
-                format_args!($($arg)*),
-                file!(),
-                line!(),
-                column!()
-            );
-        }
+        $crate::debug::logger::log(
+            $crate::debug::logger::LogLevel::Info,
+            format_args!($($arg)*),
+            file!(),
+            line!(),
+            column!()
+        )
     };
 }
 
 #[macro_export]
 macro_rules! kdebug {
     ($($arg:tt)*) => {
-        #[allow(unused_unsafe)]
-        unsafe {
-            $crate::debug::logger::log(
-                $crate::debug::logger::LogLevel::Debug,
-                format_args!($($arg)*),
-                file!(),
-                line!(),
-                column!()
-            );
-        }
+        $crate::debug::logger::log(
+            $crate::debug::logger::LogLevel::Debug,
+            format_args!($($arg)*),
+            file!(),
+            line!(),
+            column!()
+        )
     };
 }
 
 #[macro_export]
 macro_rules! kwarn {
     ($($arg:tt)*) => {
-        #[allow(unused_unsafe)]
-        unsafe {
-            $crate::debug::logger::log(
-                $crate::debug::logger::LogLevel::Warn,
-                format_args!($($arg)*),
-                file!(),
-                line!(),
-                column!()
-            );
-        }
+        $crate::debug::logger::log(
+            $crate::debug::logger::LogLevel::Warn,
+            format_args!($($arg)*),
+            file!(),
+            line!(),
+            column!()
+        )
     };
 }
 
 #[macro_export]
 macro_rules! kerror {
     ($($arg:tt)*) => {
-        #[allow(unused_unsafe)]
-        unsafe {
-            $crate::debug::logger::log(
-                $crate::debug::logger::LogLevel::Error,
-                format_args!($($arg)*),
-                file!(),
-                line!(),
-                column!()
-            );
-        }
+        $crate::debug::logger::log(
+            $crate::debug::logger::LogLevel::Error,
+            format_args!($($arg)*),
+            file!(),
+            line!(),
+            column!()
+        )
     };
 }
 
 #[macro_export]
 macro_rules! ktrace {
     ($($arg:tt)*) => {
-        #[allow(unused_unsafe)]
-        unsafe {
-            $crate::debug::logger::log(
-                $crate::debug::logger::LogLevel::Trace,
-                format_args!($($arg)*),
-                file!(),
-                line!(),
-                column!()
-            );
-        }
+        $crate::debug::logger::log(
+            $crate::debug::logger::LogLevel::Trace,
+            format_args!($($arg)*),
+            file!(),
+            line!(),
+            column!()
+        )
     };
 }

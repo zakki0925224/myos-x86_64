@@ -112,10 +112,11 @@ impl PsfFont {
             return;
         }
 
+        let cache = &raw mut GLYPH_CACHE;
         unsafe {
             if !self.has_unicode_table {
-                for i in 0..256usize {
-                    GLYPH_CACHE[i] = i as u16;
+                for (i, slot) in (*cache).iter_mut().enumerate() {
+                    *slot = i as u16;
                 }
             } else {
                 let mut glyph_index = 0usize;
@@ -151,11 +152,11 @@ impl PsfFont {
 
         let code_point_u8 = c as u8;
         let mut index = 0;
-        for i in self.unicode_table_offset..self.binary_len {
-            if code_point_u8 == FONT_BIN[i] {
+        for &byte in &FONT_BIN[self.unicode_table_offset..self.binary_len] {
+            if code_point_u8 == byte {
                 break;
             }
-            if FONT_BIN[i] == UNICODE_TABLE_SEPARATOR {
+            if byte == UNICODE_TABLE_SEPARATOR {
                 index += 1;
             }
         }

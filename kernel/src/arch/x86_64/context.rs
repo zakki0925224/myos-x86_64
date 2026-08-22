@@ -39,10 +39,9 @@ pub fn switch_kernel_stack(
             in(reg) boot_info,
             in(reg) KERNEL_STACK.as_ptr() as u64 + KERNEL_STACK.len() as u64,
             in(reg) new_entry,
-            options(nomem)
+            options(noreturn)
         );
     }
-    unreachable!();
 }
 
 // software context switch

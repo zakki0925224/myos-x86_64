@@ -143,8 +143,7 @@ extern "sysv64" fn syscall_handler(
         task::scheduler::capture_current_syscall_frame(&*interrupted);
     }
 
-    let result = syscall_handler_inner(syscall_num, arg0, arg1, arg2, arg3, arg4, arg5);
-    result
+    syscall_handler_inner(syscall_num, arg0, arg1, arg2, arg3, arg4, arg5)
 }
 
 fn syscall_handler_inner(
@@ -470,11 +469,11 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
 
     match fd_num {
         FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => {
-            return Err(Error::NotFound.with_context("file descriptor"));
+            Err(Error::NotFound.with_context("file descriptor"))
         }
         FileDescriptorNumber::STDIN => {
             if let Some(fd_num) =
-                task::scheduler::with_current_resource(|r| r.pipe_fd).and_then(|fds| Ok(fds[0]))?
+                task::scheduler::with_current_resource(|r| r.pipe_fd).map(|fds| fds[0])?
             {
                 // block until data arrives or all write ends are closed (EOF)
                 loop {
@@ -500,7 +499,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
 
                 while input_s.is_none() {
                     tty::check_sigint();
-                    input_s = x86_64::disabled_int(|| tty::line()).ok().flatten();
+                    input_s = x86_64::disabled_int(tty::line).ok().flatten();
                     task::scheduler::sched();
                     x86_64::stihlt();
                 }
@@ -524,7 +523,7 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
                 let mut c = None;
                 while c.is_none() {
                     tty::check_sigint();
-                    c = x86_64::disabled_int(|| tty::char()).ok().flatten();
+                    c = x86_64::disabled_int(tty::char).ok().flatten();
                     if c.is_none() {
                         task::scheduler::sched();
                         x86_64::stihlt();
@@ -572,7 +571,7 @@ fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<usize> {
     match fd_num {
         FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => {
             if let Some(fd_num) =
-                task::scheduler::with_current_resource(|r| r.pipe_fd).and_then(|fds| Ok(fds[1]))?
+                task::scheduler::with_current_resource(|r| r.pipe_fd).map(|fds| fds[1])?
             {
                 vfs::write_file(fd_num, buf_slice)?;
                 return Ok(buf_len);
@@ -582,9 +581,7 @@ fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<usize> {
             print!("{}", s);
             Ok(buf_len)
         }
-        FileDescriptorNumber::STDIN => {
-            return Err(Error::InvalidData.with_context("stdin write"));
-        }
+        FileDescriptorNumber::STDIN => Err(Error::InvalidData.with_context("stdin write")),
         fd => {
             vfs::write_file(fd, buf_slice)?;
             Ok(buf_len)
@@ -820,8 +817,7 @@ fn sys_getenames(path: *const u8, buf: *mut u8, buf_len: usize) -> Result<()> {
     let entry_names = fs::vfs::entry_names(&path)?;
     let entry_names_s: Vec<u8> = entry_names
         .iter()
-        .map(|n| util::cstring::into_cstring_bytes_with_nul(n))
-        .flatten()
+        .flat_map(|n| util::cstring::into_cstring_bytes_with_nul(n))
         .collect();
 
     if buf_len < entry_names_s.len() {
@@ -847,7 +843,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
 
     match header.cmd()? {
         IomsgCommand::RemoveComponent => {
-            let layer_id: i32 = unsafe { *(msgbuf.offset(offset as isize) as *const i32) };
+            let layer_id: i32 = unsafe { *(msgbuf.add(offset) as *const i32) };
             offset += size_of::<i32>();
 
             let actual = offset - size_of::<iomsg_header>();
@@ -876,15 +872,15 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             }
         }
         IomsgCommand::CreateComponentWindow => {
-            let x_pos: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+            let x_pos: usize = unsafe { *(msgbuf.add(offset) as *const usize) };
             offset += size_of::<usize>();
-            let y_pos: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+            let y_pos: usize = unsafe { *(msgbuf.add(offset) as *const usize) };
             offset += size_of::<usize>();
-            let width: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+            let width: usize = unsafe { *(msgbuf.add(offset) as *const usize) };
             offset += size_of::<usize>();
-            let height: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+            let height: usize = unsafe { *(msgbuf.add(offset) as *const usize) };
             offset += size_of::<usize>();
-            let title_ptr = unsafe { msgbuf.offset(offset as isize) as *const u8 };
+            let title_ptr = unsafe { msgbuf.add(offset) };
 
             let xy = Point::new(x_pos, y_pos);
             let wh = Size::new(width, height);
@@ -915,23 +911,21 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
                 let reply_header_ptr = replymsgbuf as *mut iomsg_header;
                 reply_header_ptr.write(reply_header);
                 let reply_wd = layer_id.get() as u64;
-                (replymsgbuf.offset(size_of::<iomsg_header>() as isize) as *mut u64)
-                    .write(reply_wd);
+                (replymsgbuf.add(size_of::<iomsg_header>()) as *mut u64).write(reply_wd);
             }
         }
         IomsgCommand::CreateComponentImage => {
-            let layer_id: i32 = unsafe { *(msgbuf.offset(offset as isize) as *const i32) };
+            let layer_id: i32 = unsafe { *(msgbuf.add(offset) as *const i32) };
             offset += size_of::<i32>();
             offset += 4; // padding
-            let image_width: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+            let image_width: usize = unsafe { *(msgbuf.add(offset) as *const usize) };
             offset += size_of::<usize>();
-            let image_height: usize = unsafe { *(msgbuf.offset(offset as isize) as *const usize) };
+            let image_height: usize = unsafe { *(msgbuf.add(offset) as *const usize) };
             offset += size_of::<usize>();
-            let pixel_format: u8 = unsafe { *(msgbuf.offset(offset as isize) as *const u8) };
+            let pixel_format: u8 = unsafe { *msgbuf.add(offset) };
             offset += size_of::<u8>();
             offset += 7; // padding
-            let framebuf_ptr =
-                unsafe { *(msgbuf.offset(offset as isize) as *const usize) } as *const u8;
+            let framebuf_ptr = unsafe { *(msgbuf.add(offset) as *const usize) } as *const u8;
             offset += size_of::<usize>();
 
             let actual = offset - size_of::<iomsg_header>();
@@ -968,7 +962,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             unsafe {
                 let reply_header_ptr = replymsgbuf as *mut iomsg_header;
                 reply_header_ptr.write(reply_header);
-                (replymsgbuf.offset(size_of::<iomsg_header>() as isize) as *mut i32)
+                (replymsgbuf.add(size_of::<iomsg_header>()) as *mut i32)
                     .write(new_layer_id.get() as i32);
             }
         }
@@ -1024,7 +1018,7 @@ fn sys_sendto(
     sockfd: i32,
     buf: *const u8,
     len: usize,
-    flags: i32,
+    _flags: i32,
     dest_addr: *const sockaddr,
     addrlen: usize,
 ) -> Result<usize> {
@@ -1052,9 +1046,9 @@ fn sys_recvfrom(
     sockfd: i32,
     buf: *mut u8,
     len: usize,
-    flags: i32,
+    _flags: i32,
     src_addr: *const sockaddr,
-    addrlen: usize,
+    _addrlen: usize,
 ) -> Result<usize> {
     let socket_id = SocketId::try_new(sockfd)?;
     let buf_mut = unsafe { slice::from_raw_parts_mut(buf, len) };
@@ -1107,12 +1101,12 @@ fn sys_connect(sockfd: i32, addr: *const sockaddr, addrlen: usize) -> Result<()>
     Ok(())
 }
 
-fn sys_listen(sockfd: i32, backlog: i32) -> Result<()> {
+fn sys_listen(sockfd: i32, _backlog: i32) -> Result<()> {
     let socket_id = SocketId::try_new(sockfd)?;
     net::listen_tcp_v4(socket_id)
 }
 
-fn sys_accept(sockfd: i32, addr: *const sockaddr, addrlen: *const i32) -> Result<SocketId> {
+fn sys_accept(sockfd: i32, _addr: *const sockaddr, _addrlen: *const i32) -> Result<SocketId> {
     let socket_id = SocketId::try_new(sockfd)?;
 
     loop {
@@ -1164,7 +1158,7 @@ pub fn enable() {
     let mut efer = ExtendedFeatureEnableRegister::read();
     efer.set_syscall_enable(true);
     efer.write();
-    assert_eq!(ExtendedFeatureEnableRegister::read().syscall_enable(), true);
+    assert!(ExtendedFeatureEnableRegister::read().syscall_enable());
 
     let asm_syscall_handler_addr = asm_syscall_handler as *const () as u64;
     let mut lstar = LongModeSystemCallTargetAddressRegister::read();

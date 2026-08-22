@@ -19,7 +19,7 @@ pub enum UsbDescriptorType {
 
 #[derive(Debug, Clone, Copy, Default)]
 #[allow(unused)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct UsbDeviceDescriptor {
     pub desc_len: u8,
     pub desc_type: u8,
@@ -41,7 +41,7 @@ unsafe impl Sliceable for UsbDeviceDescriptor {}
 
 #[derive(Debug, Clone, Copy, Default)]
 #[allow(unused)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct ConfigDescriptor {
     desc_len: u8,
     desc_type: u8,
@@ -68,7 +68,7 @@ unsafe impl Sliceable for ConfigDescriptor {}
 
 #[derive(Debug, Clone, Copy, Default)]
 #[allow(unused)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct InterfaceDescriptor {
     desc_len: u8,
     desc_type: u8,
@@ -95,7 +95,7 @@ impl InterfaceDescriptor {
 
 #[derive(Debug, Clone, Copy, Default)]
 #[allow(unused)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct EndpointDescriptor {
     pub desc_len: u8,
     pub desc_type: u8,
@@ -178,7 +178,7 @@ impl UsbHidReportInputItem {
 
 #[derive(Debug, Clone, Copy, Default)]
 #[allow(unused)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct HidDescriptor {
     desc_len: u8,
     desc_type: u8,

@@ -26,6 +26,7 @@ pub enum MouseEvent {
     UsbHidMouse(UsbHidMouseEvent),
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum WindowManagerError {
     MousePointerLayerWasNotFound,

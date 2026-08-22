@@ -7,7 +7,7 @@ use crate::{
 };
 use alloc::vec::Vec;
 
-static mut UART_DRIVER: Mutex<UartDriver> = Mutex::new(UartDriver::new());
+static UART_DRIVER: Mutex<UartDriver> = Mutex::new(UartDriver::new());
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u16)]
@@ -146,12 +146,12 @@ impl DeviceDriverFunction for UartDriver {
 }
 
 pub fn device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = unsafe { UART_DRIVER.try_lock() }?;
+    let driver = UART_DRIVER.try_lock()?;
     driver.device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = unsafe { UART_DRIVER.try_lock() }?;
+    let mut driver = UART_DRIVER.try_lock()?;
     driver.probe()?;
     driver.attach(())?;
     let info = driver.device_driver_info()?;
@@ -161,28 +161,28 @@ pub fn probe_and_attach() -> Result<()> {
 }
 
 pub fn open() -> Result<()> {
-    let mut driver = unsafe { UART_DRIVER.try_lock() }?;
+    let mut driver = UART_DRIVER.try_lock()?;
     driver.open()
 }
 
 pub fn close() -> Result<()> {
-    let mut driver = unsafe { UART_DRIVER.try_lock() }?;
+    let mut driver = UART_DRIVER.try_lock()?;
     driver.close()
 }
 
 pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
-    let mut driver = unsafe { UART_DRIVER.try_lock() }?;
+    let mut driver = UART_DRIVER.try_lock()?;
     driver.read(offset, max_len)
 }
 
 pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = unsafe { UART_DRIVER.try_lock() }?;
+    let mut driver = UART_DRIVER.try_lock()?;
     driver.write(data)
 }
 
 pub fn poll_normal() -> Result<()> {
     let received_data = match x86_64::disabled_int(|| {
-        let mut driver = unsafe { UART_DRIVER.try_lock() }?;
+        let mut driver = UART_DRIVER.try_lock()?;
         driver.poll_normal()
     })? {
         Some(data) => data,

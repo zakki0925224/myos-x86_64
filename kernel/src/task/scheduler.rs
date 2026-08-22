@@ -18,6 +18,7 @@ use alloc::{
 
 static TASK_SCHED: Mutex<TaskScheduler> = Mutex::new(TaskScheduler::new());
 
+#[allow(clippy::vec_box)]
 struct TaskScheduler {
     ready_queue: VecDeque<Box<Task>>,
     current_task: Option<Box<Task>>,
@@ -63,7 +64,7 @@ impl TaskScheduler {
     }
 
     fn find_task_mut(&mut self, id: TaskId) -> Option<&mut Task> {
-        if self.current_task.as_deref().map_or(false, |t| t.id == id) {
+        if self.current_task.as_deref().is_some_and(|t| t.id == id) {
             return self.current_task.as_deref_mut();
         }
 
@@ -102,6 +103,7 @@ impl TaskScheduler {
         }
     }
 
+    #[allow(clippy::vec_box)] // see TaskScheduler
     fn pick_next_task_on_exit(
         &mut self,
         exit_code: i32,

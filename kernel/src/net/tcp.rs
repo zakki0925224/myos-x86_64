@@ -258,6 +258,7 @@ impl TcpPacket {
     pub const FLAGS_CWR: u16 = 0x80;
     pub const FLAGS_NS: u16 = 0x100;
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with(
         src_port: u16,
         dst_port: u16,
@@ -269,11 +270,11 @@ impl TcpPacket {
         mut options: Vec<u8>,
         data: Vec<u8>,
     ) -> Self {
-        let header_len = ((20 + options.len() + 3) / 4) as u16;
+        let header_len = (20 + options.len()).div_ceil(4) as u16;
         let flags = header_len << 12 | flags_without_header_len & 0x0fff;
 
         // resize options
-        options.resize((header_len as usize * 4 - 20) as usize, 0);
+        options.resize(header_len as usize * 4 - 20, 0);
 
         Self {
             src_port,

@@ -27,16 +27,16 @@ impl IoRegister {
 
     fn read_mac_addr(&self) -> [u8; 6] {
         let mut mac_addr = [0; 6];
-        for i in 0..6 {
-            mac_addr[i] = self.io_port_base().offset(i).in8();
+        for (i, byte) in mac_addr.iter_mut().enumerate() {
+            *byte = self.io_port_base().offset(i).in8();
         }
         mac_addr
     }
 
     fn read_multicast_addr(&self) -> [u8; 8] {
         let mut multicast_addr = [0; 8];
-        for i in 0..8 {
-            multicast_addr[i] = self.io_port_base().offset(0x08 + i).in8();
+        for (i, byte) in multicast_addr.iter_mut().enumerate() {
+            *byte = self.io_port_base().offset(0x08 + i).in8();
         }
         multicast_addr
     }
@@ -249,10 +249,10 @@ impl DeviceDriverFunction for Rtl8139Driver {
             let conf_space = d.read_conf_space_non_bridge_field()?;
             let bars = conf_space.bars()?;
             let (_, mmio_bar) = bars
-                .get(0)
+                .first()
                 .ok_or(Error::NotFound.with_context("MMIO BAR"))?;
             let io_port_base: IoPortAddress = match mmio_bar {
-                device::pci_bus::conf_space::BaseAddress::MmioAddressSpace(addr) => *addr,
+                device::pci_bus::conf_space::BaseAddress::Io(addr) => *addr,
                 _ => return Err(Error::InvalidData.with_context("BAR type")),
             }
             .into();
@@ -273,7 +273,7 @@ impl DeviceDriverFunction for Rtl8139Driver {
 
             // set RX buffer address
             let rx_buf_addr = self.rx_buf.buf_ptr() as u64;
-            if rx_buf_addr % 16 != 0 {
+            if !rx_buf_addr.is_multiple_of(16) {
                 return Err(Error::NotAligned {
                     value: rx_buf_addr as usize,
                     align: 16,

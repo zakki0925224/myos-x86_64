@@ -12,7 +12,7 @@ use core::{
 const HEAP_SIZE: usize = 1024 * 1024 * 32; // 32MiB
 
 #[global_allocator]
-static mut ALLOCATOR: LinkedListAllocator = LinkedListAllocator::empty();
+static ALLOCATOR: LinkedListAllocator = LinkedListAllocator::empty();
 
 #[derive(Debug)]
 pub enum AllocationError {
@@ -442,7 +442,7 @@ impl LinkedListAllocator {
         }
     }
 
-    unsafe fn init(&mut self, heap_bottom: *mut u8, heap_size: usize) {
+    unsafe fn init(&self, heap_bottom: *mut u8, heap_size: usize) {
         self.heap.spin_lock().init(heap_bottom, heap_size)
     }
 
@@ -462,7 +462,7 @@ pub fn init_heap() -> Result<()> {
 }
 
 pub fn heap_size() -> (usize, usize) {
-    (unsafe { &ALLOCATOR }.used(), HEAP_SIZE)
+    (ALLOCATOR.used(), HEAP_SIZE)
 }
 
 fn align_up(addr: *mut u8, align: usize) -> *mut u8 {
@@ -529,7 +529,7 @@ fn dealloc(list: &mut HoleList, addr: *mut u8, size: usize) -> Result<()> {
     let (cursor, n) = match cursor.try_insert_back(hole, list.bottom) {
         Ok(cursor) => (cursor, 1),
         Err(mut curosr) => {
-            while let Err(_) = curosr.try_insert_after(hole) {
+            while curosr.try_insert_after(hole).is_err() {
                 curosr = curosr.next().ok_or(AllocationError::NoNextCursor)?;
             }
             (curosr, 2)

@@ -27,7 +27,7 @@ impl FatVolume {
     }
 
     pub fn boot_sector(&self) -> &BootSector {
-        unsafe { &*(self.volume_start_virt_addr.as_ptr() as *const BootSector) }
+        unsafe { &*self.volume_start_virt_addr.as_ptr::<BootSector>() }
     }
 
     pub fn fs_info_sector(&self) -> Option<&FsInfoSector> {
@@ -36,12 +36,12 @@ impl FatVolume {
                 let boot_sector = self.boot_sector();
                 let fat32_other_field = boot_sector.fat32_other_field().unwrap();
                 let fs_info_sector = unsafe {
-                    &*(self
+                    &*self
                         .volume_start_virt_addr
                         .offset(
                             fat32_other_field.fs_info_sector_num() * boot_sector.bytes_per_sector(),
                         )
-                        .as_ptr() as *const FsInfoSector)
+                        .as_ptr::<FsInfoSector>()
                 };
 
                 Some(fs_info_sector)
@@ -76,11 +76,8 @@ impl FatVolume {
             entries.extend(self.dir_entries(current_cluster_num));
 
             match next_cluster_num {
-                Some(cluster_type) => match &cluster_type {
-                    ClusterType::Data(next_cluster_num) => current_cluster_num = *next_cluster_num,
-                    _ => break,
-                },
-                None => break,
+                Some(ClusterType::Data(next_cluster_num)) => current_cluster_num = next_cluster_num,
+                _ => break,
             }
             next_cluster_num = self.next_cluster_num(current_cluster_num);
         }
@@ -110,7 +107,10 @@ impl FatVolume {
                     * (cluster_num - 2)
                 + size_of::<DirectoryEntry>() * i;
             let entry = unsafe {
-                &*(self.volume_start_virt_addr.offset(offset).as_ptr() as *const DirectoryEntry)
+                &*self
+                    .volume_start_virt_addr
+                    .offset(offset)
+                    .as_ptr::<DirectoryEntry>()
             };
             entries.push(entry);
         }

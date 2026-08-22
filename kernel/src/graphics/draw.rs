@@ -199,10 +199,9 @@ pub trait Draw {
             let mut ptr = buf_ptr.add(y * res.width + x);
             let mut row_buf = [0u32; 8];
 
-            for h in 0..draw_h {
-                let line = f_glyph[h];
-                for w in 0..draw_w {
-                    row_buf[w] = if (line << w) & 0x80 != 0 {
+            for line in f_glyph.iter().take(draw_h) {
+                for (w, px) in row_buf.iter_mut().enumerate().take(draw_w) {
+                    *px = if (line << w) & 0x80 != 0 {
                         fore_code
                     } else {
                         back_code

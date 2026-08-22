@@ -181,11 +181,9 @@ impl AnsiEscapeStream {
 
                     return Some(AnsiEvent::CsiSequence(seq));
                 }
-                ';' => {
-                    if !num_buf1.is_empty() {
-                        num_buf2 = num_buf1.clone();
-                        num_buf1.clear();
-                    }
+                ';' if !num_buf1.is_empty() => {
+                    num_buf2 = num_buf1.clone();
+                    num_buf1.clear();
                 }
                 _ => (),
             }

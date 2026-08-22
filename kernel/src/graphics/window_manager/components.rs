@@ -136,7 +136,7 @@ impl Component for Image {
         }
 
         // write to layer
-        multi_layer::draw_layer(self.layer_id, |l| unsafe { l.copy_from_slice_u32(&buf) })?;
+        multi_layer::draw_layer(self.layer_id, |l| unsafe { l.copy_from_slice_u32(buf) })?;
 
         Ok(())
     }
@@ -296,7 +296,7 @@ impl Component for Window {
 impl Window {
     pub fn create_and_push(title: String, pos: Point, size: Size) -> Result<Self> {
         let layer = multi_layer::create_layer(pos, size)?;
-        let layer_id = layer.id.clone();
+        let layer_id = layer.id;
         multi_layer::push_layer(layer)?;
 
         let (w, _) = size.wh();

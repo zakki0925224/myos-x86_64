@@ -123,7 +123,7 @@ impl Acpi {
     }
 
     fn init(&mut self, rsdp_virt_addr: VirtualAddress) -> Result<()> {
-        let rsdp = unsafe { &*(rsdp_virt_addr.as_ptr() as *const RootSystemDescriptorPointer) };
+        let rsdp: &RootSystemDescriptorPointer = unsafe { &*rsdp_virt_addr.as_ptr() };
         let rev = rsdp.rev;
 
         if !rsdp.is_valid() {
@@ -144,7 +144,7 @@ impl Acpi {
 
     fn rsdp(&self) -> Result<&RootSystemDescriptorPointer> {
         self.rsdp_virt_addr
-            .map(|addr| unsafe { &*(addr.as_ptr() as *const RootSystemDescriptorPointer) })
+            .map(|addr| unsafe { &*addr.as_ptr::<RootSystemDescriptorPointer>() })
             .ok_or(Error::NotInitialized.into())
     }
 
@@ -152,7 +152,7 @@ impl Acpi {
     fn xsdt(&self) -> Result<(&DescriptionHeader, Vec<u64>)> {
         let rsdp = self.rsdp()?;
         let xsdt_virt_addr: VirtualAddress = rsdp.xsdt_addr.into();
-        let xsdt = unsafe { &*(xsdt_virt_addr.as_ptr() as *const DescriptionHeader) };
+        let xsdt: &DescriptionHeader = unsafe { &*xsdt_virt_addr.as_ptr() };
 
         if !xsdt.is_valid(XSDT_SIGNATURE) {
             return Err(AcpiError::InvalidSignature.into());
@@ -186,7 +186,7 @@ impl Acpi {
 
         for entry_addr in xsdt_entries {
             let entry_addr: VirtualAddress = entry_addr.into();
-            let entry = unsafe { &*(entry_addr.as_ptr() as *const FixedAcpiDescriptionTable) };
+            let entry: &FixedAcpiDescriptionTable = unsafe { &*entry_addr.as_ptr() };
             if entry.header.is_valid(FADT_SIGNATURE) {
                 fadt = Some(entry);
                 break;
@@ -223,12 +223,14 @@ impl Acpi {
 }
 
 pub fn init(rsdp_virt_addr: VirtualAddress) -> Result<()> {
-    unsafe { ACPI.init(rsdp_virt_addr) }?;
+    let acpi = &raw mut ACPI;
+    unsafe { (*acpi).init(rsdp_virt_addr) }?;
     kinfo!("acpi: Initialized");
 
     Ok(())
 }
 
 pub fn pm_timer_wait_ms(ms: u32) -> Result<()> {
-    unsafe { ACPI.pm_timer_wait_ms(ms) }
+    let acpi = &raw const ACPI;
+    unsafe { (*acpi).pm_timer_wait_ms(ms) }
 }

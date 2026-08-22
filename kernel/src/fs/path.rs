@@ -92,14 +92,14 @@ impl Path {
             .collect();
         parts.pop();
         if self.0.starts_with(Self::ROOT) {
-            let parent = format!("{}{}", Self::ROOT, parts.join(&Self::ROOT));
+            let parent = format!("{}{}", Self::ROOT, parts.join(Self::ROOT));
             if parent.is_empty() {
                 Self::root()
             } else {
                 Self(parent)
             }
         } else {
-            let parent = parts.join(&Self::ROOT);
+            let parent = parts.join(Self::ROOT);
             if parent.is_empty() {
                 Self(Self::CURRENT_DIR.to_string())
             } else {

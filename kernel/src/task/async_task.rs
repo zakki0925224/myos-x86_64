@@ -110,8 +110,8 @@ impl Executor {
         for &p in &[Priority::High, Priority::Normal, Priority::Low] {
             let do_skip = match p {
                 Priority::High => false,
-                Priority::Normal => self.poll_count % 2 != 0,
-                Priority::Low => self.poll_count % 4 != 0,
+                Priority::Normal => !self.poll_count.is_multiple_of(2),
+                Priority::Low => !self.poll_count.is_multiple_of(4),
             };
             if do_skip {
                 continue;
@@ -146,7 +146,7 @@ impl Executor {
         let priority = task.priority;
         self.task_queues
             .entry(priority)
-            .or_insert_with(VecDeque::new)
+            .or_default()
             .push_back(task);
     }
 }

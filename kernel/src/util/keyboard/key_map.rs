@@ -19,8 +19,8 @@ impl KeyMap {
     pub fn to_ps2_map(&self) -> BTreeMap<[u8; 6], ScanCode> {
         let mut map = BTreeMap::new();
         for sc in self.scan_codes() {
-            map.insert(sc.ps2_scan_code_pressed, sc.clone());
-            map.insert(sc.ps2_scan_code_released, sc.clone());
+            map.insert(sc.ps2_scan_code_pressed, *sc);
+            map.insert(sc.ps2_scan_code_released, *sc);
         }
         map
     }
@@ -28,7 +28,7 @@ impl KeyMap {
     pub fn to_usb_hid_map(&self) -> BTreeMap<u8, ScanCode> {
         let mut map = BTreeMap::new();
         for sc in self.scan_codes() {
-            map.insert(sc.usb_hid_usage_id, sc.clone());
+            map.insert(sc.usb_hid_usage_id, *sc);
         }
         map
     }

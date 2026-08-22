@@ -1,6 +1,11 @@
 use crate::error::{Error, Result};
 use core::{pin::Pin, slice};
 
+/// # Safety
+///
+/// Implementors must be plain-old-data: the default methods reinterpret `Self`
+/// as `size_of::<Self>()` bytes, so the type must have no padding that would be
+/// exposed, no interior pointers, and every bit pattern must be valid.
 pub unsafe trait IntoPinnedMutableSlice: Sized + Copy + Clone {
     fn as_mut_slice(self: Pin<&mut Self>) -> Pin<&mut [u8]> {
         Pin::new(unsafe {

@@ -97,19 +97,19 @@ impl UsbDeviceAttachInfo {
 
     pub fn vendor(&self) -> Option<&str> {
         match self {
-            Self::Xhci(info) => info.vendor.as_ref().map(|s| s.as_str()),
+            Self::Xhci(info) => info.vendor.as_deref(),
         }
     }
 
     pub fn product(&self) -> Option<&str> {
         match self {
-            Self::Xhci(info) => info.product.as_ref().map(|s| s.as_str()),
+            Self::Xhci(info) => info.product.as_deref(),
         }
     }
 
     pub fn serial(&self) -> Option<&str> {
         match self {
-            Self::Xhci(info) => info.serial.as_ref().map(|s| s.as_str()),
+            Self::Xhci(info) => info.serial.as_deref(),
         }
     }
 }

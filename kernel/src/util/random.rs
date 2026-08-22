@@ -97,16 +97,14 @@ impl Pcg32 {
 
 pub fn random_bytes_xorshift64(len: usize, seed: u64) -> Vec<u8> {
     let mut rng = XorShift64::new(seed);
-    let mut bytes = Vec::with_capacity(len);
-    bytes.resize(len, 0);
+    let mut bytes = vec![0u8; len];
     rng.next_bytes(&mut bytes);
     bytes
 }
 
 pub fn random_bytes_pcg32(len: usize, seed: u64) -> Vec<u8> {
     let mut rng = Pcg32::new(seed);
-    let mut bytes = Vec::with_capacity(len);
-    bytes.resize(len, 0);
+    let mut bytes = vec![0u8; len];
     rng.next_bytes(&mut bytes);
     bytes
 }

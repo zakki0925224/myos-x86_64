@@ -124,6 +124,7 @@ impl TryFrom<&[u8]> for Ipv4Packet {
 }
 
 impl Ipv4Packet {
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with(
         version_ihl: u8,
         dscp_ecn: u8,

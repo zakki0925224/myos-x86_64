@@ -23,7 +23,7 @@ type DeviceIoFn = fn() -> Result<()>;
 type DeviceReadFn = fn(usize, usize) -> Result<Vec<u8>>;
 type DeviceWriteFn = fn(&[u8]) -> Result<()>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct DeviceFileDescriptor {
     pub device_driver_info: fn() -> Result<DeviceDriverInfo>,
     pub open: DeviceIoFn,
@@ -42,19 +42,10 @@ enum WriteOutcome {
     Device(DeviceWriteFn),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct PipeBuffer {
     buf: VecDeque<u8>,
     write_closed: bool,
-}
-
-impl Default for PipeBuffer {
-    fn default() -> Self {
-        Self {
-            buf: VecDeque::new(),
-            write_closed: false,
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -128,13 +119,21 @@ pub struct FileDescriptor {
     fs_content_cache: Option<Vec<u8>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 enum VfsFileType {
     VirtualFile, // for file system
     DeviceFile(DeviceFileDescriptor),
     Pipe,
     Directory,
 }
+
+impl PartialEq for VfsFileType {
+    fn eq(&self, other: &Self) -> bool {
+        core::mem::discriminant(self) == core::mem::discriminant(other)
+    }
+}
+
+impl Eq for VfsFileType {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FsFileType {
@@ -497,7 +496,7 @@ impl VirtualFileSystem {
         let children_ids = parent_ref.children.clone();
         if children_ids
             .iter()
-            .any(|id| self.find_file(*id).map_or(false, |f| f.name == file_name))
+            .any(|id| self.find_file(*id).is_some_and(|f| f.name == file_name))
         {
             return Err(VirtualFileSystemError::FileOrDirectoryAlreadyExists(path.clone()).into());
         }

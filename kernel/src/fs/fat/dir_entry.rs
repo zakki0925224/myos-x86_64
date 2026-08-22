@@ -80,24 +80,15 @@ impl DirectoryEntry {
     }
 
     fn is_lf_name_entry(&self) -> bool {
-        match self.attr() {
-            Some(attr) => match attr {
-                Attribute::LongFileName => true,
-                _ => false,
-            },
-            None => false,
-        }
+        matches!(self.attr(), Some(Attribute::LongFileName))
     }
 }
 
 impl ShortFileNameEntry for DirectoryEntry {
     fn sf_name(&self) -> Option<String> {
-        match self.attr() {
-            Some(attr) => match attr {
-                Attribute::Directory | Attribute::Archive | Attribute::VolumeLabel => (),
-                _ => return None,
-            },
-            None => return None,
+        match self.attr()? {
+            Attribute::Directory | Attribute::Archive | Attribute::VolumeLabel => (),
+            _ => return None,
         }
 
         Some(String::from_utf8_lossy(&self.raw()[0..11]).into_owned())

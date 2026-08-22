@@ -1,4 +1,4 @@
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use core::arch::asm;
 
 const CPUID_EAX_VENDOR_ID: u32 = 0;
@@ -181,9 +181,9 @@ pub fn vendor_id() -> String {
     let (_, ebx, ecx, edx) = cpuid(CPUID_EAX_VENDOR_ID);
     format!(
         "{}{}{}",
-        String::from_utf8_lossy(&ebx.to_le_bytes()).to_string(),
-        String::from_utf8_lossy(&edx.to_le_bytes()).to_string(),
-        String::from_utf8_lossy(&ecx.to_le_bytes()).to_string()
+        String::from_utf8_lossy(&ebx.to_le_bytes()),
+        String::from_utf8_lossy(&edx.to_le_bytes()),
+        String::from_utf8_lossy(&ecx.to_le_bytes())
     )
 }
 

@@ -471,14 +471,11 @@ impl NetworkManager {
     fn receive_icmp_packet(&mut self, packet: IcmpPacket) -> Result<Option<IcmpPacket>> {
         let ty = packet.ty;
 
-        match ty {
-            IcmpType::EchoRequest => {
-                let mut reply_packet = packet.clone();
-                reply_packet.ty = IcmpType::EchoReply;
-                reply_packet.calc_checksum();
-                return Ok(Some(reply_packet));
-            }
-            _ => (),
+        if matches!(ty, IcmpType::EchoRequest) {
+            let mut reply_packet = packet.clone();
+            reply_packet.ty = IcmpType::EchoReply;
+            reply_packet.calc_checksum();
+            return Ok(Some(reply_packet));
         }
 
         Ok(None)

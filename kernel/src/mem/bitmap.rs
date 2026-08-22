@@ -39,7 +39,7 @@ impl Drop for MemoryFrame {
 impl MemoryFrame {
     #[track_caller]
     pub fn new(frame_start_phys_addr: u64, frame_size: usize) -> Self {
-        assert!(frame_size % PAGE_SIZE == 0);
+        assert!(frame_size.is_multiple_of(PAGE_SIZE));
         Self {
             frame_start_phys_addr,
             frame_size,
@@ -71,7 +71,6 @@ impl MemoryFrame {
 
     pub fn leak(&mut self) {
         self.deallocated = true;
-        core::mem::forget(self);
     }
 
     pub fn frame_start_virt_addr(&self) -> VirtualAddress {
@@ -246,13 +245,7 @@ impl BitmapMemoryManager {
     }
 
     fn bitmap_len(&self) -> usize {
-        (self.total_frame_len + Bitmap::BITMAP_SIZE - 1) / Bitmap::BITMAP_SIZE
-    }
-
-    fn mem_frame(&self, frame_index: usize) -> Option<MemoryFrame> {
-        self.bitmap(self.bitmap_offset(frame_index))
-            .ok()
-            .map(|_| MemoryFrame::new((frame_index * PAGE_SIZE) as u64, PAGE_SIZE))
+        self.total_frame_len.div_ceil(Bitmap::BITMAP_SIZE)
     }
 
     #[track_caller]
@@ -357,7 +350,7 @@ impl BitmapMemoryManager {
         Ok(())
     }
 
-    fn bitmap(&self, offset: usize) -> Result<&mut Bitmap> {
+    fn bitmap(&mut self, offset: usize) -> Result<&mut Bitmap> {
         if offset >= self.bitmap_len() {
             return Err(Error::IndexOutOfBounds {
                 index: offset,
@@ -427,7 +420,7 @@ impl BitmapMemoryManager {
 }
 
 fn is_valid_mem_desc(d: &MemoryDescriptor) -> bool {
-    d.ty.is_available_memory() && d.phys_start != 0 && d.phys_start % PAGE_SIZE as u64 == 0
+    d.ty.is_available_memory() && d.phys_start != 0 && d.phys_start.is_multiple_of(PAGE_SIZE as u64)
 }
 
 pub fn init(mem_map: &[MemoryDescriptor]) -> Result<()> {

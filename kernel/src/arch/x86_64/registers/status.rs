@@ -93,7 +93,7 @@ impl Rflags {
     }
 
     pub fn set_cf(&mut self, value: bool) {
-        self.0 = (self.0 & !Self::BIT_MASK_CF) | ((value as u64) << 0);
+        self.0 = (self.0 & !Self::BIT_MASK_CF) | (value as u64);
     }
 
     pub fn pf(&self) -> bool {

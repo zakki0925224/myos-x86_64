@@ -104,10 +104,10 @@ impl ArpPacket {
     }
 
     pub fn op(&self) -> Result<ArpOperation> {
-        Ok(ArpOperation::try_from(self.op)?)
+        ArpOperation::try_from(self.op)
     }
 
-    pub fn to_vec(&self) -> Vec<u8> {
+    pub fn to_vec(self) -> Vec<u8> {
         let protocol_ty: [u8; 2] = self.protocol_ty.into();
         let sender_eth_addr: [u8; 6] = self.sender_eth_addr.into();
         let target_eth_addr: [u8; 6] = self.target_eth_addr.into();

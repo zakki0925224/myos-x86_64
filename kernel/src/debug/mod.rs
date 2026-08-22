@@ -39,11 +39,10 @@ pub fn symbolicate(dwarf: &Dwarf, ip: u64) -> String {
                 }
                 dwarf::AbbrevTag::Subprogram => {
                     for (attr, form) in &debug_abbrev.attributes {
-                        match (attr, form) {
-                            (dwarf::AbbrevAttribute::Name, dwarf::AbbrevForm::Strp(name)) => {
-                                function_name = Some(name.as_str());
-                            }
-                            _ => (),
+                        if let (dwarf::AbbrevAttribute::Name, dwarf::AbbrevForm::Strp(name)) =
+                            (attr, form)
+                        {
+                            function_name = Some(name.as_str());
                         }
                     }
                 }

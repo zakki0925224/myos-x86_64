@@ -147,6 +147,7 @@ impl PageTableEntry {
         Some(&*ptr)
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub unsafe fn page_table_mut(&self) -> Option<&mut PageTable> {
         if self.page_size() {
             return None;
@@ -208,6 +209,7 @@ unsafe fn ensure_pte<'a>(
     Ok((frame, entry))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn map(
     pml4_table: &mut PageTable,
     start: VirtualAddress,
@@ -220,15 +222,15 @@ fn map(
     alloc_frame: &mut dyn FnMut() -> Result<MemoryFrame>,
     mut allocated_frame: impl FnMut(MemoryFrame),
 ) -> Result<()> {
-    if start.get() % PAGE_SIZE as u64 != 0 {
+    if !start.get().is_multiple_of(PAGE_SIZE as u64) {
         return Err(PageError::AddressNotAlignedByPageSize(start.get()).into());
     }
 
-    if end.get() % PAGE_SIZE as u64 != 0 {
+    if !end.get().is_multiple_of(PAGE_SIZE as u64) {
         return Err(PageError::AddressNotAlignedByPageSize(end.get()).into());
     }
 
-    if phys_addr % PAGE_SIZE as u64 != 0 {
+    if !phys_addr.is_multiple_of(PAGE_SIZE as u64) {
         return Err(PageError::AddressNotAlignedByPageSize(phys_addr).into());
     }
 

@@ -21,7 +21,7 @@ impl<T: Sized> Mutex<T> {
         }
     }
 
-    pub fn try_lock(&self) -> Result<MutexGuard<T>> {
+    pub fn try_lock(&self) -> Result<MutexGuard<'_, T>> {
         // save rflags
         let saved_rflags = Rflags::read_with_cli();
 
@@ -39,11 +39,12 @@ impl<T: Sized> Mutex<T> {
         Err(Error::Locked.into())
     }
 
-    pub unsafe fn get_force_mut(&mut self) -> &mut T {
-        self.value.get_mut()
+    #[allow(clippy::mut_from_ref)]
+    pub unsafe fn get_force_mut(&self) -> &mut T {
+        unsafe { &mut *self.value.get() }
     }
 
-    pub fn spin_lock(&self) -> MutexGuard<T> {
+    pub fn spin_lock(&self) -> MutexGuard<'_, T> {
         // save rflags
         let saved_rflags = Rflags::read_with_cli();
 
@@ -124,7 +125,7 @@ fn test_lock_unlock() {
 
 #[test_case]
 fn test_unlock_force() {
-    let mut mutex = Mutex::new(0);
+    let mutex = Mutex::new(0);
 
     unsafe {
         let guard = mutex.get_force_mut();

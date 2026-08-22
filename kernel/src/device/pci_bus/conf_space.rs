@@ -96,18 +96,12 @@ impl ConfigurationSpaceCommonHeaderField {
     }
 
     pub fn device_name(&self) -> Option<&str> {
-        let vendor = self.vendor();
-        if !self.exists() || vendor.is_none() {
+        if !self.exists() {
             return None;
         }
 
-        let device = self.device(&vendor.unwrap());
-
-        if device.is_some() {
-            Some(device.unwrap().name())
-        } else {
-            None
-        }
+        let vendor = self.vendor()?;
+        Some(self.device(vendor)?.name())
     }
 
     pub fn vendor_name(&self) -> Option<&str> {
@@ -115,13 +109,7 @@ impl ConfigurationSpaceCommonHeaderField {
             return None;
         }
 
-        let vendor = self.vendor();
-
-        if vendor.is_some() {
-            Some(vendor.unwrap().name())
-        } else {
-            None
-        }
+        Some(self.vendor()?.name())
     }
 
     pub fn class_name(&self) -> Option<&str> {
@@ -129,13 +117,7 @@ impl ConfigurationSpaceCommonHeaderField {
             return None;
         }
 
-        let class = self.class();
-
-        if class.is_some() {
-            Some(class.unwrap().name())
-        } else {
-            None
-        }
+        Some(self.class()?.name())
     }
 
     pub fn subclass_name(&self) -> Option<&str> {
@@ -184,9 +166,9 @@ impl ConfigurationSpaceCommonHeaderField {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BaseAddress {
-    MemoryAddress32BitSpace(u64, bool), // (phys addr, is prefetchable)
-    MemoryAddress64BitSpace(u64, bool), // (phys addr, is prefetchable)
-    MmioAddressSpace(u32),
+    Memory32(u64, bool), // (phys addr, is prefetchable)
+    Memory64(u64, bool), // (phys addr, is prefetchable)
+    Io(u32),             // I/O port base (BAR bit 0 set)
 }
 #[derive(Debug, Clone, Copy)]
 pub struct BaseAddressRegister(u32);
@@ -205,7 +187,7 @@ impl BaseAddressRegister {
 
         if bar & 0x1 != 0 {
             let addr = bar & !0x3;
-            return Some(BaseAddress::MmioAddressSpace(addr));
+            return Some(BaseAddress::Io(addr));
         }
 
         let bar_type = (bar >> 1) & 0x3;
@@ -213,14 +195,8 @@ impl BaseAddressRegister {
         let phys_addr: u64 = (bar & !0xf) as u64;
 
         match bar_type {
-            0x0 => Some(BaseAddress::MemoryAddress32BitSpace(
-                phys_addr,
-                prefetchable,
-            )),
-            0x2 => Some(BaseAddress::MemoryAddress64BitSpace(
-                phys_addr,
-                prefetchable,
-            )),
+            0x0 => Some(BaseAddress::Memory32(phys_addr, prefetchable)),
+            0x2 => Some(BaseAddress::Memory64(phys_addr, prefetchable)),
             _ => None,
         }
     }
@@ -267,7 +243,7 @@ impl ConfigurationSpaceNonBridgeField {
 
             if let Some(base_addr) = bar.base_addr() {
                 match base_addr {
-                    BaseAddress::MemoryAddress64BitSpace(phys_addr, is_pref) => {
+                    BaseAddress::Memory64(phys_addr, is_pref) => {
                         assert!(i + 1 < self.bars.len());
 
                         let next_bar = self.bars[i + 1];
@@ -289,11 +265,10 @@ impl ConfigurationSpaceNonBridgeField {
                             )?;
                         }
 
-                        let base_addr =
-                            BaseAddress::MemoryAddress64BitSpace(full_phys_addr, is_pref);
+                        let base_addr = BaseAddress::Memory64(full_phys_addr, is_pref);
                         result.push((i, base_addr));
                     }
-                    BaseAddress::MemoryAddress32BitSpace(phys_addr, _) => {
+                    BaseAddress::Memory32(phys_addr, _) => {
                         if phys_addr == 0 {
                             continue;
                         }
@@ -443,9 +418,7 @@ impl MsiCapabilityField {
     pub fn write(&self, bus: usize, device: usize, func: usize, caps_ptr: usize) -> Result<()> {
         let data = unsafe { transmute::<Self, [u32; 6]>(*self) };
         for (i, elem) in data.iter().enumerate() {
-            if let Err(msg) = write_conf_space(bus, device, func, caps_ptr + (i * 4), *elem) {
-                return Err(msg);
-            }
+            write_conf_space(bus, device, func, caps_ptr + (i * 4), *elem)?;
         }
 
         Ok(())
@@ -480,7 +453,7 @@ pub fn read_conf_space(bus: usize, device: usize, func: usize, byte_offset: usiz
         .with_context("func"));
     }
 
-    if byte_offset % 4 != 0 {
+    if !byte_offset.is_multiple_of(4) {
         return Err(Error::NotAligned {
             value: byte_offset,
             align: 4,
@@ -532,7 +505,7 @@ pub fn write_conf_space(
         .with_context("func"));
     }
 
-    if byte_offset % 4 != 0 {
+    if !byte_offset.is_multiple_of(4) {
         return Err(Error::NotAligned {
             value: byte_offset,
             align: 4,

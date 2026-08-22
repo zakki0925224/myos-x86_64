@@ -132,14 +132,14 @@ pub fn in32(port: u32) -> u32 {
 #[inline(always)]
 pub fn lidt(desc_table_args: &DescriptorTableArgs) {
     unsafe {
-        asm!("lidt [{}]", in(reg) desc_table_args, options(nomem, nostack));
+        asm!("lidt [{}]", in(reg) desc_table_args, options(readonly, nostack));
     }
 }
 
 #[inline(always)]
 pub fn lgdt(desc_table_args: &DescriptorTableArgs) {
     unsafe {
-        asm!("lgdt [{}]", in(reg) desc_table_args, options(nomem, nostack));
+        asm!("lgdt [{}]", in(reg) desc_table_args, options(readonly, nostack));
     }
 }
 

@@ -59,17 +59,16 @@ impl<'a> BitmapImage<'a> {
     pub fn bitmap_to_color_code(&self) -> Vec<ColorCode> {
         let bitmap = self.bitmap();
         let info_header = self.info_header();
-        let width = info_header.width.abs() as usize;
-        let height = info_header.height.abs() as usize;
+        let width = info_header.width.unsigned_abs() as usize;
+        let height = info_header.height.unsigned_abs() as usize;
         let bits_per_pixel = info_header.bits_per_pixel as usize / 8;
         let padding = (4 - (width * bits_per_pixel) % 4) % 4;
         let mut data = Vec::new();
 
         for y in 0..height {
             for x in 0..width {
-                let offset = (height - y - 1) as usize
-                    * (width * bits_per_pixel + padding) as usize
-                    + x as usize * bits_per_pixel as usize;
+                let offset =
+                    (height - y - 1) * (width * bits_per_pixel + padding) + x * bits_per_pixel;
                 let b = bitmap[offset];
                 let g = bitmap[offset + 1];
                 let r = bitmap[offset + 2];

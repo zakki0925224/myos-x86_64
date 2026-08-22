@@ -176,8 +176,7 @@ impl Fat {
         let mut lf_name_buf = VecDeque::new();
         let dir_entries = self.volume.read_chained_dir_entries(dir_cluster_num);
 
-        for i in 0..dir_entries.len() {
-            let dir_entry = dir_entries[i];
+        for dir_entry in dir_entries {
             let entry_type = dir_entry.entry_type();
             let file_attr = dir_entry.attr();
 
@@ -196,28 +195,22 @@ impl Fat {
                 }
             }
 
-            match file_attr {
-                Some(attr) => match attr {
-                    Attribute::Archive | Attribute::Directory => {
-                        let file_name = if lf_name_buf.len() > 0 {
-                            lf_name_buf.iter().fold(String::new(), |acc, s| acc + s)
-                        } else {
-                            dir_entry.sf_name().unwrap()
-                        };
+            if let Some(attr @ (Attribute::Archive | Attribute::Directory)) = file_attr {
+                let file_name = if !lf_name_buf.is_empty() {
+                    lf_name_buf.iter().fold(String::new(), |acc, s| acc + s)
+                } else {
+                    dir_entry.sf_name().unwrap()
+                };
 
-                        let file = FileMetaData {
-                            name: file_name,
-                            attr,
-                            size: dir_entry.file_size(),
-                            target_cluster_num: dir_entry.first_cluster_num(),
-                        };
+                let file = FileMetaData {
+                    name: file_name,
+                    attr,
+                    size: dir_entry.file_size(),
+                    target_cluster_num: dir_entry.first_cluster_num(),
+                };
 
-                        files.push(file);
-                        lf_name_buf.clear();
-                    }
-                    _ => (),
-                },
-                None => (),
+                files.push(file);
+                lf_name_buf.clear();
             }
         }
 

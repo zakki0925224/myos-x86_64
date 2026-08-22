@@ -856,12 +856,12 @@ impl DebugLine {
 
         let mut directory_entry_format = Vec::new();
         for _ in 0..directory_entry_format_count {
-            let entry = read_uleb128(&value, &mut offset);
-            let format = read_uleb128(&value, &mut offset);
+            let entry = read_uleb128(value, &mut offset);
+            let format = read_uleb128(value, &mut offset);
             directory_entry_format.push((entry.try_into()?, format.try_into()?));
         }
 
-        let directories_count = read_uleb128(&value, &mut offset);
+        let directories_count = read_uleb128(value, &mut offset);
 
         let mut directories = Vec::new();
         for _ in 0..directories_count {
@@ -889,12 +889,12 @@ impl DebugLine {
 
         let mut file_name_entry_format = Vec::new();
         for _ in 0..file_name_entry_format_count {
-            let entry = read_uleb128(&value, &mut offset);
-            let format = read_uleb128(&value, &mut offset);
+            let entry = read_uleb128(value, &mut offset);
+            let format = read_uleb128(value, &mut offset);
             file_name_entry_format.push((entry.try_into()?, format.try_into()?));
         }
 
-        let file_names_count = read_uleb128(&value, &mut offset);
+        let file_names_count = read_uleb128(value, &mut offset);
 
         let mut file_names = Vec::new();
         for (entry, form) in &file_name_entry_format {
@@ -911,7 +911,7 @@ impl DebugLine {
                     file_names.push(s);
                 }
                 (LineNumberHeaderEntry::DirectoryIndex, AbbrevForm::Udata(_)) => {
-                    let s_offset = read_uleb128(&value, &mut offset);
+                    let s_offset = read_uleb128(value, &mut offset);
                     let s = util::cstring::from_slice(&debug_line_str_slice[s_offset as usize..]);
                     file_names.push(s);
                 }

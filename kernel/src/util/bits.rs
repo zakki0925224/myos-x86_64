@@ -16,7 +16,7 @@ pub fn extract_bits_from_le_bytes(bytes: &[u8], shift: usize, width: usize) -> O
         return None;
     }
 
-    let byte_range = (shift / 8)..((shift + width + 7) / 8);
+    let byte_range = (shift / 8)..(shift + width).div_ceil(8);
     let mut value = 0u64;
     let bit_shift = shift - byte_range.start * 8;
     bytes.get(byte_range).map(|bytes_in_range| {

@@ -61,7 +61,7 @@ impl From<usize> for TaskId {
 }
 
 #[derive(Debug)]
-struct TaskResource {
+pub(crate) struct TaskResource {
     page_table: UserPageTable,
     args_frame: Option<MemoryFrame>,
     stack_frame: Option<MemoryFrame>,
@@ -196,7 +196,7 @@ pub struct TaskSnapshot {
 }
 
 #[derive(Debug)]
-struct Task {
+pub(crate) struct Task {
     id: TaskId,
     name: String,
     state: TaskState,
@@ -252,9 +252,8 @@ impl Task {
                 let p_mem_size = program_header.mem_size;
                 let p_file_size = program_header.file_size;
 
-                let pages_needed =
-                    ((p_virt_addr % PAGE_SIZE as u64 + p_mem_size + PAGE_SIZE as u64 - 1)
-                        / PAGE_SIZE as u64) as usize;
+                let pages_needed = (p_virt_addr % PAGE_SIZE as u64 + p_mem_size)
+                    .div_ceil(PAGE_SIZE as u64) as usize;
                 let user_mem_frame = bitmap::alloc_mem_frame(pages_needed)?;
                 user_mem_frame.zero_out()?;
                 let user_mem_frame_start_virt_addr = user_mem_frame.frame_start_virt_addr();
@@ -291,10 +290,7 @@ impl Task {
             }
         }
 
-        let rip = match entry {
-            Some(f) => f as u64,
-            None => 0,
-        };
+        let rip = entry.unwrap_or(0);
 
         // stack
         let stack_frame = if stack_size > 0 {

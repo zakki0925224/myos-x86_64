@@ -4,7 +4,7 @@ use core::mem::size_of;
 static mut TSS: TaskStateSegment = TaskStateSegment::new();
 
 #[derive(Debug, Clone, Copy)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct TaskStateSegmentDescriptor {
     limit_low: u16,
     base_low: u16,
@@ -42,7 +42,7 @@ impl TaskStateSegmentDescriptor {
     }
 }
 
-#[repr(packed)]
+#[repr(C, packed)]
 struct TaskStateSegment {
     reserved0: u32,
     rsp: [u64; 3],
@@ -79,8 +79,9 @@ impl TaskStateSegment {
 
 // return tss addr
 pub fn init() -> Result<u64> {
+    let tss = &raw mut TSS;
     unsafe {
-        TSS.init()?;
-        Ok((&TSS as *const _) as u64)
+        (*tss).init()?;
     }
+    Ok(tss as u64)
 }

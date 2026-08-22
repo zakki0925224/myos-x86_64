@@ -130,7 +130,7 @@ impl Tty {
         if buf_type != BufferType::Input {
             if self.use_serial_port {
                 let data = match c {
-                    '\x08' | '\x7f' => '\x08' as u8,
+                    '\x08' | '\x7f' => 0x08,
                     _ => c as u8,
                 };
 
@@ -159,18 +159,14 @@ impl Tty {
 
         let mut s = String::new();
 
-        loop {
-            if let Some(c) = buf.pop_front() {
-                match c {
-                    '\x08' | '\x7f' => {
-                        s.pop();
-                    }
-                    _ => {
-                        s.push(c);
-                    }
+        while let Some(c) = buf.pop_front() {
+            match c {
+                '\x08' | '\x7f' => {
+                    s.pop();
                 }
-            } else {
-                break;
+                _ => {
+                    s.push(c);
+                }
             }
         }
 

@@ -15,10 +15,7 @@ pub fn exec_elf(
 ) -> Result<TaskId> {
     let fd_num = vfs::open_file(elf_path, false)?;
     let elf_data = vfs::read_file(fd_num, usize::MAX)?;
-    let elf64 = match Elf64::new(&elf_data) {
-        Ok(e) => e,
-        Err(err) => return Err(err.into()),
-    };
+    let elf64 = Elf64::new(&elf_data)?;
 
     vfs::close_file(fd_num)?;
 

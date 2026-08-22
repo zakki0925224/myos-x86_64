@@ -50,7 +50,7 @@ pub extern "sysv64" fn kernel_entry(boot_info: &BootInfo) -> ! {
 pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     let graphic_info = boot_info.graphic_info;
 
-    device::panic_screen::probe_and_attach(graphic_info.clone()).unwrap();
+    device::panic_screen::probe_and_attach(graphic_info).unwrap();
 
     // attach uart driver
     // do not use .unwrap() here!!
@@ -162,7 +162,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     if let Some(args) = init_app_exec_args {
         let splited: Vec<&str> = args.split(" ").collect();
 
-        if splited.is_empty() || splited[0] == "" {
+        if splited.is_empty() || splited[0].is_empty() {
             panic!("Invalid init app exec args: {:?}", args);
         } else if let Err(err) =
             exec::exec_elf(&splited[0].into(), &splited[1..], [None, None, None])

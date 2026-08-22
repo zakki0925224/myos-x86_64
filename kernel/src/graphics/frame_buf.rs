@@ -24,22 +24,20 @@ struct FrameBuffer {
 
 impl Draw for FrameBuffer {
     fn resolution(&self) -> Result<Size> {
-        let res = self.resolution.ok_or_else(|| Error::NotInitialized)?;
-        let stride = self.stride.ok_or_else(|| Error::NotInitialized)?;
+        let res = self.resolution.ok_or(Error::NotInitialized)?;
+        let stride = self.stride.ok_or(Error::NotInitialized)?;
         Ok(Size::new(stride, res.height))
     }
 
     fn format(&self) -> Result<PixelFormat> {
-        self.format.ok_or_else(|| Error::NotInitialized.into())
+        self.format.ok_or(Error::NotInitialized.into())
     }
 
     fn buf_ptr(&self) -> Result<*const u32> {
         if let Some(shadow_buf) = &self.shadow_buf {
             Ok(shadow_buf.as_ptr())
         } else {
-            let addr = self
-                .frame_buf_virt_addr
-                .ok_or_else(|| Error::NotInitialized)?;
+            let addr = self.frame_buf_virt_addr.ok_or(Error::NotInitialized)?;
             Ok(addr.as_ptr())
         }
     }
@@ -48,9 +46,7 @@ impl Draw for FrameBuffer {
         if let Some(shadow_buf) = &mut self.shadow_buf {
             Ok(shadow_buf.as_mut_ptr())
         } else {
-            let addr = self
-                .frame_buf_virt_addr
-                .ok_or_else(|| Error::NotInitialized)?;
+            let addr = self.frame_buf_virt_addr.ok_or(Error::NotInitialized)?;
             Ok(addr.as_ptr_mut())
         }
     }
@@ -94,7 +90,7 @@ impl FrameBuffer {
         // copy the current framebuffer to shadow buffer
         let buf_ptr: *mut u32 = self
             .frame_buf_virt_addr
-            .ok_or_else(|| Error::NotInitialized)?
+            .ok_or(Error::NotInitialized)?
             .as_ptr_mut();
         let shadow_buf_ptr = self.buf_ptr_mut()?;
 
@@ -130,7 +126,7 @@ impl FrameBuffer {
 
         let fb_ptr: *mut u32 = self
             .frame_buf_virt_addr
-            .ok_or_else(|| Error::NotInitialized)?
+            .ok_or(Error::NotInitialized)?
             .as_ptr_mut();
 
         unsafe {
@@ -165,7 +161,7 @@ impl FrameBuffer {
 
         let fb_ptr: *mut u32 = self
             .frame_buf_virt_addr
-            .ok_or_else(|| Error::NotInitialized)?
+            .ok_or(Error::NotInitialized)?
             .as_ptr_mut();
 
         unsafe {

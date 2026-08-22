@@ -250,7 +250,7 @@ impl XhcDriver {
         mem_frame.leak();
         let table = unsafe {
             slice::from_raw_parts(
-                mem_frame.frame_start_virt_addr().as_ptr_mut() as *mut *const u8,
+                mem_frame.frame_start_virt_addr().as_ptr_mut::<*const u8>(),
                 num_scratchpad_bufs,
             )
         };
@@ -262,7 +262,7 @@ impl XhcDriver {
             let mut sb_frame = bitmap::alloc_mem_frame(1)?;
             sb_frame.leak();
             let buf_ptr = sb_frame.frame_start_virt_addr().as_ptr();
-            let buf = unsafe { slice::from_raw_parts(buf_ptr as *const u8, PAGE_SIZE) };
+            let buf = unsafe { slice::from_raw_parts(buf_ptr, PAGE_SIZE) };
             let buf: Pin<Box<[u8]>> = Pin::new(Box::from(buf));
             *sb = buf.as_ref().as_ptr();
             bufs.push(buf);
@@ -885,13 +885,13 @@ impl DeviceDriverFunction for XhcDriver {
             // read base address registers
             let conf_space = d.read_conf_space_non_bridge_field()?;
             let bars = conf_space.bars()?;
-            if bars.len() == 0 {
+            if bars.is_empty() {
                 return Err(XhcDriverError::InvalidRegisterAddress.into());
             }
 
             let cap_reg_virt_addr: VirtualAddress = match bars[0].1 {
-                BaseAddress::MemoryAddress32BitSpace(addr, _) => addr.into(),
-                BaseAddress::MemoryAddress64BitSpace(addr, _) => addr.into(),
+                BaseAddress::Memory32(addr, _) => addr.into(),
+                BaseAddress::Memory64(addr, _) => addr.into(),
                 _ => return Err(XhcDriverError::InvalidRegisterAddress.into()),
             };
             let cap_reg: Mmio<CapabilityRegisters> =

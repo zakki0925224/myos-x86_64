@@ -129,9 +129,9 @@ impl PanicScreenDriver {
         let x = self.cursor_x.unwrap_or(0) * font_width;
         let y = self.cursor_y.unwrap_or(0) * font_height;
 
-        for h in 0..font_height {
+        for (h, glyph_row) in font_glyph.iter().enumerate().take(font_height) {
             for w in 0..font_width {
-                let color_code = if (font_glyph[h] << w) & 0x80 == 0x80 {
+                let color_code = if (glyph_row << w) & 0x80 == 0x80 {
                     FORE_COLOR
                 } else {
                     BACK_COLOR

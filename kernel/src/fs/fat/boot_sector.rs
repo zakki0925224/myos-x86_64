@@ -74,7 +74,9 @@ impl BootSector {
             return None;
         }
 
-        Some(unsafe { core::mem::transmute(self.other_field) })
+        Some(unsafe {
+            core::mem::transmute::<[u8; 476], BootSectorFat32OtherField>(self.other_field)
+        })
     }
 
     pub fn data_clusters(&self) -> usize {
@@ -98,10 +100,8 @@ impl BootSector {
     }
 
     pub fn fat_sectors32(&self) -> Option<usize> {
-        match self.fat32_other_field() {
-            Some(other_field) => Some(other_field.fat_size() * self.num_fats()),
-            None => None,
-        }
+        self.fat32_other_field()
+            .map(|other_field| other_field.fat_size() * self.num_fats())
     }
 
     pub fn total_sectors(&self) -> usize {
@@ -144,16 +144,12 @@ impl BootSector {
     }
 
     pub fn data_start_sector32(&self) -> Option<usize> {
-        match self.fat_sectors32() {
-            Some(fat_sectors) => Some(self.reserved_sectors() + fat_sectors),
-            None => None,
-        }
+        self.fat_sectors32()
+            .map(|fat_sectors| self.reserved_sectors() + fat_sectors)
     }
 
     pub fn data_sectors32(&self) -> Option<usize> {
-        match self.data_start_sector32() {
-            Some(data_start_sector) => Some(self.total_sectors() - data_start_sector),
-            None => None,
-        }
+        self.data_start_sector32()
+            .map(|data_start_sector| self.total_sectors() - data_start_sector)
     }
 }

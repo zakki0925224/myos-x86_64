@@ -20,9 +20,7 @@ pub struct UsbHidKeyboardDriver {
 
 impl UsbDeviceDriverFunction for UsbHidKeyboardDriver {
     fn configure(&mut self, attach_info: &mut UsbDeviceAttachInfo) -> Result<()> {
-        let xhci_info = match attach_info {
-            UsbDeviceAttachInfo::Xhci(info) => info,
-        };
+        let UsbDeviceAttachInfo::Xhci(xhci_info) = attach_info;
         let slot = xhci_info.slot;
 
         // set config
@@ -61,15 +59,13 @@ impl UsbDeviceDriverFunction for UsbHidKeyboardDriver {
     }
 
     fn poll(&mut self, attach_info: &mut UsbDeviceAttachInfo) -> Result<()> {
-        let xhci_info = match attach_info {
-            UsbDeviceAttachInfo::Xhci(info) => info,
-        };
+        let UsbDeviceAttachInfo::Xhci(xhci_info) = attach_info;
         let slot = xhci_info.slot;
 
         let report =
             device::usb::xhc::request(|xhc| xhc.hid_report(slot, xhci_info.ctrl_ep_ring_mut()))?;
 
-        let modifier = report.get(0).copied().unwrap_or(0);
+        let modifier = report.first().copied().unwrap_or(0);
         let ctrl = (modifier & 0x01 != 0) || (modifier & 0x10 != 0);
         let shift = (modifier & 0x02 != 0) || (modifier & 0x20 != 0);
         let alt = (modifier & 0x04 != 0) | (modifier & 0x40 != 0);

@@ -80,7 +80,6 @@ impl SegmentDescriptor {
     }
 
     fn set_dpl(&mut self, dpl: u8) {
-        let dpl = dpl;
         assert!(dpl <= 3);
         self.0 = (self.0 & !0x6000_0000_0000) | ((dpl as u64) << 45);
     }

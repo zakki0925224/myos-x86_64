@@ -30,9 +30,7 @@ pub struct UsbHidTabletDriver {
 
 impl UsbDeviceDriverFunction for UsbHidTabletDriver {
     fn configure(&mut self, attach_info: &mut UsbDeviceAttachInfo) -> Result<()> {
-        let xhci_info = match attach_info {
-            UsbDeviceAttachInfo::Xhci(info) => info,
-        };
+        let UsbDeviceAttachInfo::Xhci(xhci_info) = attach_info;
         let slot = xhci_info.slot;
         let interface_descs = xhci_info.interface_descs();
         let target_interface_desc = *interface_descs
@@ -48,7 +46,7 @@ impl UsbDeviceDriverFunction for UsbHidTabletDriver {
 
         self.input_report_items = self.parse_hid_report_desc(&report)?;
         self.report_size_in_byte = if let Some(last_item) = self.input_report_items.last() {
-            (last_item.bit_offset + last_item.bit_size + 7) / 8
+            (last_item.bit_offset + last_item.bit_size).div_ceil(8)
         } else {
             return Err(Error::InvalidData.with_context("HID report descriptor"));
         };
@@ -59,9 +57,7 @@ impl UsbDeviceDriverFunction for UsbHidTabletDriver {
     }
 
     fn poll(&mut self, attach_info: &mut UsbDeviceAttachInfo) -> Result<()> {
-        let xhci_info = match attach_info {
-            UsbDeviceAttachInfo::Xhci(info) => info,
-        };
+        let UsbDeviceAttachInfo::Xhci(xhci_info) = attach_info;
         let slot = xhci_info.slot;
 
         let desc_button_l = self

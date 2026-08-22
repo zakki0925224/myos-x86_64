@@ -59,14 +59,14 @@ impl ColorCode {
         }
     }
 
-    pub fn to_color_code(&self, pixel_format: PixelFormat) -> u32 {
+    pub fn to_color_code(self, pixel_format: PixelFormat) -> u32 {
         match pixel_format {
-            PixelFormat::Bgr => (self.r as u32) << 16 | (self.g as u32) << 8 | (self.b as u32) << 0,
-            PixelFormat::Rgb => (self.r as u32) << 0 | (self.g as u32) << 8 | (self.b as u32) << 16,
+            PixelFormat::Bgr => (self.r as u32) << 16 | (self.g as u32) << 8 | (self.b as u32),
+            PixelFormat::Rgb => (self.r as u32) | (self.g as u32) << 8 | (self.b as u32) << 16,
             PixelFormat::Bgra => {
                 (self.r as u32) << 16
                     | (self.g as u32) << 8
-                    | (self.b as u32) << 0
+                    | (self.b as u32)
                     | (self.a as u32) << 24
             }
         }
