@@ -1,3 +1,5 @@
+
+
 # myos-x86_64
 
 [![MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -100,6 +102,9 @@ This is a replacement project for the previous **[myos](https://github.com/zakki
 ```bash
 # install required packages
 $ sudo apt update && sudo apt install git python3 build-essential lld gcc-multilib clang qemu-system qemu-utils dosfstools wget python3-venv bdf2psf ninja-build meson libglib2.0-dev libsdl2-dev libslirp-dev
+
+# Install Rust targets required for build-std
+$ rustup target add x86_64-unknown-uefi x86_64-unknown-none
 
 $ git clone https://github.com/zakki0925224/myos-x86_64.git
 $ cd myos-x86_64
