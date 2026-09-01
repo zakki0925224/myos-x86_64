@@ -57,7 +57,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     let _ = device::uart::probe_and_attach();
 
     // initialize memory management
-    mem::init(boot_info.mem_map).unwrap();
+    mem::init(boot_info.mem_map, &graphic_info).unwrap();
 
     // initialize GDT
     gdt::init();

@@ -287,7 +287,7 @@ impl Task {
                     start_virt_addr.offset(user_mem_frame.frame_size()),
                     user_mem_frame.frame_start_phys_addr(),
                     ReadWrite::Write,
-                    PageWriteThroughLevel::WriteThrough,
+                    PageWriteThroughLevel::WriteBack,
                     false,
                 )?;
                 program_frames.push(user_mem_frame);
@@ -313,7 +313,7 @@ impl Task {
                     start.offset(stack.frame_size()),
                     phys,
                     ReadWrite::Write,
-                    PageWriteThroughLevel::WriteThrough,
+                    PageWriteThroughLevel::WriteBack,
                     false,
                 )?;
             }
@@ -351,7 +351,7 @@ impl Task {
                     start.offset(mem_frame.frame_size()),
                     phys,
                     ReadWrite::Write,
-                    PageWriteThroughLevel::WriteThrough,
+                    PageWriteThroughLevel::WriteBack,
                     false,
                 )?;
             }

@@ -45,7 +45,7 @@ impl Ps2KeyboardDriver {
 
     fn input(&mut self, data: u8) -> Result<()> {
         if self.data_buf.enqueue(data).is_err() {
-            self.data_buf.reset_ptr();
+            let _ = self.data_buf.dequeue(); // drop the oldest one only
             self.data_buf.enqueue(data)?;
         }
 
@@ -193,49 +193,48 @@ pub fn write(data: &[u8]) -> Result<()> {
 }
 
 pub fn poll_normal() -> Result<()> {
-    let key_event = x86_64::disabled_int(|| {
-        let mut driver = PS2_KBD_DRIVER.try_lock()?;
-        driver.poll_normal()
-    })?;
-    let key_event = match key_event {
-        Some(e) => e,
-        None => return Ok(()),
-    };
+    loop {
+        let key_event = match x86_64::disabled_int(|| {
+            let mut driver = PS2_KBD_DRIVER.try_lock()?;
+            driver.poll_normal()
+        }) {
+            Ok(Some(e)) => e,
+            Ok(None) => continue,
+            Err(_) => return Ok(()),
+        };
 
-    match key_event.code {
-        KeyCode::CursorUp => {
-            tty::input('\x1b')?;
-            tty::input('[')?;
-            tty::input('A')?;
-            return Ok(());
+        match key_event.code {
+            KeyCode::CursorUp => {
+                tty::input('\x1b')?;
+                tty::input('[')?;
+                tty::input('A')?;
+                continue;
+            }
+            KeyCode::CursorDown => {
+                tty::input('\x1b')?;
+                tty::input('[')?;
+                tty::input('B')?;
+                continue;
+            }
+            KeyCode::CursorRight => {
+                tty::input('\x1b')?;
+                tty::input('[')?;
+                tty::input('C')?;
+                continue;
+            }
+            KeyCode::CursorLeft => {
+                tty::input('\x1b')?;
+                tty::input('[')?;
+                tty::input('D')?;
+                continue;
+            }
+            _ => (),
         }
-        KeyCode::CursorDown => {
-            tty::input('\x1b')?;
-            tty::input('[')?;
-            tty::input('B')?;
-            return Ok(());
+
+        if let Some(c) = key_event.c {
+            tty::input(c)?;
         }
-        KeyCode::CursorRight => {
-            tty::input('\x1b')?;
-            tty::input('[')?;
-            tty::input('C')?;
-            return Ok(());
-        }
-        KeyCode::CursorLeft => {
-            tty::input('\x1b')?;
-            tty::input('[')?;
-            tty::input('D')?;
-            return Ok(());
-        }
-        _ => (),
     }
-
-    let c = match key_event.c {
-        Some(c) => c,
-        None => return Ok(()),
-    };
-
-    tty::input(c)
 }
 
 pub extern "x86-interrupt" fn poll_int_ps2_kbd_driver(_stack_frame: idt::InterruptStackFrame) {

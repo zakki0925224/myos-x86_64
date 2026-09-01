@@ -256,7 +256,9 @@ def _build_apps():
         )
     if _sha1sum(wad_path) != DOOM_WAD_SHA1:
         os.remove(wad_path)
-        print(f"\033[31m{DOOM_WAD_FILE}: SHA1 mismatch, expected {DOOM_WAD_SHA1}\033[0m")
+        print(
+            f"\033[31m{DOOM_WAD_FILE}: SHA1 mismatch, expected {DOOM_WAD_SHA1}\033[0m"
+        )
         sys.exit(1)
     _run_cmd(f"cp {wad_path} ./{INITRAMFS_DIR}")
 

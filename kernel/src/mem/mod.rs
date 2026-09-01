@@ -1,11 +1,18 @@
-use crate::{arch::x86_64, error::Result, kdebug, kinfo};
-use common::mem_desc::MemoryDescriptor;
+use crate::{
+    arch::x86_64::{
+        self,
+        paging::{PageWriteThroughLevel, ReadWrite, PAGE_SIZE},
+    },
+    error::Result,
+    kdebug, kinfo,
+};
+use common::{graphic_info::GraphicInfo, mem_desc::MemoryDescriptor};
 
 pub mod allocator;
 pub mod bitmap;
 pub mod paging;
 
-pub fn init(mem_map: &[MemoryDescriptor]) -> Result<()> {
+pub fn init(mem_map: &[MemoryDescriptor], graphic_info: &GraphicInfo) -> Result<()> {
     bitmap::init(mem_map)?;
     kinfo!("mem: Bitmap memory manager initialized");
 
@@ -13,9 +20,34 @@ pub fn init(mem_map: &[MemoryDescriptor]) -> Result<()> {
     let end = bitmap::total_mem_size()? as u64;
 
     x86_64::paging::kernel_init(start.into(), end.into())?;
+    map_frame_buf(graphic_info)?;
     allocator::init_heap()?;
     kinfo!("mem: Heap allocator initialized");
 
+    Ok(())
+}
+
+fn map_frame_buf(graphic_info: &GraphicInfo) -> Result<()> {
+    let page_size = PAGE_SIZE as u64;
+    let start = graphic_info.framebuf_addr & !(page_size - 1);
+    let end = (graphic_info.framebuf_addr + graphic_info.framebuf_size as u64).div_ceil(page_size)
+        * page_size;
+
+    if end <= start {
+        return Ok(());
+    }
+
+    unsafe {
+        x86_64::paging::kernel_map(
+            start.into(),
+            end.into(),
+            ReadWrite::Write,
+            PageWriteThroughLevel::WriteBack,
+            false,
+        )?;
+    }
+
+    kinfo!("mem: Frame buffer mapped: {:#x}-{:#x}", start, end);
     Ok(())
 }
 

@@ -645,7 +645,7 @@ fn sys_sbrk(len: usize) -> Result<*const u8> {
             end,
             phys,
             ReadWrite::Write,
-            PageWriteThroughLevel::WriteThrough,
+            PageWriteThroughLevel::WriteBack,
             false,
         )
     })?;
