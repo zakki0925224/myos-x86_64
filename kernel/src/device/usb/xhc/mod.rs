@@ -2,26 +2,27 @@ use crate::{
     arch::{x86_64::paging::PAGE_SIZE, VirtualAddress},
     device::{
         self,
-        pci_bus::conf_space::BaseAddress,
+        pci_bus::{conf_space::BaseAddress, device::PciDevice, PciDriver},
+        register_pollable,
         usb::{
-            hid_keyboard::UsbHidKeyboardDriver,
-            hid_tablet::UsbHidTabletDriver,
             usb_bus::*,
             xhc::{context::*, desc::*, register::*, trb::*},
+            UsbHostController,
         },
-        DeviceDriverFunction, DeviceDriverInfo,
+        CharDevice, Device, DeviceInfo, Pollable,
     },
     error::{Error, Result},
     fs::vfs,
-    kdebug, kinfo, ktrace,
+    kdebug, ktrace,
     mem::bitmap,
     sync::mutex::Mutex,
-    util::{keyboard::key_map::JIS_JP_109_KEY_MAP, mmio::Mmio, slice::Sliceable},
+    util::{mmio::Mmio, slice::Sliceable},
 };
 use alloc::{
     boxed::Box,
     rc::Rc,
     string::{String, ToString},
+    sync::Arc,
     vec::Vec,
 };
 use core::{cmp::max, pin::Pin, slice};
@@ -31,7 +32,9 @@ pub mod desc;
 pub mod register;
 pub mod trb;
 
-static XHC_DRIVER: Mutex<XhcDriver> = Mutex::new(XhcDriver::new());
+const NAME: &str = "xhc";
+
+static XHCI_CONTROLLER: Mutex<XhciController> = Mutex::new(XhciController::new());
 
 #[derive(Debug)]
 pub enum XhcDriverError {
@@ -62,39 +65,8 @@ impl core::fmt::Display for XhcDriverError {
     }
 }
 
-pub trait XhcRequestFunction {
-    fn set_config(
-        &mut self,
-        slot: u8,
-        ctrl_ep_ring: &mut CommandRing,
-        config_value: u8,
-    ) -> Result<()>;
-    fn set_interface(
-        &mut self,
-        slot: u8,
-        ctrl_ep_ring: &mut CommandRing,
-        interface_num: u8,
-        alt_setting: u8,
-    ) -> Result<()>;
-    fn set_protocol(
-        &mut self,
-        slot: u8,
-        ctrl_ep_ring: &mut CommandRing,
-        interface_num: u8,
-        protocol: u8,
-    ) -> Result<()>;
-    fn hid_report(&mut self, slot: u8, ctrl_ep_ring: &mut CommandRing) -> Result<Vec<u8>>;
-    fn hid_report_desc(
-        &mut self,
-        slot: u8,
-        ctrl_ep_ring: &mut CommandRing,
-        interface_num: u8,
-        desc_size: usize,
-    ) -> Result<Vec<u8>>;
-}
-
-struct XhcDriver {
-    device_driver_info: DeviceDriverInfo,
+struct XhciController {
+    device_info: DeviceInfo,
     pci_device_bdf: Option<(usize, usize, usize)>,
     cap_reg: Option<Mmio<CapabilityRegisters>>,
     ope_reg: Option<Mmio<OperationalRegisters>>,
@@ -106,10 +78,20 @@ struct XhcDriver {
     doorbell_regs: Vec<Rc<Doorbell>>,
 }
 
-impl XhcDriver {
+impl XhciController {
+    fn poll_normal(&mut self) -> Result<()> {
+        let driver_name = self.device_info.name;
+
+        if let Some(trb) = self.primary_event_ring()?.pop()? {
+            kdebug!("{}: Processed TRB: {:#x}", driver_name, trb.trb_type());
+        }
+
+        Ok(())
+    }
+
     const fn new() -> Self {
         Self {
-            device_driver_info: DeviceDriverInfo::new("xhc"),
+            device_info: DeviceInfo::new("xhc"),
             pci_device_bdf: None,
             cap_reg: None,
             ope_reg: None,
@@ -196,7 +178,7 @@ impl XhcDriver {
     }
 
     fn reset(&mut self) -> Result<()> {
-        let driver_name = self.device_driver_info.name;
+        let driver_name = self.device_info.name;
 
         // stop controller
         if !self.ope_reg()?.as_ref().usb_status.hchalted() {
@@ -221,7 +203,7 @@ impl XhcDriver {
     }
 
     fn set_max_dev_slots(&mut self) -> Result<()> {
-        let driver_name = self.device_driver_info.name;
+        let driver_name = self.device_info.name;
 
         let num_of_ports = self.cap_reg()?.as_ref().num_of_ports();
         let num_of_slots = self.cap_reg()?.as_ref().num_of_device_slots();
@@ -234,7 +216,7 @@ impl XhcDriver {
     }
 
     fn init_scratchpad_bufs(&mut self) -> Result<ScratchpadBuffers> {
-        let driver_name = self.device_driver_info.name;
+        let driver_name = self.device_info.name;
 
         let num_scratchpad_bufs = max(self.cap_reg()?.as_ref().num_scratchpad_bufs(), 1);
         kdebug!(
@@ -273,7 +255,7 @@ impl XhcDriver {
     }
 
     fn init_dev_ctx(&mut self, scratchpad_bufs: ScratchpadBuffers) -> Result<()> {
-        let driver_name = self.device_driver_info.name;
+        let driver_name = self.device_info.name;
 
         // initialize device context
         let dcbaa = DeviceContextBaseAddressArray::new(scratchpad_bufs);
@@ -291,7 +273,7 @@ impl XhcDriver {
     }
 
     fn init_primary_event_ring(&mut self) -> Result<()> {
-        let driver_name = self.device_driver_info.name;
+        let driver_name = self.device_info.name;
 
         self.primary_event_ring = Some(EventRing::new()?);
         let event_ring = self.primary_event_ring.as_mut().unwrap();
@@ -303,7 +285,7 @@ impl XhcDriver {
     }
 
     fn init_cmd_ring(&mut self) -> Result<()> {
-        let driver_name = self.device_driver_info.name;
+        let driver_name = self.device_info.name;
 
         self.cmd_ring = Some(CommandRing::default());
         let cmd_ring = self.cmd_ring.as_mut().unwrap();
@@ -315,7 +297,7 @@ impl XhcDriver {
     }
 
     fn init_port(&mut self, port: usize) -> Result<u8> {
-        let driver_name = self.device_driver_info.name;
+        let driver_name = self.device_info.name;
 
         let e = self.portsc()?.get(port).ok_or(Error::IndexOutOfBounds {
             index: port,
@@ -349,7 +331,7 @@ impl XhcDriver {
     }
 
     fn address_device(&mut self, port: usize, slot: u8) -> Result<CommandRing> {
-        let driver_name = self.device_driver_info.name;
+        let driver_name = self.device_info.name;
 
         let output_context = Box::pin(OutputContext::default());
         self.set_output_context_for_slot(slot, output_context)?;
@@ -671,7 +653,7 @@ impl XhcDriver {
     }
 
     fn init_slot(&mut self, port: usize, slot: u8) -> Result<()> {
-        let driver_name = self.device_driver_info.name;
+        let driver_name = self.device_info.name;
 
         let mut ctrl_ep_ring = self.address_device(port, slot)?;
         let dev_desc = self.request_dev_desc(slot, &mut ctrl_ep_ring)?;
@@ -723,57 +705,17 @@ impl XhcDriver {
             ctrl_ep_ring: Box::new(ctrl_ep_ring),
         };
 
-        // detect keyboard
-        if xhci_attach_info
-            .interface_descs()
-            .iter()
-            .find(|d| d.triple() == (3, 1, 1))
-            .is_some()
-        {
-            let attach_info = UsbDeviceAttachInfo::new_xhci(xhci_attach_info);
-            let driver = UsbHidKeyboardDriver::new(JIS_JP_109_KEY_MAP);
-            let usb_driver_name = driver.name;
-            let usb_device = UsbDevice::new(attach_info, Box::new(driver));
-            device::usb::usb_bus::attach_usb_device(usb_device)?;
-            kinfo!(
-                "{}: {} attached to {:?} on slot {}",
-                driver_name,
-                usb_driver_name,
-                product,
-                slot
-            );
-        }
-        // detect tablet
-        else if xhci_attach_info
-            .interface_descs()
-            .iter()
-            .find(|d| d.triple() == (3, 0, 0))
-            .is_some()
-        {
-            let attach_info = UsbDeviceAttachInfo::new_xhci(xhci_attach_info);
-            let driver = UsbHidTabletDriver::new();
-            let usb_driver_name = driver.name;
-            let usb_device = UsbDevice::new(attach_info, Box::new(driver));
-            device::usb::usb_bus::attach_usb_device(usb_device)?;
-            kinfo!(
-                "{}: {} attached to {:?} on slot {}",
-                driver_name,
-                usb_driver_name,
-                product,
-                slot
-            );
-        } else {
-            kinfo!(
-                "{}: Unsupported USB device detected, no attached",
-                driver_name
-            );
-        }
+        let usb_device = Arc::new(UsbDevice::new(
+            UsbDeviceAttachInfo::new_xhci(xhci_attach_info),
+            Arc::new(XhciHostController),
+        ));
+        device::usb::usb_bus::attach_usb_device(usb_device)?;
 
         Ok(())
     }
 
     fn start(&mut self) -> Result<()> {
-        let driver_name = self.device_driver_info.name;
+        let driver_name = self.device_info.name;
         self.ope_reg()?.as_mut().usb_cmd.set_run_stop(true);
 
         loop {
@@ -801,7 +743,60 @@ impl XhcDriver {
     }
 }
 
-impl XhcRequestFunction for XhcDriver {
+impl XhciController {
+    fn attach_pci(&mut self, d: &PciDevice) -> Result<()> {
+        // read base address registers
+        let conf_space = d.read_conf_space_non_bridge_field()?;
+        let bars = conf_space.bars()?;
+        if bars.is_empty() {
+            return Err(XhcDriverError::InvalidRegisterAddress.into());
+        }
+
+        let cap_reg_virt_addr: VirtualAddress = match bars[0].1 {
+            BaseAddress::Memory32(addr, _) => addr.into(),
+            BaseAddress::Memory64(addr, _) => addr.into(),
+            _ => return Err(XhcDriverError::InvalidRegisterAddress.into()),
+        };
+        let cap_reg: Mmio<CapabilityRegisters> =
+            unsafe { Mmio::from_raw(cap_reg_virt_addr.as_ptr_mut()) };
+        let ope_reg_offset = cap_reg.as_ref().cap_reg_len();
+        let rt_reg_offset = cap_reg.as_ref().rts_offset();
+
+        self.cap_reg = Some(cap_reg);
+
+        let ope_reg =
+            unsafe { Mmio::from_raw(cap_reg_virt_addr.offset(ope_reg_offset).as_ptr_mut()) };
+        self.ope_reg = Some(ope_reg);
+
+        let rt_reg =
+            unsafe { Mmio::from_raw(cap_reg_virt_addr.offset(rt_reg_offset).as_ptr_mut()) };
+        self.rt_reg = Some(rt_reg);
+
+        self.portsc = Some(PortSc::new(&cap_reg_virt_addr, self.cap_reg()?.as_ref()));
+
+        let mut doorbell_regs = Vec::new();
+        let num_of_slots = self.cap_reg()?.as_ref().num_of_ports();
+        for i in 0..=num_of_slots {
+            let ptr: *mut u32 = cap_reg_virt_addr
+                .offset(self.cap_reg()?.as_ref().db_offset() + i * 4)
+                .as_ptr_mut();
+            doorbell_regs.push(Rc::new(Doorbell::new(ptr)));
+        }
+        self.doorbell_regs = doorbell_regs;
+
+        self.reset()?;
+        self.set_max_dev_slots()?;
+        let scratchpad_bufs = self.init_scratchpad_bufs()?;
+        self.init_dev_ctx(scratchpad_bufs)?;
+        self.init_primary_event_ring()?;
+        self.init_cmd_ring()?;
+        self.start()?;
+
+        self.pci_device_bdf = Some(d.bdf());
+
+        Ok(())
+    }
+
     fn set_config(
         &mut self,
         slot: u8,
@@ -856,168 +851,133 @@ impl XhcRequestFunction for XhcDriver {
     }
 }
 
-impl DeviceDriverFunction for XhcDriver {
-    type AttachInput = ();
-    type PollNormalOutput = ();
-    type PollInterruptOutput = ();
-
-    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
-        Ok(self.device_driver_info.clone())
-    }
-
+impl XhciController {
     fn probe(&mut self) -> Result<()> {
-        device::pci_bus::find_devices(0x0c, 0x03, 0x30, |d| {
-            self.pci_device_bdf = Some(d.bdf());
-            Ok(())
-        })?;
-
         Ok(())
     }
 
-    fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
-        if self.pci_device_bdf.is_none() {
-            return Err(Error::NotFound.with_context("Proved device"));
-        }
-
-        let driver_name = self.device_driver_info.name;
-        let (bus, device, func) = self.pci_device_bdf.unwrap();
-        device::pci_bus::configure_device(bus, device, func, |d| {
-            // read base address registers
-            let conf_space = d.read_conf_space_non_bridge_field()?;
-            let bars = conf_space.bars()?;
-            if bars.is_empty() {
-                return Err(XhcDriverError::InvalidRegisterAddress.into());
-            }
-
-            let cap_reg_virt_addr: VirtualAddress = match bars[0].1 {
-                BaseAddress::Memory32(addr, _) => addr.into(),
-                BaseAddress::Memory64(addr, _) => addr.into(),
-                _ => return Err(XhcDriverError::InvalidRegisterAddress.into()),
-            };
-            let cap_reg: Mmio<CapabilityRegisters> =
-                unsafe { Mmio::from_raw(cap_reg_virt_addr.as_ptr_mut()) };
-            let ope_reg_offset = cap_reg.as_ref().cap_reg_len();
-            let rt_reg_offset = cap_reg.as_ref().rts_offset();
-
-            self.cap_reg = Some(cap_reg);
-
-            let ope_reg =
-                unsafe { Mmio::from_raw(cap_reg_virt_addr.offset(ope_reg_offset).as_ptr_mut()) };
-            self.ope_reg = Some(ope_reg);
-
-            let rt_reg =
-                unsafe { Mmio::from_raw(cap_reg_virt_addr.offset(rt_reg_offset).as_ptr_mut()) };
-            self.rt_reg = Some(rt_reg);
-
-            self.portsc = Some(PortSc::new(&cap_reg_virt_addr, self.cap_reg()?.as_ref()));
-
-            let mut doorbell_regs = Vec::new();
-            let num_of_slots = self.cap_reg()?.as_ref().num_of_ports();
-            for i in 0..=num_of_slots {
-                let ptr: *mut u32 = cap_reg_virt_addr
-                    .offset(self.cap_reg()?.as_ref().db_offset() + i * 4)
-                    .as_ptr_mut();
-                doorbell_regs.push(Rc::new(Doorbell::new(ptr)));
-            }
-            self.doorbell_regs = doorbell_regs;
-
-            self.reset()?;
-            self.set_max_dev_slots()?;
-            let scratchpad_bufs = self.init_scratchpad_bufs()?;
-            self.init_dev_ctx(scratchpad_bufs)?;
-            self.init_primary_event_ring()?;
-            self.init_cmd_ring()?;
-            self.start()?;
-
-            Ok(())
-        })?;
-
-        let dev_desc = vfs::DeviceFileDescriptor {
-            device_driver_info,
-            open,
-            close,
-            read,
-            write,
-        };
-        vfs::add_dev_file(dev_desc, driver_name)?;
-        self.device_driver_info.attached = true;
+    fn attach(&mut self) -> Result<()> {
         Ok(())
-    }
-
-    fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
-        if !self.device_driver_info.attached {
-            return Err(Error::NotInitialized.into());
-        }
-
-        let driver_name = self.device_driver_info.name;
-
-        if let Some(trb) = self.primary_event_ring()?.pop()? {
-            kdebug!("{}: Processed TRB: {:#x}", driver_name, trb.trb_type());
-        }
-
-        Ok(())
-    }
-
-    fn poll_int(&mut self) -> Result<Self::PollInterruptOutput> {
-        unimplemented!()
     }
 
     fn open(&mut self) -> Result<()> {
-        unimplemented!()
+        Err(Error::NotSupported.into())
     }
 
     fn close(&mut self) -> Result<()> {
-        unimplemented!()
+        Err(Error::NotSupported.into())
     }
 
     fn read(&mut self, _offset: usize, _max_len: usize) -> Result<Vec<u8>> {
-        unimplemented!()
+        Err(Error::NotSupported.into())
     }
 
     fn write(&mut self, _data: &[u8]) -> Result<()> {
-        unimplemented!()
+        Err(Error::NotSupported.into())
     }
 }
 
-pub fn device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = XHC_DRIVER.try_lock()?;
-    driver.device_driver_info()
+pub fn device_info() -> Result<DeviceInfo> {
+    Ok(DeviceInfo::new(NAME))
 }
 
-pub fn probe_and_attach() -> Result<()> {
-    let mut driver = XHC_DRIVER.try_lock()?;
-    driver.probe()?;
-    driver.attach(())?;
-    kinfo!("{}: Attached!", driver.device_driver_info()?.name);
-    Ok(())
-}
+pub struct XhciDriver;
 
-pub fn open() -> Result<()> {
-    let mut driver = XHC_DRIVER.try_lock()?;
-    driver.open()
-}
+impl PciDriver for XhciDriver {
+    fn name(&self) -> &'static str {
+        NAME
+    }
 
-pub fn close() -> Result<()> {
-    let mut driver = XHC_DRIVER.try_lock()?;
-    driver.close()
-}
+    fn probe(&self, dev: &PciDevice) -> Result<bool> {
+        if dev.device_class() != (0x0c, 0x03, 0x30) {
+            return Ok(false);
+        }
 
-pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
-    let mut driver = XHC_DRIVER.try_lock()?;
-    driver.read(offset, max_len)
-}
+        XHCI_CONTROLLER.try_lock()?.attach_pci(dev)?;
 
-pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = XHC_DRIVER.try_lock()?;
-    driver.write(data)
+        let device = Arc::new(XhciDevice);
+        vfs::add_dev(device.clone())?;
+        register_pollable(device)?;
+
+        Ok(true)
+    }
 }
 
 pub fn poll_normal() -> Result<()> {
-    let mut driver = XHC_DRIVER.try_lock()?;
+    let mut driver = XHCI_CONTROLLER.try_lock()?;
     driver.poll_normal()
 }
 
-pub fn request<R, F: FnOnce(&mut dyn XhcRequestFunction) -> R>(f: F) -> R {
-    let mut driver = XHC_DRIVER.try_lock().unwrap();
-    f(&mut *driver)
+pub struct XhciHostController;
+
+impl UsbHostController for XhciHostController {
+    fn set_config(&self, slot: u8, ctrl_ep_ring: &mut CommandRing, config_value: u8) -> Result<()> {
+        XHCI_CONTROLLER
+            .try_lock()?
+            .set_config(slot, ctrl_ep_ring, config_value)
+    }
+
+    fn set_interface(
+        &self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        interface_num: u8,
+        alt_setting: u8,
+    ) -> Result<()> {
+        XHCI_CONTROLLER
+            .try_lock()?
+            .set_interface(slot, ctrl_ep_ring, interface_num, alt_setting)
+    }
+
+    fn set_protocol(
+        &self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        interface_num: u8,
+        protocol: u8,
+    ) -> Result<()> {
+        XHCI_CONTROLLER
+            .try_lock()?
+            .set_protocol(slot, ctrl_ep_ring, interface_num, protocol)
+    }
+
+    fn hid_report(&self, slot: u8, ctrl_ep_ring: &mut CommandRing) -> Result<Vec<u8>> {
+        XHCI_CONTROLLER.try_lock()?.hid_report(slot, ctrl_ep_ring)
+    }
+
+    fn hid_report_desc(
+        &self,
+        slot: u8,
+        ctrl_ep_ring: &mut CommandRing,
+        interface_num: u8,
+        desc_size: usize,
+    ) -> Result<Vec<u8>> {
+        XHCI_CONTROLLER
+            .try_lock()?
+            .hid_report_desc(slot, ctrl_ep_ring, interface_num, desc_size)
+    }
+}
+
+struct XhciDevice;
+
+impl Device for XhciDevice {
+    fn info(&self) -> Result<DeviceInfo> {
+        Ok(DeviceInfo::new(NAME))
+    }
+}
+
+impl Pollable for XhciDevice {
+    fn poll(&self) -> Result<()> {
+        poll_normal()
+    }
+}
+
+impl CharDevice for XhciDevice {
+    fn read(&self, _offset: usize, _max_len: usize) -> Result<Vec<u8>> {
+        Err(Error::NotSupported.into())
+    }
+
+    fn write(&self, _data: &[u8]) -> Result<()> {
+        Err(Error::NotSupported.into())
+    }
 }

@@ -1,112 +1,36 @@
 use crate::{
-    device,
-    device::{DeviceDriverFunction, DeviceDriverInfo},
-    error::Result,
+    device::{self, CharDevice, Device, DeviceInfo},
+    error::{Error, Result},
     fs::vfs,
-    kinfo,
-    sync::mutex::Mutex,
-    util,
+    kinfo, util,
 };
-use alloc::vec::Vec;
+use alloc::{sync::Arc, vec::Vec};
 
-static URANDOM_DRIVER: Mutex<UrandomDriver> = Mutex::new(UrandomDriver::new());
+const NAME: &str = "urandom";
 
-struct UrandomDriver {
-    device_driver_info: DeviceDriverInfo,
-}
+struct UrandomDevice;
 
-impl UrandomDriver {
-    const fn new() -> Self {
-        Self {
-            device_driver_info: DeviceDriverInfo::new("urandom"),
-        }
+impl Device for UrandomDevice {
+    fn info(&self) -> Result<DeviceInfo> {
+        Ok(DeviceInfo::new(NAME))
     }
 }
 
-impl DeviceDriverFunction for UrandomDriver {
-    type AttachInput = ();
-    type PollNormalOutput = ();
-    type PollInterruptOutput = ();
-
-    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
-        Ok(self.device_driver_info.clone())
-    }
-
-    fn probe(&mut self) -> Result<()> {
-        Ok(())
-    }
-
-    fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
-        let dev_desc = vfs::DeviceFileDescriptor {
-            device_driver_info,
-            open,
-            close,
-            read,
-            write,
-        };
-        vfs::add_dev_file(dev_desc, self.device_driver_info.name)?;
-        self.device_driver_info.attached = true;
-        Ok(())
-    }
-
-    fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
-        unimplemented!()
-    }
-
-    fn poll_int(&mut self) -> Result<Self::PollInterruptOutput> {
-        unimplemented!()
-    }
-
-    fn open(&mut self) -> Result<()> {
-        Ok(())
-    }
-
-    fn close(&mut self) -> Result<()> {
-        Ok(())
-    }
-
-    fn read(&mut self, _offset: usize, max_len: usize) -> Result<Vec<u8>> {
+impl CharDevice for UrandomDevice {
+    fn read(&self, _offset: usize, max_len: usize) -> Result<Vec<u8>> {
         let uptime_durtion = device::local_apic_timer::global_uptime();
         let seed = uptime_durtion.as_nanos() as u64;
-        let buf = util::random::random_bytes_pcg32(max_len, seed);
-        Ok(buf)
+        Ok(util::random::random_bytes_pcg32(max_len, seed))
     }
 
-    fn write(&mut self, _data: &[u8]) -> Result<()> {
-        Ok(())
+    fn write(&self, _data: &[u8]) -> Result<()> {
+        Err(Error::NotSupported.into())
     }
-}
-
-pub fn device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = URANDOM_DRIVER.try_lock()?;
-    driver.device_driver_info()
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = URANDOM_DRIVER.try_lock()?;
-    driver.probe()?;
-    driver.attach(())?;
-    kinfo!("{}: Attached!", driver.device_driver_info()?.name);
+    vfs::add_dev(Arc::new(UrandomDevice))?;
+    kinfo!("{}: Attached!", NAME);
 
     Ok(())
-}
-
-pub fn open() -> Result<()> {
-    let mut driver = URANDOM_DRIVER.try_lock()?;
-    driver.open()
-}
-
-pub fn close() -> Result<()> {
-    let mut driver = URANDOM_DRIVER.try_lock()?;
-    driver.close()
-}
-
-pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
-    let mut driver = URANDOM_DRIVER.try_lock()?;
-    driver.read(offset, max_len)
-}
-
-pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = URANDOM_DRIVER.try_lock()?;
-    driver.write(data)
 }

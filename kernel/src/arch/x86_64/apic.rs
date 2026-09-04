@@ -6,7 +6,7 @@ pub fn local_apic_id() -> u8 {
     (reg.as_ref().read() >> 24) as u8
 }
 
-pub fn notify_end_of_int() {
+pub fn notify_eoi() {
     let mut reg: Mmio<Volatile<u32>> =
         unsafe { Mmio::from_raw(VirtualAddress::new(0xfee000b0).as_ptr_mut()) };
     unsafe {

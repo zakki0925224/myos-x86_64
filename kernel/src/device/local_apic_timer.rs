@@ -13,8 +13,12 @@ use crate::{
     task::{self, async_task},
     util::mmio::Mmio,
 };
-use alloc::vec::Vec;
-use core::time::Duration;
+use core::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
+
+static ATTACHED: AtomicBool = AtomicBool::new(false);
 
 const DIV_VALUE: DivideValue = DivideValue::By1;
 const INT_INTERVAL_MS: usize = 10;
@@ -48,11 +52,12 @@ impl DivideValue {
     }
 }
 
-static LOCAL_APIC_TIMER_DRIVER: Mutex<LocalApicTimerDriver> =
-    Mutex::new(LocalApicTimerDriver::new());
+const NAME: &str = "local-apic-timer";
 
-struct LocalApicTimerDriver {
-    device_driver_info: DeviceDriverInfo,
+static LOCAL_APIC_TIMER: Mutex<LocalApicTimer> = Mutex::new(LocalApicTimer::new());
+
+struct LocalApicTimer {
+    device_info: DeviceInfo,
     tick: usize,
     freq: Option<usize>,
 
@@ -62,10 +67,26 @@ struct LocalApicTimerDriver {
     div_conf_reg: Option<Mmio<Volatile<u32>>>,
 }
 
-impl LocalApicTimerDriver {
+impl LocalApicTimer {
+    fn poll_int(&mut self) -> Result<()> {
+        if !ATTACHED.load(Ordering::Acquire) {
+            return Ok(());
+        }
+
+        if self.tick == usize::MAX {
+            self.tick = 0;
+        } else {
+            self.tick += 1;
+        }
+
+        let _ = async_task::poll();
+
+        Ok(())
+    }
+
     const fn new() -> Self {
         Self {
-            device_driver_info: DeviceDriverInfo::new("local-apic-timer"),
+            device_info: DeviceInfo::new("local-apic-timer"),
             tick: 0,
             freq: None,
 
@@ -143,21 +164,13 @@ impl LocalApicTimerDriver {
     }
 }
 
-impl DeviceDriverFunction for LocalApicTimerDriver {
-    type AttachInput = ();
-    type PollNormalOutput = ();
-    type PollInterruptOutput = ();
-
-    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
-        Ok(self.device_driver_info.clone())
-    }
-
+impl LocalApicTimer {
     fn probe(&mut self) -> Result<()> {
         Ok(())
     }
 
-    fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
-        let device_name = self.device_driver_info.name;
+    fn attach(&mut self) -> Result<()> {
+        let device_name = self.device_info.name;
 
         let vec_num = idt::set_handler_dyn_vec(
             idt::InterruptHandler::Naked(preempt_timer_isr),
@@ -203,83 +216,26 @@ impl DeviceDriverFunction for LocalApicTimerDriver {
             self.start();
         }
 
-        self.device_driver_info.attached = true;
+        ATTACHED.store(true, Ordering::Release);
         Ok(())
-    }
-
-    fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
-        unimplemented!()
-    }
-
-    fn poll_int(&mut self) -> Result<Self::PollInterruptOutput> {
-        if !self.device_driver_info.attached {
-            return Ok(());
-        }
-
-        if self.tick == usize::MAX {
-            self.tick = 0;
-        } else {
-            self.tick += 1;
-        }
-
-        let _ = async_task::poll();
-
-        Ok(())
-    }
-
-    fn open(&mut self) -> Result<()> {
-        unimplemented!()
-    }
-
-    fn close(&mut self) -> Result<()> {
-        unimplemented!()
-    }
-
-    fn read(&mut self, _offset: usize, _max_len: usize) -> Result<Vec<u8>> {
-        unimplemented!()
-    }
-
-    fn write(&mut self, _data: &[u8]) -> Result<()> {
-        unimplemented!()
     }
 }
 
-pub fn device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = LOCAL_APIC_TIMER_DRIVER.try_lock()?;
-    driver.device_driver_info()
+pub fn device_info() -> Result<DeviceInfo> {
+    Ok(DeviceInfo::new(NAME))
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = LOCAL_APIC_TIMER_DRIVER.try_lock()?;
+    let mut driver = LOCAL_APIC_TIMER.try_lock()?;
     driver.probe()?;
-    driver.attach(())?;
-    kinfo!("{}: Attached!", driver.device_driver_info.name);
+    driver.attach()?;
+    kinfo!("{}: Attached!", driver.device_info.name);
 
     Ok(())
 }
 
-pub fn open() -> Result<()> {
-    let mut driver = LOCAL_APIC_TIMER_DRIVER.try_lock()?;
-    driver.open()
-}
-
-pub fn close() -> Result<()> {
-    let mut driver = LOCAL_APIC_TIMER_DRIVER.try_lock()?;
-    driver.close()
-}
-
-pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
-    let mut driver = LOCAL_APIC_TIMER_DRIVER.try_lock()?;
-    driver.read(offset, max_len)
-}
-
-pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = LOCAL_APIC_TIMER_DRIVER.try_lock()?;
-    driver.write(data)
-}
-
 pub fn global_uptime() -> Duration {
-    let driver = unsafe { LOCAL_APIC_TIMER_DRIVER.get_force_mut() };
+    let driver = unsafe { LOCAL_APIC_TIMER.get_force_mut() };
     let ms = driver.current_ms().unwrap_or(0);
     Duration::from_millis(ms as u64)
 }
@@ -335,15 +291,15 @@ unsafe extern "C" fn preempt_timer_isr() {
 unsafe extern "sysv64" fn timer_preempt_handler(
     interrupted: *const InterruptedContext,
 ) -> *const Context {
-    let driver = LOCAL_APIC_TIMER_DRIVER.get_force_mut();
+    let driver = LOCAL_APIC_TIMER.get_force_mut();
 
-    if !driver.device_driver_info.attached {
-        apic::notify_end_of_int();
+    if !ATTACHED.load(Ordering::Acquire) {
+        apic::notify_eoi();
         return core::ptr::null();
     }
 
     let _ = driver.poll_int();
-    apic::notify_end_of_int();
+    apic::notify_eoi();
 
     task::scheduler::preempt_sched(&*interrupted)
 }

@@ -2,18 +2,21 @@ use crate::{
     device::{
         usb::{
             xhc::{desc::*, register::*},
-            UsbDeviceDriverFunction,
+            UsbDriver, UsbHostController,
         },
-        DeviceDriverFunction, DeviceDriverInfo,
+        CharDevice, Device, DeviceInfo,
     },
-    error::Result,
+    error::{Error, Result},
     fs::vfs,
-    kinfo,
-    sync::mutex::Mutex,
+    kerror, kinfo,
+    sync::mutex::{Mutex, MutexGuard},
 };
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
 
-static USB_BUS_DRIVER: Mutex<UsbBusDriver> = Mutex::new(UsbBusDriver::new());
+const NAME: &str = "usb-bus";
+
+static USB_BUS: Mutex<UsbBus> = Mutex::new(UsbBus::new());
+static USB_DRIVERS: Mutex<Vec<Arc<dyn UsbDriver>>> = Mutex::new(Vec::new());
 
 pub struct XhciAttachInfo {
     pub port: usize,
@@ -112,94 +115,88 @@ impl UsbDeviceAttachInfo {
             Self::Xhci(info) => info.serial.as_deref(),
         }
     }
-}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UsbDeviceState {
-    Attached, // addressed by host controller
-    Configured,
+    pub fn interface_descs(&self) -> Vec<&InterfaceDescriptor> {
+        match self {
+            Self::Xhci(info) => info.interface_descs(),
+        }
+    }
 }
 
 pub struct UsbDevice {
-    attach_info: UsbDeviceAttachInfo,
-    state: UsbDeviceState,
-    driver: Box<dyn UsbDeviceDriverFunction>,
+    attach_info: Mutex<UsbDeviceAttachInfo>,
+    hc: Arc<dyn UsbHostController>,
 }
 
 impl UsbDevice {
-    pub fn new(attach_info: UsbDeviceAttachInfo, driver: Box<dyn UsbDeviceDriverFunction>) -> Self {
+    pub fn new(attach_info: UsbDeviceAttachInfo, hc: Arc<dyn UsbHostController>) -> Self {
         Self {
-            attach_info,
-            state: UsbDeviceState::Attached,
-            driver,
+            attach_info: Mutex::new(attach_info),
+            hc,
         }
+    }
+
+    pub fn hc(&self) -> &dyn UsbHostController {
+        self.hc.as_ref()
+    }
+
+    pub fn lock_attach_info(&self) -> Result<MutexGuard<'_, UsbDeviceAttachInfo>> {
+        self.attach_info.try_lock()
+    }
+
+    pub fn has_interface(&self, triple: (u8, u8, u8)) -> Result<bool> {
+        let attach_info = self.attach_info.try_lock()?;
+        Ok(attach_info
+            .interface_descs()
+            .iter()
+            .any(|d| d.triple() == triple))
+    }
+
+    fn describe_inner(&self) -> Result<String> {
+        let info = self.attach_info.try_lock()?;
+
+        Ok(format!(
+            "({}) p{}:s{} {} - {} - {}\n",
+            info.interface_name(),
+            info.port(),
+            info.slot(),
+            info.vendor().unwrap_or("<UNKNOWN VENDOR>"),
+            info.product().unwrap_or("<UNKNOWN PRODUCT>"),
+            info.serial().unwrap_or("<UNKNOWN SERIAL>"),
+        ))
     }
 }
 
-struct UsbBusDriver {
-    device_driver_info: DeviceDriverInfo,
-    usb_devices: Vec<UsbDevice>,
+impl Device for UsbDevice {
+    fn info(&self) -> Result<DeviceInfo> {
+        Ok(DeviceInfo::new("usb-device"))
+    }
+
+    fn describe(&self) -> Result<String> {
+        self.describe_inner()
+    }
 }
 
-impl UsbBusDriver {
+struct UsbBus {
+    usb_devices: Vec<Arc<UsbDevice>>,
+}
+
+impl UsbBus {
     const fn new() -> Self {
         Self {
-            device_driver_info: DeviceDriverInfo::new("usb-bus"),
             usb_devices: Vec::new(),
         }
     }
-
-    fn attach_usb_device(&mut self, device: UsbDevice) -> Result<()> {
-        self.usb_devices.push(device);
-        Ok(())
-    }
 }
 
-impl DeviceDriverFunction for UsbBusDriver {
-    type AttachInput = ();
-    type PollNormalOutput = ();
-    type PollInterruptOutput = ();
-
-    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
-        Ok(self.device_driver_info.clone())
-    }
-
+impl UsbBus {
     fn probe(&mut self) -> Result<()> {
         Ok(())
     }
 
-    fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
-        let dev_desc = vfs::DeviceFileDescriptor {
-            device_driver_info,
-            open,
-            close,
-            read,
-            write,
-        };
-        vfs::add_dev_file(dev_desc, self.device_driver_info.name)?;
-        self.device_driver_info.attached = true;
+    fn attach(&mut self) -> Result<()> {
+        vfs::add_dev(Arc::new(UsbBusDevice))?;
         Ok(())
-    }
-
-    fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
-        for dev in &mut self.usb_devices {
-            match dev.state {
-                // configure attached devices
-                UsbDeviceState::Attached => {
-                    dev.driver.configure(&mut dev.attach_info)?;
-                    dev.state = UsbDeviceState::Configured;
-                }
-                UsbDeviceState::Configured => {
-                    dev.driver.poll(&mut dev.attach_info)?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn poll_int(&mut self) -> Result<Self::PollInterruptOutput> {
-        unimplemented!()
     }
 
     fn open(&mut self) -> Result<()> {
@@ -214,18 +211,7 @@ impl DeviceDriverFunction for UsbBusDriver {
         let mut s = String::new();
 
         for d in &self.usb_devices {
-            let info = &d.attach_info;
-            let interface = info.interface_name();
-            let port = info.port();
-            let slot = info.slot();
-            let vendor = info.vendor().unwrap_or("<UNKNOWN VENDOR>");
-            let serial = info.serial().unwrap_or("<UNKNOWN SERIAL>");
-            let product = info.product().unwrap_or("<UNKNOWN PRODUCT>");
-
-            s.push_str(&format!(
-                "({}) p{}:s{} {} - {} - {}\n",
-                interface, port, slot, vendor, product, serial
-            ));
+            s.push_str(&d.describe()?);
         }
 
         let bytes = s.into_bytes();
@@ -235,50 +221,74 @@ impl DeviceDriverFunction for UsbBusDriver {
     }
 
     fn write(&mut self, _data: &[u8]) -> Result<()> {
-        unimplemented!()
+        Err(Error::NotSupported.into())
     }
 }
 
-pub fn device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = USB_BUS_DRIVER.try_lock()?;
-    driver.device_driver_info()
+pub fn device_info() -> Result<DeviceInfo> {
+    Ok(DeviceInfo::new(NAME))
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = USB_BUS_DRIVER.try_lock()?;
+    let mut driver = USB_BUS.try_lock()?;
     driver.probe()?;
-    driver.attach(())?;
-    kinfo!("{}: Attached!", driver.device_driver_info()?.name);
+    driver.attach()?;
+    kinfo!("{}: Attached!", NAME);
     Ok(())
 }
 
-pub fn open() -> Result<()> {
-    let mut driver = USB_BUS_DRIVER.try_lock()?;
-    driver.open()
-}
+pub fn register_driver(driver: Arc<dyn UsbDriver>) -> Result<()> {
+    USB_DRIVERS.try_lock()?.push(driver);
 
-pub fn close() -> Result<()> {
-    let mut driver = USB_BUS_DRIVER.try_lock()?;
-    driver.close()
-}
-
-pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
-    let mut driver = USB_BUS_DRIVER.try_lock()?;
-    driver.read(offset, max_len)
-}
-
-pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = USB_BUS_DRIVER.try_lock()?;
-    driver.write(data)
-}
-
-pub fn attach_usb_device(device: UsbDevice) -> Result<()> {
-    let mut driver = USB_BUS_DRIVER.try_lock()?;
-    driver.attach_usb_device(device)?;
     Ok(())
 }
 
-pub fn poll_normal() -> Result<()> {
-    let mut driver = USB_BUS_DRIVER.try_lock()?;
-    driver.poll_normal()
+pub fn attach_usb_device(device: Arc<UsbDevice>) -> Result<()> {
+    USB_BUS.try_lock()?.usb_devices.push(device.clone());
+
+    let drivers: Vec<Arc<dyn UsbDriver>> = USB_DRIVERS.try_lock()?.clone();
+
+    for driver in &drivers {
+        match driver.probe(&device) {
+            Ok(false) => continue,
+            Ok(true) => {
+                kinfo!("{}: {} attached", NAME, driver.name());
+                return Ok(());
+            }
+            Err(err) => {
+                kerror!("{}: {}: Failed to probe: {:?}", NAME, driver.name(), err);
+                return Ok(());
+            }
+        }
+    }
+
+    kinfo!("{}: Unsupported USB device detected, no attached", NAME);
+
+    Ok(())
+}
+
+struct UsbBusDevice;
+
+impl Device for UsbBusDevice {
+    fn info(&self) -> Result<DeviceInfo> {
+        Ok(DeviceInfo::new(NAME))
+    }
+}
+
+impl CharDevice for UsbBusDevice {
+    fn read(&self, offset: usize, max_len: usize) -> Result<Vec<u8>> {
+        USB_BUS.try_lock()?.read(offset, max_len)
+    }
+
+    fn write(&self, data: &[u8]) -> Result<()> {
+        USB_BUS.try_lock()?.write(data)
+    }
+
+    fn open(&self) -> Result<()> {
+        USB_BUS.try_lock()?.open()
+    }
+
+    fn close(&self) -> Result<()> {
+        USB_BUS.try_lock()?.close()
+    }
 }

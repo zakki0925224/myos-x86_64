@@ -1,21 +1,23 @@
 use crate::{
-    arch::{
-        x86_64::{self, idt},
-        IoPortAddress,
+    arch::IoPortAddress,
+    device::{
+        register_irq, register_pollable, CharDevice, Device, DeviceInfo, InterruptSource, Pollable,
     },
-    device::{DeviceDriverFunction, DeviceDriverInfo},
     error::{Error, Result},
     fs::vfs,
+    graphics::window_manager::{self, MouseEvent},
     kinfo,
     sync::mutex::Mutex,
+    task::async_task::Priority,
     util::fifo::Fifo,
 };
-use alloc::vec::Vec;
+use alloc::{sync::Arc, vec::Vec};
 
 const PS2_DATA_REG_ADDR: IoPortAddress = IoPortAddress::new(0x60);
 const PS2_CMD_AND_STATE_REG_ADDR: IoPortAddress = IoPortAddress::new(0x64);
 
-static PS2_MOUSE_DRIVER: Mutex<Ps2MouseDriver> = Mutex::new(Ps2MouseDriver::new());
+const VEC_PS2_MOUSE: u8 = 0x2c;
+const NAME: &str = "ps2-mouse";
 
 #[derive(Default, Debug)]
 pub struct Ps2MouseEvent {
@@ -26,14 +28,14 @@ pub struct Ps2MouseEvent {
     pub rel_y: i16,
 }
 
-enum Ps2MousePhase {
+enum MousePhase {
     WaitingAck,
     WaitingData0,
     WaitingData1,
     WaitingData2,
 }
 
-impl Ps2MousePhase {
+impl MousePhase {
     const fn default() -> Self {
         Self::WaitingAck
     }
@@ -48,18 +50,16 @@ impl Ps2MousePhase {
     }
 }
 
-struct Ps2MouseDriver {
-    device_driver_info: DeviceDriverInfo,
-    mouse_phase: Ps2MousePhase,
+struct Inner {
+    mouse_phase: MousePhase,
     data_buf: Fifo<u8, 256>,
     data_buf2: [u8; 3],
 }
 
-impl Ps2MouseDriver {
+impl Inner {
     const fn new() -> Self {
         Self {
-            device_driver_info: DeviceDriverInfo::new("ps2-mouse"),
-            mouse_phase: Ps2MousePhase::default(),
+            mouse_phase: MousePhase::default(),
             data_buf: Fifo::new(0),
             data_buf2: [0; 3],
         }
@@ -77,14 +77,14 @@ impl Ps2MouseDriver {
     fn event(&mut self) -> Result<Option<Ps2MouseEvent>> {
         let data = self.data_buf.dequeue()?;
         let e = match self.mouse_phase {
-            Ps2MousePhase::WaitingAck => {
+            MousePhase::WaitingAck => {
                 if data == 0xfa {
                     self.mouse_phase.next();
                 }
 
                 None
             }
-            Ps2MousePhase::WaitingData0 => {
+            MousePhase::WaitingData0 => {
                 // validation check
                 let one = data & 0x08 != 0;
                 let x_of = data & 0x40 != 0;
@@ -97,12 +97,12 @@ impl Ps2MouseDriver {
 
                 None
             }
-            Ps2MousePhase::WaitingData1 => {
+            MousePhase::WaitingData1 => {
                 self.data_buf2[1] = data;
                 self.mouse_phase.next();
                 None
             }
-            Ps2MousePhase::WaitingData2 => {
+            MousePhase::WaitingData2 => {
                 self.data_buf2[2] = data;
                 self.mouse_phase.next();
 
@@ -145,128 +145,98 @@ impl Ps2MouseDriver {
     }
 }
 
-impl DeviceDriverFunction for Ps2MouseDriver {
-    type AttachInput = ();
-    type PollNormalOutput = Option<Ps2MouseEvent>;
-    type PollInterruptOutput = ();
+pub struct Ps2MouseDevice {
+    inner: Mutex<Inner>,
+}
 
-    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
-        Ok(self.device_driver_info.clone())
+impl Ps2MouseDevice {
+    const fn new() -> Self {
+        Self {
+            inner: Mutex::new(Inner::new()),
+        }
     }
 
-    fn probe(&mut self) -> Result<()> {
-        Ok(())
-    }
+    fn attach(&self) -> Result<()> {
+        let inner = self.inner.try_lock()?;
 
-    fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
         // send next wrote byte to ps/2 secondary port
         PS2_CMD_AND_STATE_REG_ADDR.out8(0xd4);
-        self.wait_ready();
+        inner.wait_ready();
 
         // init mouse
         PS2_DATA_REG_ADDR.out8(0xff);
-        self.wait_ready();
+        inner.wait_ready();
 
         PS2_CMD_AND_STATE_REG_ADDR.out8(0xd4);
-        self.wait_ready();
+        inner.wait_ready();
 
         // start streaming
         PS2_DATA_REG_ADDR.out8(0xf4);
-        self.wait_ready();
-
-        let dev_desc = vfs::DeviceFileDescriptor {
-            device_driver_info,
-            open,
-            close,
-            read,
-            write,
-        };
-        vfs::add_dev_file(dev_desc, self.device_driver_info.name)?;
-        self.device_driver_info.attached = true;
-        Ok(())
-    }
-
-    fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
-        if !self.device_driver_info.attached {
-            return Err(Error::NotInitialized.into());
-        }
-
-        self.event()
-    }
-
-    fn poll_int(&mut self) -> Result<Self::PollInterruptOutput> {
-        if !self.device_driver_info.attached {
-            return Err(Error::NotInitialized.into());
-        }
-
-        let data = PS2_DATA_REG_ADDR.in8();
-        self.receive(data)?;
+        inner.wait_ready();
 
         Ok(())
-    }
-
-    fn open(&mut self) -> Result<()> {
-        unimplemented!()
-    }
-
-    fn close(&mut self) -> Result<()> {
-        unimplemented!()
-    }
-
-    fn read(&mut self, _offset: usize, _max_len: usize) -> Result<Vec<u8>> {
-        unimplemented!()
-    }
-
-    fn write(&mut self, _data: &[u8]) -> Result<()> {
-        unimplemented!()
     }
 }
 
-pub fn device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = PS2_MOUSE_DRIVER.try_lock()?;
-    driver.device_driver_info()
+impl Device for Ps2MouseDevice {
+    fn info(&self) -> Result<DeviceInfo> {
+        Ok(DeviceInfo::new(NAME))
+    }
+}
+
+impl CharDevice for Ps2MouseDevice {
+    fn read(&self, _offset: usize, _max_len: usize) -> Result<Vec<u8>> {
+        Err(Error::NotSupported.into())
+    }
+
+    fn write(&self, _data: &[u8]) -> Result<()> {
+        Err(Error::NotSupported.into())
+    }
+}
+
+impl InterruptSource for Ps2MouseDevice {
+    fn handle_irq(&self) {
+        let data = PS2_DATA_REG_ADDR.in8();
+        if let Ok(mut inner) = self.inner.try_lock() {
+            let _ = inner.receive(data);
+        }
+    }
+}
+
+impl Pollable for Ps2MouseDevice {
+    fn poll(&self) -> Result<()> {
+        loop {
+            let event = {
+                let mut inner = match self.inner.try_lock() {
+                    Ok(inner) => inner,
+                    Err(_) => return Ok(()),
+                };
+
+                match inner.event() {
+                    Ok(Some(e)) => e,
+                    Ok(None) => continue,
+                    Err(_) => return Ok(()),
+                }
+            };
+
+            let _ = window_manager::mouse_pointer_event(MouseEvent::Ps2MouseDevice(event));
+        }
+    }
+
+    fn priority(&self) -> Priority {
+        Priority::High
+    }
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    x86_64::disabled_int(|| {
-        let mut driver = PS2_MOUSE_DRIVER.try_lock()?;
-        driver.probe()?;
-        driver.attach(())?;
-        kinfo!("{}: Attached!", driver.device_driver_info()?.name);
-        Ok(())
-    })
-}
+    let dev = Arc::new(Ps2MouseDevice::new());
+    dev.attach()?;
 
-pub fn open() -> Result<()> {
-    let mut driver = PS2_MOUSE_DRIVER.try_lock()?;
-    driver.open()
-}
+    vfs::add_dev(dev.clone())?;
+    register_irq(VEC_PS2_MOUSE, dev.clone())?;
+    register_pollable(dev)?;
 
-pub fn close() -> Result<()> {
-    let mut driver = PS2_MOUSE_DRIVER.try_lock()?;
-    driver.close()
-}
+    kinfo!("{}: Attached!", NAME);
 
-pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
-    let mut driver = PS2_MOUSE_DRIVER.try_lock()?;
-    driver.read(offset, max_len)
-}
-
-pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = PS2_MOUSE_DRIVER.try_lock()?;
-    driver.write(data)
-}
-
-pub fn poll_normal() -> Result<Option<Ps2MouseEvent>> {
-    x86_64::disabled_int(|| {
-        let mut driver = PS2_MOUSE_DRIVER.try_lock()?;
-        driver.poll_normal()
-    })
-}
-
-pub extern "x86-interrupt" fn poll_int_ps2_mouse_driver(_stack_frame: idt::InterruptStackFrame) {
-    if let Ok(mut driver) = PS2_MOUSE_DRIVER.try_lock() {
-        let _ = driver.poll_int();
-    }
-    idt::notify_end_of_int();
+    Ok(())
 }

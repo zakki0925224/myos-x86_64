@@ -3,7 +3,7 @@ use crate::{
         x86_64::{self, paging, registers::*},
         IoPortAddress,
     },
-    debug, device,
+    debug,
     error::{Error, Result},
     kerror, kinfo,
     sync::mutex::Mutex,
@@ -157,9 +157,6 @@ const _VEC_SIMD_FLOATING_POINT_EX: usize = 0x13;
 const _VEC_VIRT_EX: usize = 0x14;
 const _VEC_CTRL_PROTECTION_EX: usize = 0x15;
 
-pub const VEC_PS2_KBD: usize = 0x21; // ps/2 keyboard
-pub const VEC_PS2_MOUSE: usize = 0x2c; // ps/2 mouse
-
 const MASTER_PIC_ADDR: IoPortAddress = IoPortAddress::new(0x20);
 const SLAVE_PIC_ADDR: IoPortAddress = IoPortAddress::new(0xa0);
 const PIC_END_OF_INT_CMD: u8 = 0x20;
@@ -304,7 +301,7 @@ impl InterruptDescriptorTable {
     }
 }
 
-pub fn notify_end_of_int() {
+pub fn pic_notify_eoi() {
     MASTER_PIC_ADDR.out8(PIC_END_OF_INT_CMD);
     SLAVE_PIC_ADDR.out8(PIC_END_OF_INT_CMD);
 }
@@ -436,20 +433,6 @@ pub fn init() {
     idt.set_handler(
         VEC_DOUBLE_FAULT,
         InterruptHandler::WithErrorCode(double_fault_handler),
-        GateType::Interrupt,
-        false,
-    )
-    .unwrap();
-    idt.set_handler(
-        VEC_PS2_KBD,
-        InterruptHandler::General(device::ps2_keyboard::poll_int_ps2_kbd_driver),
-        GateType::Interrupt,
-        false,
-    )
-    .unwrap();
-    idt.set_handler(
-        VEC_PS2_MOUSE,
-        InterruptHandler::General(device::ps2_mouse::poll_int_ps2_mouse_driver),
         GateType::Interrupt,
         false,
     )

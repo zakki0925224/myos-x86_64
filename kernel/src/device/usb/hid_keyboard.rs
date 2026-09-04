@@ -1,25 +1,42 @@
 use crate::{
     device::{
-        self, tty,
-        usb::{usb_bus::*, xhc::register::*, UsbDeviceDriverFunction},
+        keyboard, register_pollable,
+        usb::{usb_bus::*, xhc::register::*, UsbDriver, UsbHostController},
+        Device, DeviceInfo, Pollable,
     },
     error::{Error, Result},
+    sync::mutex::Mutex,
     util::{
         self,
         keyboard::{key_event::*, key_map::*, scan_code::*},
     },
 };
-use alloc::collections::{btree_map::BTreeMap, btree_set::BTreeSet};
+use alloc::{
+    collections::{btree_map::BTreeMap, btree_set::BTreeSet},
+    sync::Arc,
+};
 
-pub struct UsbHidKeyboardDriver {
-    pub name: &'static str,
+const NAME: &str = "usb-hid-keyboard";
+const INTERFACE_TRIPLE: (u8, u8, u8) = (3, 1, 1);
+
+struct Inner {
+    configured: bool,
     key_map: BTreeMap<u8, ScanCode>,
     mod_keys_state: ModifierKeysState,
     prev_pressed: BTreeSet<u8>,
 }
 
-impl UsbDeviceDriverFunction for UsbHidKeyboardDriver {
-    fn configure(&mut self, attach_info: &mut UsbDeviceAttachInfo) -> Result<()> {
+pub struct UsbHidKeyboardDevice {
+    dev: Arc<UsbDevice>,
+    inner: Mutex<Inner>,
+}
+
+impl Inner {
+    fn configure(
+        &mut self,
+        hc: &dyn UsbHostController,
+        attach_info: &mut UsbDeviceAttachInfo,
+    ) -> Result<()> {
         let UsbDeviceAttachInfo::Xhci(xhci_info) = attach_info;
         let slot = xhci_info.slot;
 
@@ -28,9 +45,7 @@ impl UsbDeviceDriverFunction for UsbHidKeyboardDriver {
             .last_config_desc()
             .ok_or(Error::NotFound.with_context("Configuration descriptor"))?;
         let config_value = config_desc.config_value();
-        device::usb::xhc::request(|xhc| {
-            xhc.set_config(slot, xhci_info.ctrl_ep_ring_mut(), config_value)
-        })?;
+        hc.set_config(slot, xhci_info.ctrl_ep_ring_mut(), config_value)?;
 
         // set interface
         let interface_descs = xhci_info.interface_descs();
@@ -40,30 +55,29 @@ impl UsbDeviceDriverFunction for UsbHidKeyboardDriver {
             .ok_or(Error::NotFound.with_context("Interface descriptor"))?;
         let interface_num = target_interface_desc.interface_num;
         let alt_setting = target_interface_desc.alt_setting;
-        device::usb::xhc::request(|xhc| {
-            xhc.set_interface(
-                slot,
-                xhci_info.ctrl_ep_ring_mut(),
-                interface_num,
-                alt_setting,
-            )
-        })?;
+        hc.set_interface(
+            slot,
+            xhci_info.ctrl_ep_ring_mut(),
+            interface_num,
+            alt_setting,
+        )?;
 
         // set protocol
         let protocol = UsbHidProtocol::BootProtocol as u8;
-        device::usb::xhc::request(|xhc| {
-            xhc.set_protocol(slot, xhci_info.ctrl_ep_ring_mut(), interface_num, protocol)
-        })?;
+        hc.set_protocol(slot, xhci_info.ctrl_ep_ring_mut(), interface_num, protocol)?;
 
         Ok(())
     }
 
-    fn poll(&mut self, attach_info: &mut UsbDeviceAttachInfo) -> Result<()> {
+    fn poll(
+        &mut self,
+        hc: &dyn UsbHostController,
+        attach_info: &mut UsbDeviceAttachInfo,
+    ) -> Result<()> {
         let UsbDeviceAttachInfo::Xhci(xhci_info) = attach_info;
         let slot = xhci_info.slot;
 
-        let report =
-            device::usb::xhc::request(|xhc| xhc.hid_report(slot, xhci_info.ctrl_ep_ring_mut()))?;
+        let report = hc.hid_report(slot, xhci_info.ctrl_ep_ring_mut())?;
 
         let modifier = report.first().copied().unwrap_or(0);
         let ctrl = (modifier & 0x01 != 0) || (modifier & 0x10 != 0);
@@ -94,50 +108,69 @@ impl UsbDeviceDriverFunction for UsbHidKeyboardDriver {
             );
 
             if let Some(e) = e {
-                if e.state == KeyState::Pressed {
-                    match e.code {
-                        KeyCode::CursorUp => {
-                            tty::input('\x1b')?;
-                            tty::input('[')?;
-                            tty::input('A')?;
-                        }
-                        KeyCode::CursorDown => {
-                            tty::input('\x1b')?;
-                            tty::input('[')?;
-                            tty::input('B')?;
-                        }
-                        KeyCode::CursorRight => {
-                            tty::input('\x1b')?;
-                            tty::input('[')?;
-                            tty::input('C')?;
-                        }
-                        KeyCode::CursorLeft => {
-                            tty::input('\x1b')?;
-                            tty::input('[')?;
-                            tty::input('D')?;
-                        }
-                        _ => {
-                            if let Some(c) = e.c {
-                                tty::input(c)?;
-                            }
-                        }
-                    }
-                }
+                keyboard::push_key_event(e)?;
             }
         }
+
         self.prev_pressed = pressed;
 
         Ok(())
     }
 }
 
-impl UsbHidKeyboardDriver {
-    pub fn new(key_map: KeyMap) -> Self {
+impl UsbHidKeyboardDevice {
+    fn new(dev: Arc<UsbDevice>, key_map: KeyMap) -> Self {
         Self {
-            name: "usb-hid-keyboard",
-            prev_pressed: BTreeSet::new(),
-            key_map: key_map.to_usb_hid_map(),
-            mod_keys_state: ModifierKeysState::default(),
+            dev,
+            inner: Mutex::new(Inner {
+                configured: false,
+                prev_pressed: BTreeSet::new(),
+                key_map: key_map.to_usb_hid_map(),
+                mod_keys_state: ModifierKeysState::default(),
+            }),
         }
+    }
+}
+
+impl Device for UsbHidKeyboardDevice {
+    fn info(&self) -> Result<DeviceInfo> {
+        Ok(DeviceInfo::new(NAME))
+    }
+}
+
+impl Pollable for UsbHidKeyboardDevice {
+    fn poll(&self) -> Result<()> {
+        let mut inner = self.inner.try_lock()?;
+        let mut attach_info = self.dev.lock_attach_info()?;
+        let hc = self.dev.hc();
+
+        if !inner.configured {
+            inner.configure(hc, &mut attach_info)?;
+            inner.configured = true;
+            return Ok(());
+        }
+
+        inner.poll(hc, &mut attach_info)
+    }
+}
+
+pub struct UsbHidKeyboardDriver;
+
+impl UsbDriver for UsbHidKeyboardDriver {
+    fn name(&self) -> &'static str {
+        NAME
+    }
+
+    fn probe(&self, dev: &Arc<UsbDevice>) -> Result<bool> {
+        if !dev.has_interface(INTERFACE_TRIPLE)? {
+            return Ok(false);
+        }
+
+        register_pollable(Arc::new(UsbHidKeyboardDevice::new(
+            dev.clone(),
+            JIS_JP_109_KEY_MAP,
+        )))?;
+
+        Ok(true)
     }
 }

@@ -1,9 +1,9 @@
 use crate::{
-    arch::{
-        x86_64::{self, idt},
-        IoPortAddress,
+    arch::IoPortAddress,
+    device::{
+        keyboard, register_irq, register_pollable, CharDevice, Device, DeviceInfo, InterruptSource,
+        Pollable,
     },
-    device::{tty, DeviceDriverFunction, DeviceDriverInfo},
     error::{Error, Result},
     fs::vfs,
     kinfo,
@@ -14,16 +14,14 @@ use crate::{
         keyboard::{key_event::*, key_map::*, scan_code::*},
     },
 };
-use alloc::{collections::btree_map::BTreeMap, vec::Vec};
+use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 
 const PS2_DATA_REG_ADDR: IoPortAddress = IoPortAddress::new(0x60);
 const PS2_CMD_AND_STATE_REG_ADDR: IoPortAddress = IoPortAddress::new(0x64);
+const VEC_PS2_KBD: u8 = 0x21;
+const NAME: &str = "ps2-kbd";
 
-static PS2_KBD_DRIVER: Mutex<Ps2KeyboardDriver> =
-    Mutex::new(Ps2KeyboardDriver::new(JIS_JP_109_KEY_MAP));
-
-struct Ps2KeyboardDriver {
-    device_driver_info: DeviceDriverInfo,
+struct Inner {
     key_map: KeyMap,
     key_map_cache: Option<BTreeMap<[u8; 6], ScanCode>>,
     mod_keys_state: ModifierKeysState,
@@ -31,10 +29,9 @@ struct Ps2KeyboardDriver {
     data: [Option<u8>; 6],
 }
 
-impl Ps2KeyboardDriver {
+impl Inner {
     const fn new(key_map: KeyMap) -> Self {
         Self {
-            device_driver_info: DeviceDriverInfo::new("ps2-kbd"),
             key_map,
             key_map_cache: None,
             mod_keys_state: ModifierKeysState::default(),
@@ -64,13 +61,15 @@ impl Ps2KeyboardDriver {
         }
 
         let code = self.data.map(|d| d.unwrap_or(0));
+        let key_map = self
+            .key_map_cache
+            .as_ref()
+            .ok_or(Error::NotInitialized.with_context("key map cache"))?;
 
-        let e = util::keyboard::key_event_from_ps2(
-            self.key_map_cache.as_ref().unwrap(),
-            &mut self.mod_keys_state,
-            code,
-        );
-        if e.is_some() {
+        let complete = key_map.contains_key(&code);
+        let e = util::keyboard::key_event_from_ps2(key_map, &mut self.mod_keys_state, code);
+
+        if complete {
             self.clear_data();
         }
 
@@ -86,160 +85,84 @@ impl Ps2KeyboardDriver {
             continue;
         }
     }
-}
 
-impl DeviceDriverFunction for Ps2KeyboardDriver {
-    type AttachInput = ();
-    type PollNormalOutput = Option<KeyEvent>;
-    type PollInterruptOutput = ();
-
-    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
-        Ok(self.device_driver_info.clone())
-    }
-
-    fn probe(&mut self) -> Result<()> {
-        Ok(())
-    }
-
-    fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
+    fn attach(&mut self) {
         PS2_CMD_AND_STATE_REG_ADDR.out8(0x60); // write configuration byte
         self.wait_ready();
         PS2_DATA_REG_ADDR.out8(0x47); // enable interrupt
         self.wait_ready();
 
         self.key_map_cache = Some(self.key_map.to_ps2_map());
-
-        let dev_desc = vfs::DeviceFileDescriptor {
-            device_driver_info,
-            open,
-            close,
-            read,
-            write,
-        };
-        vfs::add_dev_file(dev_desc, self.device_driver_info.name)?;
-        self.device_driver_info.attached = true;
-        Ok(())
-    }
-
-    fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
-        if !self.device_driver_info.attached {
-            return Err(Error::NotInitialized.into());
-        }
-
-        self.event()
-    }
-
-    fn poll_int(&mut self) -> Result<Self::PollInterruptOutput> {
-        if !self.device_driver_info.attached {
-            return Err(Error::NotInitialized.into());
-        }
-
-        let data = PS2_DATA_REG_ADDR.in8();
-        self.input(data)?;
-
-        Ok(())
-    }
-
-    fn open(&mut self) -> Result<()> {
-        unimplemented!()
-    }
-
-    fn close(&mut self) -> Result<()> {
-        unimplemented!()
-    }
-
-    fn read(&mut self, _offset: usize, _max_len: usize) -> Result<Vec<u8>> {
-        unimplemented!()
-    }
-
-    fn write(&mut self, _data: &[u8]) -> Result<()> {
-        unimplemented!()
     }
 }
 
-pub fn device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = PS2_KBD_DRIVER.try_lock()?;
-    driver.device_driver_info()
+pub struct Ps2KeyboardDevice {
+    inner: Mutex<Inner>,
+}
+
+impl Ps2KeyboardDevice {
+    const fn new(key_map: KeyMap) -> Self {
+        Self {
+            inner: Mutex::new(Inner::new(key_map)),
+        }
+    }
+}
+
+impl Device for Ps2KeyboardDevice {
+    fn info(&self) -> Result<DeviceInfo> {
+        Ok(DeviceInfo::new(NAME))
+    }
+}
+
+impl CharDevice for Ps2KeyboardDevice {
+    fn read(&self, _offset: usize, _max_len: usize) -> Result<Vec<u8>> {
+        Err(Error::NotSupported.into())
+    }
+
+    fn write(&self, _data: &[u8]) -> Result<()> {
+        Err(Error::NotSupported.into())
+    }
+}
+
+impl InterruptSource for Ps2KeyboardDevice {
+    fn handle_irq(&self) {
+        let data = PS2_DATA_REG_ADDR.in8();
+        if let Ok(mut inner) = self.inner.try_lock() {
+            let _ = inner.input(data);
+        }
+    }
+}
+
+impl Pollable for Ps2KeyboardDevice {
+    fn poll(&self) -> Result<()> {
+        loop {
+            let key_event = {
+                let mut inner = match self.inner.try_lock() {
+                    Ok(inner) => inner,
+                    Err(_) => return Ok(()),
+                };
+
+                match inner.event() {
+                    Ok(Some(e)) => e,
+                    Ok(None) => continue,
+                    Err(_) => return Ok(()),
+                }
+            };
+
+            keyboard::push_key_event(key_event)?;
+        }
+    }
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    x86_64::disabled_int(|| {
-        let mut driver = PS2_KBD_DRIVER.try_lock()?;
-        driver.probe()?;
-        driver.attach(())?;
-        kinfo!("{}: Attached!", driver.device_driver_info()?.name);
-        Ok(())
-    })
-}
+    let dev = Arc::new(Ps2KeyboardDevice::new(JIS_JP_109_KEY_MAP));
+    dev.inner.try_lock()?.attach();
 
-pub fn open() -> Result<()> {
-    let mut driver = PS2_KBD_DRIVER.try_lock()?;
-    driver.open()
-}
+    vfs::add_dev(dev.clone())?;
+    register_irq(VEC_PS2_KBD, dev.clone())?;
+    register_pollable(dev)?;
 
-pub fn close() -> Result<()> {
-    let mut driver = PS2_KBD_DRIVER.try_lock()?;
-    driver.close()
-}
+    kinfo!("{}: Attached!", NAME);
 
-pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
-    let mut driver = PS2_KBD_DRIVER.try_lock()?;
-    driver.read(offset, max_len)
-}
-
-pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = PS2_KBD_DRIVER.try_lock()?;
-    driver.write(data)
-}
-
-pub fn poll_normal() -> Result<()> {
-    loop {
-        let key_event = match x86_64::disabled_int(|| {
-            let mut driver = PS2_KBD_DRIVER.try_lock()?;
-            driver.poll_normal()
-        }) {
-            Ok(Some(e)) => e,
-            Ok(None) => continue,
-            Err(_) => return Ok(()),
-        };
-
-        match key_event.code {
-            KeyCode::CursorUp => {
-                tty::input('\x1b')?;
-                tty::input('[')?;
-                tty::input('A')?;
-                continue;
-            }
-            KeyCode::CursorDown => {
-                tty::input('\x1b')?;
-                tty::input('[')?;
-                tty::input('B')?;
-                continue;
-            }
-            KeyCode::CursorRight => {
-                tty::input('\x1b')?;
-                tty::input('[')?;
-                tty::input('C')?;
-                continue;
-            }
-            KeyCode::CursorLeft => {
-                tty::input('\x1b')?;
-                tty::input('[')?;
-                tty::input('D')?;
-                continue;
-            }
-            _ => (),
-        }
-
-        if let Some(c) = key_event.c {
-            tty::input(c)?;
-        }
-    }
-}
-
-pub extern "x86-interrupt" fn poll_int_ps2_kbd_driver(_stack_frame: idt::InterruptStackFrame) {
-    if let Ok(mut driver) = PS2_KBD_DRIVER.try_lock() {
-        let _ = driver.poll_int();
-    }
-    idt::notify_end_of_int();
+    Ok(())
 }

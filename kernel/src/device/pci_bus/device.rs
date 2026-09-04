@@ -6,29 +6,7 @@ use crate::{
     },
     error::{Error, Result},
 };
-use alloc::vec::Vec;
-
-pub trait PciDeviceFunction {
-    fn bdf(&self) -> (usize, usize, usize);
-    fn read_conf_space_header(&self) -> Result<ConfigurationSpaceCommonHeaderField>;
-    fn write_conf_space_header(&self, value: ConfigurationSpaceCommonHeaderField) -> Result<()>;
-    fn read_conf_space_non_bridge_field(&self) -> Result<ConfigurationSpaceNonBridgeField>;
-    fn read_conf_space_pci_to_pci_bridge_field(
-        &self,
-    ) -> Result<ConfigurationSpacePciToPciBridgeField>;
-    fn read_space_pci_to_cardbus_bridge_field(&self)
-        -> Result<ConfigurationSpacePciToCardBusField>;
-    fn read_interrupt_line(&self) -> Result<u8>;
-    fn write_interrupt_line(&self, value: u8) -> Result<()>;
-    fn device_class(&self) -> (u8, u8, u8);
-    fn is_available_msi_int(&self) -> bool;
-    fn read_msi_caps_list(&self) -> Vec<MsiCapabilityField>;
-    fn set_msi_cap(
-        &self,
-        msg_addr: MsiMessageAddressField,
-        msg_data: MsiMessageDataField,
-    ) -> Result<()>;
-}
+use alloc::{string::String, vec::Vec};
 
 #[derive(Debug, Clone)]
 pub struct PciDevice {
@@ -71,22 +49,39 @@ impl PciDevice {
     }
 }
 
-impl PciDeviceFunction for PciDevice {
-    fn bdf(&self) -> (usize, usize, usize) {
+impl PciDevice {
+    pub fn describe(&self) -> Result<String> {
+        let (bus, device, func) = self.bdf;
+        let header = self.read_conf_space_header()?;
+
+        Ok(format!(
+            "{}:{}:{} {:?} - {}\n",
+            bus,
+            device,
+            func,
+            header.header_type(),
+            header.device_name().unwrap_or("<UNKNOWN NAME>"),
+        ))
+    }
+
+    pub fn bdf(&self) -> (usize, usize, usize) {
         self.bdf
     }
 
-    fn read_conf_space_header(&self) -> Result<ConfigurationSpaceCommonHeaderField> {
+    pub fn read_conf_space_header(&self) -> Result<ConfigurationSpaceCommonHeaderField> {
         let (bus, device, func) = self.bdf;
         ConfigurationSpaceCommonHeaderField::read(bus, device, func)
     }
 
-    fn write_conf_space_header(&self, value: ConfigurationSpaceCommonHeaderField) -> Result<()> {
+    pub fn write_conf_space_header(
+        &self,
+        value: ConfigurationSpaceCommonHeaderField,
+    ) -> Result<()> {
         let (bus, device, func) = self.bdf;
         value.write(bus, device, func)
     }
 
-    fn read_conf_space_non_bridge_field(&self) -> Result<ConfigurationSpaceNonBridgeField> {
+    pub fn read_conf_space_non_bridge_field(&self) -> Result<ConfigurationSpaceNonBridgeField> {
         let (bus, device, func) = self.bdf;
         let header_type = self.read_conf_space_header()?.header_type();
 
@@ -99,7 +94,7 @@ impl PciDeviceFunction for PciDevice {
         }
     }
 
-    fn read_conf_space_pci_to_pci_bridge_field(
+    pub fn read_conf_space_pci_to_pci_bridge_field(
         &self,
     ) -> Result<ConfigurationSpacePciToPciBridgeField> {
         let (bus, device, func) = self.bdf;
@@ -113,7 +108,7 @@ impl PciDeviceFunction for PciDevice {
         }
     }
 
-    fn read_space_pci_to_cardbus_bridge_field(
+    pub fn read_space_pci_to_cardbus_bridge_field(
         &self,
     ) -> Result<ConfigurationSpacePciToCardBusField> {
         let (bus, device, func) = self.bdf;
@@ -127,14 +122,14 @@ impl PciDeviceFunction for PciDevice {
         }
     }
 
-    fn read_interrupt_line(&self) -> Result<u8> {
+    pub fn read_interrupt_line(&self) -> Result<u8> {
         let (bus, device, func) = self.bdf;
 
         let data = conf_space::read_conf_space(bus, device, func, 0x3c)?;
         Ok(data as u8)
     }
 
-    fn write_interrupt_line(&self, value: u8) -> Result<()> {
+    pub fn write_interrupt_line(&self, value: u8) -> Result<()> {
         let (bus, device, func) = self.bdf;
 
         let data = conf_space::read_conf_space(bus, device, func, 0x3c)? & !0xff | value as u32;
@@ -143,7 +138,7 @@ impl PciDeviceFunction for PciDevice {
         Ok(())
     }
 
-    fn device_class(&self) -> (u8, u8, u8) {
+    pub fn device_class(&self) -> (u8, u8, u8) {
         let conf_space_header = self.read_conf_space_header().unwrap();
 
         let class = conf_space_header.class_code;
@@ -152,14 +147,14 @@ impl PciDeviceFunction for PciDevice {
         (class, subclass, prog_if)
     }
 
-    fn is_available_msi_int(&self) -> bool {
+    pub fn is_available_msi_int(&self) -> bool {
         self.read_conf_space_header()
             .unwrap()
             .status
             .caps_list_available()
     }
 
-    fn read_msi_caps_list(&self) -> Vec<MsiCapabilityField> {
+    pub fn read_msi_caps_list(&self) -> Vec<MsiCapabilityField> {
         let (bus, device, func) = self.bdf;
         let mut list = Vec::new();
 
@@ -182,7 +177,7 @@ impl PciDeviceFunction for PciDevice {
         list
     }
 
-    fn set_msi_cap(
+    pub fn set_msi_cap(
         &self,
         msg_addr: MsiMessageAddressField,
         msg_data: MsiMessageDataField,

@@ -1,22 +1,24 @@
 use crate::{
     arch::VirtualAddress,
-    device::{DeviceDriverFunction, DeviceDriverInfo},
+    device::DeviceInfo,
     error::Result,
     graphics::{color::ColorCode, font::FONT},
     kinfo,
     sync::mutex::Mutex,
 };
-use alloc::{fmt, vec::Vec};
+use alloc::fmt;
 use common::graphic_info::{GraphicInfo, PixelFormat};
 use core::fmt::Write;
 
 const BACK_COLOR: ColorCode = ColorCode::BLACK;
 const FORE_COLOR: ColorCode = ColorCode::RED;
 
-static PANIC_SCREEN_DRIVER: Mutex<PanicScreenDriver> = Mutex::new(PanicScreenDriver::new());
+const NAME: &str = "panic-screen";
 
-struct PanicScreenDriver {
-    device_driver_info: DeviceDriverInfo,
+static PANIC_SCREEN: Mutex<PanicScreen> = Mutex::new(PanicScreen::new());
+
+struct PanicScreen {
+    device_info: DeviceInfo,
     cursor_x: Option<usize>,
     cursor_y: Option<usize>,
     res_x: Option<usize>,
@@ -25,10 +27,10 @@ struct PanicScreenDriver {
     frame_buf_virt_addr: Option<VirtualAddress>,
 }
 
-impl PanicScreenDriver {
+impl PanicScreen {
     const fn new() -> Self {
         Self {
-            device_driver_info: DeviceDriverInfo::new("panic-screen"),
+            device_info: DeviceInfo::new("panic-screen"),
             cursor_x: None,
             cursor_y: None,
             res_x: None,
@@ -145,98 +147,43 @@ impl PanicScreenDriver {
     }
 }
 
-impl fmt::Write for PanicScreenDriver {
+impl fmt::Write for PanicScreen {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         let _ = self.write_str(s);
         Ok(())
     }
 }
 
-impl DeviceDriverFunction for PanicScreenDriver {
-    type AttachInput = GraphicInfo;
-    type PollNormalOutput = ();
-    type PollInterruptOutput = ();
-
-    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
-        Ok(self.device_driver_info.clone())
-    }
-
+impl PanicScreen {
     fn probe(&mut self) -> Result<()> {
         Ok(())
     }
 
-    fn attach(&mut self, arg: Self::AttachInput) -> Result<()> {
+    fn attach(&mut self, arg: GraphicInfo) -> Result<()> {
         self.cursor_x = Some(0);
         self.cursor_y = Some(0);
         self.res_x = Some(arg.resolution.width);
         self.res_y = Some(arg.resolution.height);
         self.pixel_format = Some(arg.format);
         self.frame_buf_virt_addr = Some(arg.framebuf_addr.into());
-        self.device_driver_info.attached = true;
         Ok(())
-    }
-
-    fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
-        unimplemented!()
-    }
-
-    fn poll_int(&mut self) -> Result<Self::PollInterruptOutput> {
-        unimplemented!()
-    }
-
-    fn open(&mut self) -> Result<()> {
-        unimplemented!()
-    }
-
-    fn close(&mut self) -> Result<()> {
-        unimplemented!()
-    }
-
-    fn read(&mut self, _offset: usize, _max_len: usize) -> Result<Vec<u8>> {
-        unimplemented!()
-    }
-
-    fn write(&mut self, _data: &[u8]) -> Result<()> {
-        unimplemented!()
     }
 }
 
-pub fn device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = PANIC_SCREEN_DRIVER.try_lock()?;
-    driver.device_driver_info()
+pub fn device_info() -> Result<DeviceInfo> {
+    Ok(DeviceInfo::new(NAME))
 }
 
 pub fn probe_and_attach(graphic_info: GraphicInfo) -> Result<()> {
-    let mut driver = PANIC_SCREEN_DRIVER.try_lock()?;
+    let mut driver = PANIC_SCREEN.try_lock()?;
     driver.probe()?;
     driver.attach(graphic_info)?;
-    let info = driver.device_driver_info()?;
-    kinfo!("{}: Attached!", info.name);
+    kinfo!("{}: Attached!", NAME);
 
     Ok(())
 }
 
-pub fn open() -> Result<()> {
-    let mut driver = PANIC_SCREEN_DRIVER.try_lock()?;
-    driver.open()
-}
-
-pub fn close() -> Result<()> {
-    let mut driver = PANIC_SCREEN_DRIVER.try_lock()?;
-    driver.close()
-}
-
-pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
-    let mut driver = PANIC_SCREEN_DRIVER.try_lock()?;
-    driver.read(offset, max_len)
-}
-
-pub fn write(data: &[u8]) -> Result<()> {
-    let mut driver = PANIC_SCREEN_DRIVER.try_lock()?;
-    driver.write(data)
-}
-
 pub fn write_fmt(args: fmt::Arguments) -> Result<()> {
-    let _ = PANIC_SCREEN_DRIVER.try_lock()?.write_fmt(args);
+    let _ = PANIC_SCREEN.try_lock()?.write_fmt(args);
     Ok(())
 }

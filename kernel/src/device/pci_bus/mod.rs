@@ -1,13 +1,21 @@
-use super::{DeviceDriverFunction, DeviceDriverInfo};
-use crate::{error::Result, fs::vfs, kdebug, kinfo, sync::mutex::Mutex};
-use alloc::{string::String, vec::Vec};
+use super::{CharDevice, Device, DeviceInfo};
+use crate::{
+    error::{Error, Result},
+    fs::vfs,
+    kdebug, kerror, kinfo,
+    sync::mutex::Mutex,
+};
+use alloc::{string::String, sync::Arc, vec::Vec};
 use conf_space::*;
-use device::{PciDevice, PciDeviceFunction};
+use device::PciDevice;
 
 pub mod conf_space;
-mod device;
+pub mod device;
 
-static PCI_BUS_DRIVER: Mutex<PciBusDriver> = Mutex::new(PciBusDriver::new());
+const NAME: &str = "pci-bus";
+
+static PCI_BUS: Mutex<PciBus> = Mutex::new(PciBus::new());
+static PCI_DRIVERS: Mutex<Vec<Arc<dyn PciDriver>>> = Mutex::new(Vec::new());
 
 #[derive(Debug)]
 pub enum PciError {
@@ -52,15 +60,15 @@ impl core::fmt::Display for PciError {
     }
 }
 
-struct PciBusDriver {
-    device_driver_info: DeviceDriverInfo,
+struct PciBus {
+    device_info: DeviceInfo,
     pci_devices: Vec<PciDevice>,
 }
 
-impl PciBusDriver {
+impl PciBus {
     const fn new() -> Self {
         Self {
-            device_driver_info: DeviceDriverInfo::new("pci-bus"),
+            device_info: DeviceInfo::new("pci-bus"),
             pci_devices: Vec::new(),
         }
     }
@@ -84,7 +92,7 @@ impl PciBusDriver {
 
                     kdebug!(
                         "{}: {}.{}.{} {} found",
-                        self.device_driver_info.name,
+                        self.device_info.name,
                         bus,
                         device,
                         func,
@@ -101,91 +109,16 @@ impl PciBusDriver {
 
         self.pci_devices = devices;
     }
-
-    fn find_device(&self, bus: usize, device: usize, func: usize) -> Result<&PciDevice> {
-        self.pci_devices
-            .iter()
-            .find(|d| d.bdf() == (bus, device, func))
-            .ok_or(PciError::DeviceNotFoundByBdf { bus, device, func }.into())
-    }
-
-    fn find_device_mut(
-        &mut self,
-        bus: usize,
-        device: usize,
-        func: usize,
-    ) -> Result<&mut PciDevice> {
-        self.pci_devices
-            .iter_mut()
-            .find(|d| d.bdf() == (bus, device, func))
-            .ok_or(PciError::DeviceNotFoundByBdf { bus, device, func }.into())
-    }
-
-    fn find_devices_by_class_mut(
-        &mut self,
-        class: u8,
-        subclass: u8,
-        prog_if: u8,
-    ) -> Vec<&mut PciDevice> {
-        self.pci_devices
-            .iter_mut()
-            .filter(|d| d.device_class() == (class, subclass, prog_if))
-            .collect()
-    }
-
-    fn find_device_by_vendor_and_device_id_mut(
-        &mut self,
-        vendor_id: u16,
-        device_id: u16,
-    ) -> Result<&mut PciDevice> {
-        self.pci_devices
-            .iter_mut()
-            .find(|d| {
-                let conf_space_header = d.read_conf_space_header().unwrap();
-                conf_space_header.vendor_id == vendor_id && conf_space_header.device_id == device_id
-            })
-            .ok_or(
-                PciError::DeviceNotFoundById {
-                    vendor_id,
-                    device_id,
-                }
-                .into(),
-            )
-    }
 }
 
-impl DeviceDriverFunction for PciBusDriver {
-    type AttachInput = ();
-    type PollNormalOutput = ();
-    type PollInterruptOutput = ();
-
-    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
-        Ok(self.device_driver_info.clone())
-    }
-
+impl PciBus {
     fn probe(&mut self) -> Result<()> {
         Ok(())
     }
 
-    fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
-        let dev_desc = vfs::DeviceFileDescriptor {
-            device_driver_info,
-            open,
-            close,
-            read,
-            write,
-        };
-        vfs::add_dev_file(dev_desc, self.device_driver_info.name)?;
-        self.device_driver_info.attached = true;
+    fn attach(&mut self) -> Result<()> {
+        vfs::add_dev(Arc::new(PciBusDevice))?;
         Ok(())
-    }
-
-    fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
-        unimplemented!()
-    }
-
-    fn poll_int(&mut self) -> Result<Self::PollInterruptOutput> {
-        unimplemented!()
     }
 
     fn open(&mut self) -> Result<()> {
@@ -200,13 +133,7 @@ impl DeviceDriverFunction for PciBusDriver {
         let mut s = String::new();
 
         for d in &self.pci_devices {
-            let (bus, device, func) = d.bdf();
-            let conf_space_header = d.read_conf_space_header().unwrap();
-            let header_type = conf_space_header.header_type();
-            let device_name = conf_space_header.device_name().unwrap_or("<UNKNOWN NAME>");
-
-            s.push_str(&format!("{}:{}:{}", bus, device, func));
-            s.push_str(&format!(" {:?} - {}\n", header_type, device_name));
+            s.push_str(&d.describe()?);
         }
 
         let bytes = s.into_bytes();
@@ -216,86 +143,97 @@ impl DeviceDriverFunction for PciBusDriver {
     }
 
     fn write(&mut self, _data: &[u8]) -> Result<()> {
-        unimplemented!()
+        Err(Error::NotSupported.into())
     }
 }
 
-pub fn device_driver_info() -> Result<DeviceDriverInfo> {
-    PCI_BUS_DRIVER.try_lock()?.device_driver_info()
+pub trait PciDriver: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn probe(&self, dev: &PciDevice) -> Result<bool>;
+}
+
+pub fn register_driver(driver: Arc<dyn PciDriver>) -> Result<()> {
+    PCI_DRIVERS.try_lock()?.push(driver);
+
+    Ok(())
+}
+
+pub fn probe_all() -> Result<()> {
+    let devices: Vec<PciDevice> = PCI_BUS.try_lock()?.pci_devices.clone();
+    let drivers: Vec<Arc<dyn PciDriver>> = PCI_DRIVERS.try_lock()?.clone();
+
+    for device in devices {
+        let (bus, dev, func) = device.bdf();
+
+        for driver in &drivers {
+            match driver.probe(&device) {
+                Ok(false) => continue,
+                Ok(true) => {
+                    kinfo!(
+                        "pci-bus: {} attached to {}:{}:{}",
+                        driver.name(),
+                        bus,
+                        dev,
+                        func
+                    );
+                    break;
+                }
+                Err(err) => {
+                    kerror!(
+                        "pci-bus: {}: Failed to probe {}:{}:{}: {:?}",
+                        driver.name(),
+                        bus,
+                        dev,
+                        func,
+                        err
+                    );
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub fn device_info() -> Result<DeviceInfo> {
+    Ok(DeviceInfo::new(NAME))
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = PCI_BUS_DRIVER.try_lock()?;
-    let driver_name = driver.device_driver_info()?.name;
+    let mut driver = PCI_BUS.try_lock()?;
 
     driver.probe()?;
-    driver.attach(())?;
-    kinfo!("{}: Attached!", driver_name);
+    driver.attach()?;
+    kinfo!("{}: Attached!", NAME);
 
-    kinfo!("{}: Scanning devices...", driver_name);
+    kinfo!("{}: Scanning devices...", NAME);
     driver.scan_pci_devices();
     Ok(())
 }
 
-pub fn open() -> Result<()> {
-    PCI_BUS_DRIVER.try_lock()?.open()
+struct PciBusDevice;
+
+impl Device for PciBusDevice {
+    fn info(&self) -> Result<DeviceInfo> {
+        Ok(DeviceInfo::new(NAME))
+    }
 }
 
-pub fn close() -> Result<()> {
-    PCI_BUS_DRIVER.try_lock()?.close()
-}
-
-pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
-    PCI_BUS_DRIVER.try_lock()?.read(offset, max_len)
-}
-
-pub fn write(data: &[u8]) -> Result<()> {
-    PCI_BUS_DRIVER.try_lock()?.write(data)
-}
-
-pub fn device_exists(bus: usize, device: usize, func: usize) -> Result<bool> {
-    let exists = PCI_BUS_DRIVER
-        .try_lock()?
-        .find_device(bus, device, func)
-        .is_ok();
-    Ok(exists)
-}
-
-pub fn configure_device<F: FnMut(&mut dyn PciDeviceFunction) -> Result<()>>(
-    bus: usize,
-    device: usize,
-    func: usize,
-    mut f: F,
-) -> Result<()> {
-    let mut driver = PCI_BUS_DRIVER.try_lock()?;
-    let device_mut = driver.find_device_mut(bus, device, func)?;
-
-    f(device_mut)
-}
-
-pub fn find_devices<F: FnMut(&mut dyn PciDeviceFunction) -> Result<()>>(
-    class: u8,
-    subclass: u8,
-    prog_if: u8,
-    mut f: F,
-) -> Result<()> {
-    let mut driver = PCI_BUS_DRIVER.try_lock()?;
-    let devices = driver.find_devices_by_class_mut(class, subclass, prog_if);
-
-    for device in devices {
-        f(device)?;
+impl CharDevice for PciBusDevice {
+    fn read(&self, offset: usize, max_len: usize) -> Result<Vec<u8>> {
+        PCI_BUS.try_lock()?.read(offset, max_len)
     }
 
-    Ok(())
-}
+    fn write(&self, data: &[u8]) -> Result<()> {
+        PCI_BUS.try_lock()?.write(data)
+    }
 
-pub fn find_device_by_vendor_and_device_id<F: FnMut(&mut dyn PciDeviceFunction) -> Result<()>>(
-    vendor_id: u16,
-    device_id: u16,
-    mut f: F,
-) -> Result<()> {
-    let mut driver = PCI_BUS_DRIVER.try_lock()?;
-    let device = driver.find_device_by_vendor_and_device_id_mut(vendor_id, device_id)?;
+    fn open(&self) -> Result<()> {
+        PCI_BUS.try_lock()?.open()
+    }
 
-    f(device)
+    fn close(&self) -> Result<()> {
+        PCI_BUS.try_lock()?.close()
+    }
 }

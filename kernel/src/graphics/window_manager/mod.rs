@@ -22,7 +22,7 @@ pub mod components;
 static WINDOW_MAN: Mutex<WindowManager> = Mutex::new(WindowManager::new());
 
 pub enum MouseEvent {
-    Ps2Mouse(Ps2MouseEvent),
+    Ps2MouseDevice(Ps2MouseEvent),
     UsbHidMouse(UsbHidMouseEvent),
 }
 
@@ -125,7 +125,7 @@ impl WindowManager {
         } = mouse_pointer.layer_info()?;
 
         let m_pos_after = match &mouse_event {
-            MouseEvent::Ps2Mouse(e) => {
+            MouseEvent::Ps2MouseDevice(e) => {
                 let rel_x = (e.rel_x as isize).clamp(
                     -Self::PS2_MOUSE_MAX_REL_MOVEMENT,
                     Self::PS2_MOUSE_MAX_REL_MOVEMENT,
@@ -153,7 +153,7 @@ impl WindowManager {
         mouse_pointer.move_by_root(m_pos_after)?;
 
         let e_left = match &mouse_event {
-            MouseEvent::Ps2Mouse(e) => e.left,
+            MouseEvent::Ps2MouseDevice(e) => e.left,
             MouseEvent::UsbHidMouse(e) => e.left,
         };
 

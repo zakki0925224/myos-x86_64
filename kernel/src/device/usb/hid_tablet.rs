@@ -1,13 +1,15 @@
 use crate::{
     device::{
-        self,
-        usb::{usb_bus::*, xhc::desc::*, UsbDeviceDriverFunction},
+        register_pollable,
+        usb::{usb_bus::*, xhc::desc::*, UsbDriver, UsbHostController},
+        Device, DeviceInfo, Pollable,
     },
     error::{Error, Result},
     graphics::{frame_buf, window_manager},
+    sync::mutex::Mutex,
     util,
 };
-use alloc::{collections::vec_deque::VecDeque, vec::Vec};
+use alloc::{collections::vec_deque::VecDeque, sync::Arc, vec::Vec};
 use common::geometry::Size;
 
 #[derive(Default, Debug)]
@@ -19,8 +21,11 @@ pub struct UsbHidMouseEvent {
     pub abs_y: usize,
 }
 
-pub struct UsbHidTabletDriver {
-    pub name: &'static str,
+const NAME: &str = "usb-hid-tablet";
+const INTERFACE_TRIPLE: (u8, u8, u8) = (3, 0, 0);
+
+struct Inner {
+    configured: bool,
     interface_num: u8,
     input_report_items: Vec<UsbHidReportInputItem>,
     report_size_in_byte: usize,
@@ -28,8 +33,17 @@ pub struct UsbHidTabletDriver {
     res: Size,
 }
 
-impl UsbDeviceDriverFunction for UsbHidTabletDriver {
-    fn configure(&mut self, attach_info: &mut UsbDeviceAttachInfo) -> Result<()> {
+pub struct UsbHidTabletDevice {
+    dev: Arc<UsbDevice>,
+    inner: Mutex<Inner>,
+}
+
+impl Inner {
+    fn configure(
+        &mut self,
+        hc: &dyn UsbHostController,
+        attach_info: &mut UsbDeviceAttachInfo,
+    ) -> Result<()> {
         let UsbDeviceAttachInfo::Xhci(xhci_info) = attach_info;
         let slot = xhci_info.slot;
         let interface_descs = xhci_info.interface_descs();
@@ -40,9 +54,8 @@ impl UsbDeviceDriverFunction for UsbHidTabletDriver {
         self.interface_num = target_interface_desc.interface_num;
 
         // request HID report
-        let report = device::usb::xhc::request(|xhc| {
-            xhc.hid_report_desc(slot, xhci_info.ctrl_ep_ring_mut(), self.interface_num, 4096)
-        })?;
+        let report =
+            hc.hid_report_desc(slot, xhci_info.ctrl_ep_ring_mut(), self.interface_num, 4096)?;
 
         self.input_report_items = self.parse_hid_report_desc(&report)?;
         self.report_size_in_byte = if let Some(last_item) = self.input_report_items.last() {
@@ -56,7 +69,11 @@ impl UsbDeviceDriverFunction for UsbHidTabletDriver {
         Ok(())
     }
 
-    fn poll(&mut self, attach_info: &mut UsbDeviceAttachInfo) -> Result<()> {
+    fn poll(
+        &mut self,
+        hc: &dyn UsbHostController,
+        attach_info: &mut UsbDeviceAttachInfo,
+    ) -> Result<()> {
         let UsbDeviceAttachInfo::Xhci(xhci_info) = attach_info;
         let slot = xhci_info.slot;
 
@@ -86,8 +103,7 @@ impl UsbDeviceDriverFunction for UsbHidTabletDriver {
             .find(|item| item.usage == UsbHidUsage::Y && item.is_absolute)
             .ok_or(Error::NotFound.with_context("Absolute Y"))?;
 
-        let report =
-            device::usb::xhc::request(|xhc| xhc.hid_report(slot, xhci_info.ctrl_ep_ring_mut()))?;
+        let report = hc.hid_report(slot, xhci_info.ctrl_ep_ring_mut())?;
 
         if report == self.prev_report {
             return Ok(());
@@ -121,18 +137,63 @@ impl UsbDeviceDriverFunction for UsbHidTabletDriver {
     }
 }
 
-impl UsbHidTabletDriver {
-    pub fn new() -> Self {
+impl UsbHidTabletDevice {
+    fn new(dev: Arc<UsbDevice>) -> Self {
         Self {
-            name: "usb-hid-tablet",
-            interface_num: 0,
-            input_report_items: Vec::new(),
-            report_size_in_byte: 0,
-            prev_report: Vec::new(),
-            res: Size::default(),
+            dev,
+            inner: Mutex::new(Inner {
+                configured: false,
+                interface_num: 0,
+                input_report_items: Vec::new(),
+                report_size_in_byte: 0,
+                prev_report: Vec::new(),
+                res: Size::default(),
+            }),
         }
     }
+}
 
+impl Device for UsbHidTabletDevice {
+    fn info(&self) -> Result<DeviceInfo> {
+        Ok(DeviceInfo::new(NAME))
+    }
+}
+
+impl Pollable for UsbHidTabletDevice {
+    fn poll(&self) -> Result<()> {
+        let mut inner = self.inner.try_lock()?;
+        let mut attach_info = self.dev.lock_attach_info()?;
+        let hc = self.dev.hc();
+
+        if !inner.configured {
+            inner.configure(hc, &mut attach_info)?;
+            inner.configured = true;
+            return Ok(());
+        }
+
+        inner.poll(hc, &mut attach_info)
+    }
+}
+
+pub struct UsbHidTabletDriver;
+
+impl UsbDriver for UsbHidTabletDriver {
+    fn name(&self) -> &'static str {
+        NAME
+    }
+
+    fn probe(&self, dev: &Arc<UsbDevice>) -> Result<bool> {
+        if !dev.has_interface(INTERFACE_TRIPLE)? {
+            return Ok(false);
+        }
+
+        register_pollable(Arc::new(UsbHidTabletDevice::new(dev.clone())))?;
+
+        Ok(true)
+    }
+}
+
+impl Inner {
     fn parse_hid_report_desc(&self, report: &[u8]) -> Result<Vec<UsbHidReportInputItem>> {
         let mut it = report.iter();
         let mut input_report_items = Vec::new();
@@ -155,7 +216,8 @@ impl UsbHidTabletDriver {
                 0 => UsbHidReportItemType::Main,
                 1 => UsbHidReportItemType::Global,
                 2 => UsbHidReportItemType::Local,
-                _ => unimplemented!(), // reserved
+                // reserved
+                _ => return Err(Error::InvalidData.with_context("HID report descriptor")),
             };
             let b_tag = prefix >> 4;
             let data: Vec<u8> = it.by_ref().take(b_size).cloned().collect();

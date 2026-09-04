@@ -48,7 +48,7 @@ impl<T: Sized + Copy, const SIZE: usize> Fifo<T, SIZE> {
     }
 
     pub fn enqueue(&mut self, value: T) -> Result<()> {
-        let read_ptr = self.read_ptr.load(Ordering::Relaxed);
+        let read_ptr = self.read_ptr.load(Ordering::Acquire);
         let write_ptr = self.write_ptr.load(Ordering::Relaxed);
         let next_write_ptr = (write_ptr + 1) % self.size;
 
@@ -56,39 +56,14 @@ impl<T: Sized + Copy, const SIZE: usize> Fifo<T, SIZE> {
             return Err(Error::BufferFull.into());
         }
 
+        self.buf.0[write_ptr] = value;
+
         if self
             .write_ptr
             .compare_exchange(
                 write_ptr,
                 next_write_ptr,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            )
-            .is_err()
-        {
-            return Err(Error::Locked.into());
-        }
-
-        self.buf.0[write_ptr] = value;
-
-        Ok(())
-    }
-
-    pub fn dequeue(&mut self) -> Result<T> {
-        let read_ptr = self.read_ptr.load(Ordering::Relaxed);
-        let write_ptr = self.write_ptr.load(Ordering::Relaxed);
-        let next_read_ptr = (read_ptr + 1) % self.size;
-
-        if read_ptr == write_ptr {
-            return Err(Error::BufferEmpty.into());
-        }
-
-        if self
-            .read_ptr
-            .compare_exchange(
-                read_ptr,
-                next_read_ptr,
-                Ordering::Acquire,
+                Ordering::Release,
                 Ordering::Relaxed,
             )
             .is_err()
@@ -96,7 +71,34 @@ impl<T: Sized + Copy, const SIZE: usize> Fifo<T, SIZE> {
             return Err(Error::Locked.into());
         }
 
-        Ok(self.buf.0[read_ptr])
+        Ok(())
+    }
+
+    pub fn dequeue(&mut self) -> Result<T> {
+        let read_ptr = self.read_ptr.load(Ordering::Relaxed);
+        let write_ptr = self.write_ptr.load(Ordering::Acquire);
+        let next_read_ptr = (read_ptr + 1) % self.size;
+
+        if read_ptr == write_ptr {
+            return Err(Error::BufferEmpty.into());
+        }
+
+        let value = self.buf.0[read_ptr];
+
+        if self
+            .read_ptr
+            .compare_exchange(
+                read_ptr,
+                next_read_ptr,
+                Ordering::Release,
+                Ordering::Relaxed,
+            )
+            .is_err()
+        {
+            return Err(Error::Locked.into());
+        }
+
+        Ok(value)
     }
 
     pub fn buf_ref(&self) -> &[T; SIZE] {

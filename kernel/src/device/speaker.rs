@@ -1,24 +1,26 @@
 use crate::{
     arch::x86_64,
-    device::{DeviceDriverFunction, DeviceDriverInfo},
+    device::{CharDevice, Device, DeviceInfo},
     error::{Error, Result},
     fs::vfs,
     kinfo,
     sync::mutex::Mutex,
     util,
 };
-use alloc::vec::Vec;
+use alloc::{sync::Arc, vec::Vec};
 use core::time::Duration;
 
-static SPEAKER_DRIVER: Mutex<SpeakerDriver> = Mutex::new(SpeakerDriver::new());
+const NAME: &str = "speaker";
 
-struct SpeakerDriver {
-    device_driver_info: DeviceDriverInfo,
+static SPEAKER: Mutex<Speaker> = Mutex::new(Speaker::new());
+
+struct Speaker {
+    device_info: DeviceInfo,
     current_freq: u32,
 }
 
 // https://wiki.osdev.org/PC_Speaker
-impl SpeakerDriver {
+impl Speaker {
     const PIT_BASE_FREQ: u32 = 1193182;
     const PORT_PIT_CTRL: u16 = 0x43;
     const PORT_TIMER2_CTRL: u16 = 0x42;
@@ -28,7 +30,7 @@ impl SpeakerDriver {
 
     const fn new() -> Self {
         Self {
-            device_driver_info: DeviceDriverInfo::new("speaker"),
+            device_info: DeviceInfo::new("speaker"),
             current_freq: 0,
         }
     }
@@ -69,38 +71,14 @@ impl SpeakerDriver {
     }
 }
 
-impl DeviceDriverFunction for SpeakerDriver {
-    type AttachInput = ();
-    type PollNormalOutput = ();
-    type PollInterruptOutput = ();
-
-    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
-        Ok(self.device_driver_info.clone())
-    }
-
+impl Speaker {
     fn probe(&mut self) -> Result<()> {
         Ok(())
     }
 
-    fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
-        let dev_desc = vfs::DeviceFileDescriptor {
-            device_driver_info,
-            open,
-            close,
-            read,
-            write,
-        };
-        vfs::add_dev_file(dev_desc, self.device_driver_info.name)?;
-        self.device_driver_info.attached = true;
+    fn attach(&mut self) -> Result<()> {
+        vfs::add_dev(Arc::new(SpeakerDevice))?;
         Ok(())
-    }
-
-    fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
-        unimplemented!()
-    }
-
-    fn poll_int(&mut self) -> Result<Self::PollInterruptOutput> {
-        unimplemented!()
     }
 
     fn open(&mut self) -> Result<()> {
@@ -127,40 +105,50 @@ impl DeviceDriverFunction for SpeakerDriver {
     }
 }
 
-pub fn device_driver_info() -> Result<DeviceDriverInfo> {
-    SPEAKER_DRIVER.try_lock()?.device_driver_info()
+pub fn device_info() -> Result<DeviceInfo> {
+    Ok(DeviceInfo::new(NAME))
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = SPEAKER_DRIVER.try_lock()?;
+    let mut driver = SPEAKER.try_lock()?;
     driver.probe()?;
-    driver.attach(())?;
-    kinfo!("{}: Attached!", driver.device_driver_info()?.name);
+    driver.attach()?;
+    kinfo!("{}: Attached!", NAME);
 
     Ok(())
 }
 
-pub fn open() -> Result<()> {
-    SPEAKER_DRIVER.try_lock()?.open()
-}
-
-pub fn close() -> Result<()> {
-    SPEAKER_DRIVER.try_lock()?.close()
-}
-
-pub fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
-    SPEAKER_DRIVER.try_lock()?.read(offset, max_len)
-}
-
-pub fn write(data: &[u8]) -> Result<()> {
-    SPEAKER_DRIVER.try_lock()?.write(data)
-}
-
 pub fn play(freq: u32, duration: Duration) -> Result<()> {
-    let mut driver = SPEAKER_DRIVER.try_lock()?;
+    let mut driver = SPEAKER.try_lock()?;
     driver.play(freq);
     util::time::sleep(duration);
     driver.stop();
 
     Ok(())
+}
+
+struct SpeakerDevice;
+
+impl Device for SpeakerDevice {
+    fn info(&self) -> Result<DeviceInfo> {
+        Ok(DeviceInfo::new(NAME))
+    }
+}
+
+impl CharDevice for SpeakerDevice {
+    fn read(&self, offset: usize, max_len: usize) -> Result<Vec<u8>> {
+        SPEAKER.try_lock()?.read(offset, max_len)
+    }
+
+    fn write(&self, data: &[u8]) -> Result<()> {
+        SPEAKER.try_lock()?.write(data)
+    }
+
+    fn open(&self) -> Result<()> {
+        SPEAKER.try_lock()?.open()
+    }
+
+    fn close(&self) -> Result<()> {
+        SPEAKER.try_lock()?.close()
+    }
 }

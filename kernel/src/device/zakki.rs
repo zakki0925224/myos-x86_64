@@ -1,110 +1,51 @@
-use super::{DeviceDriverFunction, DeviceDriverInfo};
-use crate::{error::Result, fs::vfs, kinfo, sync::mutex::Mutex};
-use alloc::vec::Vec;
+use super::{CharDevice, Device, DeviceInfo};
+use crate::{
+    error::{Error, Result},
+    fs::vfs,
+    kinfo,
+};
+use alloc::{sync::Arc, vec::Vec};
 
+const NAME: &str = "zakki";
 const MESSAGE: &str = "Hello! I'm Zakki, a low-level programmer!\nCheck out my links below:\n\tX: https://x.com/zakki0925224\n\tGitHub: https://github.com/zakki0925224\n\tPortfolio: https://zakki0925224.github.io\n";
 
-static ZAKKI_DRIVER: Mutex<ZakkiDriver> = Mutex::new(ZakkiDriver::new());
-
 // https://github.com/zakki0925224/zakki_driver
-struct ZakkiDriver {
-    device_driver_info: DeviceDriverInfo,
-}
+struct ZakkiDevice;
 
-impl ZakkiDriver {
-    const fn new() -> Self {
-        Self {
-            device_driver_info: DeviceDriverInfo::new("zakki"),
-        }
+impl Device for ZakkiDevice {
+    fn info(&self) -> Result<DeviceInfo> {
+        Ok(DeviceInfo::new(NAME))
     }
 }
 
-impl DeviceDriverFunction for ZakkiDriver {
-    type AttachInput = ();
-    type PollNormalOutput = ();
-    type PollInterruptOutput = ();
+impl CharDevice for ZakkiDevice {
+    fn read(&self, offset: usize, max_len: usize) -> Result<Vec<u8>> {
+        kinfo!("{}: Read!", NAME);
 
-    fn device_driver_info(&self) -> Result<DeviceDriverInfo> {
-        Ok(self.device_driver_info.clone())
-    }
-
-    fn probe(&mut self) -> Result<()> {
-        Ok(())
-    }
-
-    fn attach(&mut self, _arg: Self::AttachInput) -> Result<()> {
-        let dev_desc = vfs::DeviceFileDescriptor {
-            device_driver_info,
-            open,
-            close,
-            read,
-            write,
-        };
-        vfs::add_dev_file(dev_desc, self.device_driver_info.name)?;
-        self.device_driver_info.attached = true;
-        Ok(())
-    }
-
-    fn poll_normal(&mut self) -> Result<Self::PollNormalOutput> {
-        unimplemented!()
-    }
-
-    fn poll_int(&mut self) -> Result<Self::PollInterruptOutput> {
-        unimplemented!()
-    }
-
-    fn open(&mut self) -> Result<()> {
-        kinfo!("{}: Opened!", self.device_driver_info.name);
-        Ok(())
-    }
-
-    fn close(&mut self) -> Result<()> {
-        kinfo!("{}: Closed!", self.device_driver_info.name);
-        Ok(())
-    }
-
-    fn read(&mut self, offset: usize, max_len: usize) -> Result<Vec<u8>> {
-        kinfo!("{}: Read!", self.device_driver_info.name);
         let bytes = MESSAGE.as_bytes();
         let start = offset.min(bytes.len());
         let end = start.saturating_add(max_len).min(bytes.len());
         Ok(bytes[start..end].to_vec())
     }
 
-    fn write(&mut self, _data: &[u8]) -> Result<()> {
-        unimplemented!()
+    fn write(&self, _data: &[u8]) -> Result<()> {
+        Err(Error::NotSupported.into())
+    }
+
+    fn open(&self) -> Result<()> {
+        kinfo!("{}: Opened!", NAME);
+        Ok(())
+    }
+
+    fn close(&self) -> Result<()> {
+        kinfo!("{}: Closed!", NAME);
+        Ok(())
     }
 }
 
-pub fn device_driver_info() -> Result<DeviceDriverInfo> {
-    let driver = ZAKKI_DRIVER.try_lock()?;
-    driver.device_driver_info()
-}
-
 pub fn probe_and_attach() -> Result<()> {
-    let mut driver = ZAKKI_DRIVER.try_lock()?;
-    driver.probe()?;
-    driver.attach(())?;
-    kinfo!("{}: Attached!", driver.device_driver_info()?.name);
+    vfs::add_dev(Arc::new(ZakkiDevice))?;
+    kinfo!("{}: Attached!", NAME);
+
     Ok(())
-}
-
-fn open() -> Result<()> {
-    let mut driver = ZAKKI_DRIVER.try_lock()?;
-    driver.open()
-}
-
-fn close() -> Result<()> {
-    let mut driver = ZAKKI_DRIVER.try_lock()?;
-    driver.close()
-}
-
-fn read(offset: usize, max_len: usize) -> Result<Vec<u8>> {
-    let mut driver = ZAKKI_DRIVER.try_lock()?;
-    driver.read(offset, max_len)
-}
-
-fn write(data: &[u8]) -> Result<()> {
-    let mut driver = ZAKKI_DRIVER.try_lock()?;
-    driver.write(data)
 }

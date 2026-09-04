@@ -25,17 +25,14 @@ mod util;
 
 use crate::{
     arch::x86_64::{self, *},
-    graphics::{
-        multi_layer,
-        window_manager::{self, MouseEvent},
-    },
+    graphics::{multi_layer, window_manager},
     task::{
         async_task::{self, Priority},
         exec, scheduler, syscall,
     },
     theme::GLOBAL_THEME,
 };
-use alloc::{string::ToString, vec::Vec};
+use alloc::{string::ToString, sync::Arc, vec::Vec};
 use common::boot_info::BootInfo;
 
 #[macro_use]
@@ -96,11 +93,16 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     )
     .unwrap();
 
+    device::uart::register().unwrap();
+
     // initialize urandom
     device::urandom::probe_and_attach().unwrap();
 
     // initialize TTY device
     device::tty::probe_and_attach().unwrap();
+
+    // initialize keyboard
+    device::keyboard::probe_and_attach().unwrap();
 
     // initialize PS/2 keyboard and mouse
     device::ps2_keyboard::probe_and_attach().unwrap();
@@ -108,7 +110,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
 
     // initialize speaker driver
     if let Err(err) = device::speaker::probe_and_attach() {
-        let name = device::speaker::device_driver_info().unwrap().name;
+        let name = device::speaker::device_info().unwrap().name;
         kerror!("{}: Failed to probe or attach device: {:?}", name, err);
     }
 
@@ -121,17 +123,18 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     // initialize usb-bus driver
     device::usb::usb_bus::probe_and_attach().unwrap();
 
-    // initialize xHC driver
-    if let Err(err) = device::usb::xhc::probe_and_attach() {
-        let name = device::usb::xhc::device_driver_info().unwrap().name;
-        kerror!("{}: Failed to probe or attach device: {:?}", name, err);
-    }
+    // register USB device drivers
+    device::usb::usb_bus::register_driver(Arc::new(
+        device::usb::hid_keyboard::UsbHidKeyboardDriver,
+    ))
+    .unwrap();
+    device::usb::usb_bus::register_driver(Arc::new(device::usb::hid_tablet::UsbHidTabletDriver))
+        .unwrap();
 
-    // initialize RTL8139 driver
-    if let Err(err) = device::rtl8139::probe_and_attach() {
-        let name = device::rtl8139::device_driver_info().unwrap().name;
-        kerror!("{}: Failed to probe or attach device: {:?}", name, err);
-    }
+    // probe PCI devices
+    device::pci_bus::register_driver(Arc::new(device::usb::xhc::XhciDriver)).unwrap();
+    device::pci_bus::register_driver(Arc::new(device::rtl8139::Rtl8139Driver)).unwrap();
+    device::pci_bus::probe_all().unwrap();
 
     // enable syscall
     syscall::enable();
@@ -148,12 +151,9 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     // do not spawn async tasks before initialize scheduler
     // because kernel task id must be 0
     async_task::spawn_with_priority(graphics(), Priority::High).unwrap();
-    async_task::spawn_with_priority(poll_ps2_mouse(), Priority::High).unwrap();
-    async_task::spawn(poll_ps2_keyboard()).unwrap();
-    async_task::spawn(poll_usb_bus()).unwrap();
-    async_task::spawn(poll_xhc()).unwrap();
-    async_task::spawn(poll_uart()).unwrap();
-    async_task::spawn_with_priority(poll_rtl8139(), Priority::Low).unwrap();
+    async_task::spawn_with_priority(poll_devices(Priority::High), Priority::High).unwrap();
+    async_task::spawn(poll_devices(Priority::Normal)).unwrap();
+    async_task::spawn_with_priority(poll_devices(Priority::Low), Priority::Low).unwrap();
     async_task::ready().unwrap();
 
     // execute init app
@@ -190,52 +190,9 @@ async fn graphics() {
     }
 }
 
-async fn poll_ps2_mouse() {
+async fn poll_devices(priority: Priority) {
     loop {
-        let mouse_event = match device::ps2_mouse::poll_normal() {
-            Ok(Some(e)) => e,
-            _ => {
-                async_task::exec_yield().await;
-                continue;
-            }
-        };
-
-        let _ = window_manager::mouse_pointer_event(MouseEvent::Ps2Mouse(mouse_event));
-        async_task::exec_yield().await;
-    }
-}
-
-async fn poll_ps2_keyboard() {
-    loop {
-        let _ = device::ps2_keyboard::poll_normal();
-        async_task::exec_yield().await;
-    }
-}
-
-async fn poll_usb_bus() {
-    loop {
-        let _ = device::usb::usb_bus::poll_normal();
-        async_task::exec_yield().await;
-    }
-}
-
-async fn poll_xhc() {
-    loop {
-        let _ = device::usb::xhc::poll_normal();
-        async_task::exec_yield().await;
-    }
-}
-
-async fn poll_uart() {
-    loop {
-        let _ = device::uart::poll_normal();
-        async_task::exec_yield().await;
-    }
-}
-
-async fn poll_rtl8139() {
-    loop {
-        let _ = device::rtl8139::poll_normal();
+        let _ = device::poll_devices(priority);
         async_task::exec_yield().await;
     }
 }
