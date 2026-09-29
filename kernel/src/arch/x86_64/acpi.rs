@@ -77,6 +77,34 @@ impl DescriptionHeader {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ResetRegister {
+    Io(IoPortAddress),
+    Memory(VirtualAddress),
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+struct GenericAddressStructure {
+    addr_space_id: u8,
+    reg_bit_width: u8,
+    reg_bit_offset: u8,
+    access_size: u8,
+    addr: u64,
+}
+
+impl GenericAddressStructure {
+    fn reset_reg(&self) -> Result<ResetRegister> {
+        let reg = match self.addr_space_id {
+            0 => ResetRegister::Memory(self.addr.into()),
+            1 => ResetRegister::Io(IoPortAddress::new(self.addr as u32)),
+            _ => return Err(AcpiError::ResetRegisterNotSupported.into()),
+        };
+
+        Ok(reg)
+    }
+}
+
 #[derive(Debug)]
 #[repr(C, packed)]
 struct FixedAcpiDescriptionTable {
@@ -85,7 +113,9 @@ struct FixedAcpiDescriptionTable {
     pm_timer_block: u32,
     reserved1: [u8; 32],
     flags: u32,
-    reserved2: [u8; 160],
+    reset_reg: GenericAddressStructure,
+    reset_value: u8,
+    reserved2: [u8; 147],
 }
 
 #[derive(Debug)]
@@ -95,6 +125,7 @@ pub enum AcpiError {
     InvalidChecksum,
     FixedAcpiDescriptionTableWasNotFound,
     PmTimerNotSupported,
+    ResetRegisterNotSupported,
 }
 
 impl core::fmt::Display for AcpiError {
@@ -109,6 +140,7 @@ impl core::fmt::Display for AcpiError {
                 write!(f, "Fixed ACPI Description Table was not found")
             }
             Self::PmTimerNotSupported => write!(f, "PM timer is not supported"),
+            Self::ResetRegisterNotSupported => write!(f, "Reset register is not supported"),
         }
     }
 }
@@ -218,6 +250,29 @@ impl Acpi {
             mask,
         })
     }
+
+    fn reset(&self) -> Result<()> {
+        let fadt = self
+            .fadt()?
+            .ok_or(AcpiError::FixedAcpiDescriptionTableWasNotFound)?;
+
+        if fadt.header.len < 129 || (fadt.flags >> 10) & 1 == 0 {
+            return Err(AcpiError::ResetRegisterNotSupported.into());
+        }
+
+        let gas = fadt.reset_reg;
+        let reset_reg = gas.reset_reg()?;
+        let reset_value = fadt.reset_value;
+
+        match reset_reg {
+            ResetRegister::Io(port) => port.out8(reset_value),
+            ResetRegister::Memory(addr) => unsafe {
+                addr.as_ptr_mut::<u8>().write_volatile(reset_value);
+            },
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -234,6 +289,14 @@ impl PmTimer {
     pub fn elapsed(&self, from: u32, to: u32) -> u32 {
         to.wrapping_sub(from) & self.mask
     }
+
+    pub fn wait_ms(&self, ms: u32) {
+        let start = self.read();
+        let end = ms * (PM_TIMER_FREQ / 1000);
+        while self.elapsed(start, self.read()) < end {
+            core::hint::spin_loop();
+        }
+    }
 }
 
 pub fn init(rsdp_virt_addr: VirtualAddress) -> Result<()> {
@@ -247,4 +310,9 @@ pub fn init(rsdp_virt_addr: VirtualAddress) -> Result<()> {
 pub fn pm_timer() -> Result<PmTimer> {
     let acpi = &raw const ACPI;
     unsafe { (*acpi).pm_timer() }
+}
+
+pub fn reset() -> Result<()> {
+    let acpi = &raw const ACPI;
+    unsafe { (*acpi).reset() }
 }

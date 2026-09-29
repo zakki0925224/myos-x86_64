@@ -199,3 +199,24 @@ pub fn rdtsc() -> u64 {
 
     ((high as u64) << 32) | (low as u64)
 }
+
+pub fn reboot() -> ! {
+    fn wait() {
+        let Ok(pm_timer) = acpi::pm_timer() else {
+            return;
+        };
+        pm_timer.wait_ms(50);
+    }
+
+    cli();
+    acpi::reset().unwrap();
+    wait();
+
+    let null_idt = DescriptorTableArgs::default();
+    lidt(&null_idt); // reset IDT
+    int3(); // triple fault
+
+    loop {
+        unsafe { asm!("cli", "hlt", options(nomem, nostack)) };
+    }
+}

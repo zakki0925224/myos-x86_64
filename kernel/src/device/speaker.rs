@@ -1,13 +1,12 @@
 use crate::{
     arch::x86_64,
-    device::{Driver, DeviceInfo},
+    device::{DeviceInfo, Driver},
     error::{Error, Result},
     fs::vfs,
     kinfo,
     sync::mutex::Mutex,
     util,
 };
-use alloc::vec::Vec;
 use core::time::Duration;
 
 pub const NAME: &str = "speaker";
@@ -74,10 +73,6 @@ impl Driver for SpeakerDriver {
 
     fn attach(&mut self) -> Result<()> {
         Ok(())
-    }
-
-    fn read(&mut self, _offset: usize, _max_len: usize) -> Result<Vec<u8>> {
-        Ok(Vec::new())
     }
 
     fn write(&mut self, data: &[u8]) -> Result<()> {

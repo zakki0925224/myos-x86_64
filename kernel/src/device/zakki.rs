@@ -1,4 +1,4 @@
-use super::{Driver, DeviceInfo};
+use super::{DeviceInfo, Driver};
 use crate::{error::Result, fs::vfs, kinfo, sync::mutex::Mutex};
 use alloc::vec::Vec;
 
@@ -20,22 +20,10 @@ impl Driver for ZakkiDriver {
     }
 
     fn read(&mut self, offset: usize, max_len: usize) -> Result<Vec<u8>> {
-        kinfo!("{}: Read!", NAME);
-
         let bytes = MESSAGE.as_bytes();
         let start = offset.min(bytes.len());
         let end = start.saturating_add(max_len).min(bytes.len());
         Ok(bytes[start..end].to_vec())
-    }
-
-    fn open(&mut self) -> Result<()> {
-        kinfo!("{}: Opened!", NAME);
-        Ok(())
-    }
-
-    fn close(&mut self) -> Result<()> {
-        kinfo!("{}: Closed!", NAME);
-        Ok(())
     }
 }
 

@@ -100,6 +100,9 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     // initialize urandom
     device::urandom::probe_and_attach().unwrap();
 
+    // initialize power management device
+    device::power::probe_and_attach().unwrap();
+
     // initialize TTY device
     device::tty::probe_and_attach().unwrap();
 
