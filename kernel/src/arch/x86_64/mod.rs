@@ -1,4 +1,7 @@
-use crate::arch::x86_64::registers::{Register, Rflags};
+use crate::{
+    arch::x86_64::registers::{Register, Rflags},
+    kwarn,
+};
 use core::arch::asm;
 
 pub mod acpi;
@@ -209,14 +212,14 @@ pub fn reboot() -> ! {
     }
 
     cli();
-    acpi::reset().unwrap();
+    if let Err(err) = acpi::reset() {
+        kwarn!("ACPI reset failed: {:?}", err);
+    }
     wait();
 
     let null_idt = DescriptorTableArgs::default();
     lidt(&null_idt); // reset IDT
     int3(); // triple fault
 
-    loop {
-        unsafe { asm!("cli", "hlt", options(nomem, nostack)) };
-    }
+    unreachable!()
 }

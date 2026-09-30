@@ -3,7 +3,6 @@ use alloc::string::{String, ToString};
 
 pub mod dwarf;
 pub mod logger;
-pub mod qemu;
 
 pub fn symbolicate(dwarf: &Dwarf, ip: u64) -> String {
     let Some(info) = dwarf.find_debug_info_by_ip(ip) else {

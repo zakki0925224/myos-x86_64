@@ -3,7 +3,8 @@ use crate::{
     arch::x86_64,
     error::{Error, Result},
     fs::vfs,
-    kinfo,
+    kinfo, kwarn,
+    port::qemu,
     sync::mutex::Mutex,
 };
 
@@ -25,10 +26,17 @@ impl Driver for PowerDriver {
     fn write(&mut self, data: &[u8]) -> Result<()> {
         match data.trim_ascii() {
             b"reboot" => x86_64::reboot(),
-            b"poweroff" => todo!(),
+            b"poweroff" => poweroff(),
             _ => Err(Error::InvalidData.with_context("power command")),
         }
     }
+}
+
+fn poweroff() -> Result<()> {
+    // try QEMU poweroff
+    qemu::poweroff();
+    kwarn!("power: Poweroff failed");
+    Ok(())
 }
 
 pub fn probe_and_attach() -> Result<()> {

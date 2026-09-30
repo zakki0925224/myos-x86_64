@@ -17,6 +17,7 @@ mod graphics;
 mod mem;
 mod net;
 mod panic;
+mod port;
 mod sync;
 mod task;
 mod test;

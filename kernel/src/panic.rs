@@ -1,8 +1,8 @@
 use crate::{
     arch::x86_64,
-    debug::qemu::{self, EXIT_FAILURE},
     device::panic_screen,
     kerror,
+    port::qemu::{self, EXIT_FAILURE},
 };
 use core::panic::PanicInfo;
 
@@ -17,7 +17,6 @@ fn panic(info: &PanicInfo) -> ! {
         panic_screen::write_fmt(format_args!("{:?}\n", info.location())).unwrap();
 
         qemu::exit(EXIT_FAILURE);
-        loop {}
     });
 
     unreachable!();

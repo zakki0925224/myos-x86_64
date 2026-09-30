@@ -51,8 +51,8 @@ QEMU_ARGS = [
     "-machine q35", # ICH9 chipset
     "-accel kvm",
     "-cpu host",
-    "-no-reboot",
-    "-no-shutdown",
+    # "-no-reboot",
+    # "-no-shutdown",
     "-m 256M",
     "-serial mon:stdio",
     f"-monitor telnet::{QEMU_MONITOR_PORT},server,nowait",

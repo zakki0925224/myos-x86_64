@@ -15,7 +15,7 @@ impl<T: Fn()> Testable for T {
 
 #[cfg(test)]
 pub fn test_runner(tests: &[&dyn Testable]) {
-    use crate::{debug::qemu, println};
+    use crate::{port::qemu, println};
 
     println!("Running {} tests", tests.len());
     for test in tests {
