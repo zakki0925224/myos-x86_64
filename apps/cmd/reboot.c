@@ -1,23 +1,22 @@
 #include <stdio.h>
 #include <string.h>
-#include <syscalls.h>
 
 #define POWER_DEV_PATH "/dev/power"
 #define POWER_CMD "reboot"
 
 int main(int argc, char* argv[]) {
-    int fd = sys_open(POWER_DEV_PATH, OPEN_FLAG_NONE);
-    if (fd == -1) {
+    FILE* file = fopen(POWER_DEV_PATH, "r+");
+    if (file == NULL) {
         printf("reboot: failed to open %s\n", POWER_DEV_PATH);
         return -1;
     }
 
-    if (sys_write(fd, POWER_CMD, strlen(POWER_CMD)) == -1) {
+    if (fwrite(POWER_CMD, 1, strlen(POWER_CMD), file) != strlen(POWER_CMD)) {
         printf("reboot: failed to write to %s\n", POWER_DEV_PATH);
-        sys_close(fd);
+        fclose(file);
         return -1;
     }
 
-    sys_close(fd); // unreachable on success
+    fclose(file); // unreachable on success
     return 0;
 }

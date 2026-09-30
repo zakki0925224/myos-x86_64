@@ -145,11 +145,12 @@ void exec_cmd(char* cmd) {
 
         if (pid1 < 0 || pid2 < 0) {
             printf("sh: pipe: exec failed\n");
-            return;
         }
 
-        sys_wait(pid1);
-        sys_wait(pid2);
+        if (pid1 >= 0) sys_wait(pid1);
+        sys_close(pipefd[1]); // EOF for the reader
+        if (pid2 >= 0) sys_wait(pid2);
+        sys_close(pipefd[0]);
         return;
     }
 
