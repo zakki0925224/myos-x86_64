@@ -338,8 +338,6 @@ int main(int argc, char const* argv[]) {
             int exit_code = system(resolved);
             if (exit_code == -1) {
                 printf("lush: %s: command not found\n", line);
-            } else {
-                printf("lush: exit code: %d\n", exit_code);
             }
         }
 

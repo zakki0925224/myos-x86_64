@@ -198,7 +198,6 @@ void exec_cmd(char* cmd) {
             printf("sh: exec: failed\n");
             return;
         }
-        printf("sh: exit code: %d\n", exit_code);
     } else if (strcmp(splitted_buf[0], "clear") == 0) {
         printf("\e[2J");
         printf("\e[1;1H");
