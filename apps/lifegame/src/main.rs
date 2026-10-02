@@ -208,10 +208,7 @@ pub unsafe fn _start() {
     draw_board(&mut eg_fb, 0);
 
     loop {
-        let start_time = sys_uptime();
-        while sys_uptime() - start_time < DELAY_MS {
-            // wait
-        }
+        sys_sleep(DELAY_MS);
 
         unsafe {
             GENERATION += 1;

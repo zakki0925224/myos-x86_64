@@ -5,13 +5,14 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use core::{convert::Infallible, time::Duration};
+use core::convert::Infallible;
 use embedded_graphics::{pixelcolor::Rgb888, prelude::*, primitives::*};
 use libc_rs::*;
 use tinygif::Gif;
 
 const WIDTH: usize = 450;
 const HEIGHT: usize = 400;
+const FRAME_DELAY_MS: u64 = 50;
 
 struct Framebuffer {
     fb: *mut u8,
@@ -127,18 +128,7 @@ pub unsafe fn _start() {
         for frame in gif.frames() {
             frame.draw(&mut eg_fb).unwrap();
 
-            let uptime = unsafe { sys_uptime() };
-            let start = Duration::from_millis(uptime);
-
-            // delay
-            loop {
-                let uptime = unsafe { sys_uptime() };
-                let now = Duration::from_millis(uptime);
-
-                if (now - start).as_millis() > 50 {
-                    break;
-                }
-            }
+            unsafe { sys_sleep(FRAME_DELAY_MS) };
         }
     }
 }

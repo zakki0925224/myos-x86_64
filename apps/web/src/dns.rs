@@ -4,11 +4,12 @@ use crate::{
 };
 use alloc::vec::Vec;
 use core::net::Ipv4Addr;
-use libc_rs::sys_uptime;
+use libc_rs::{sys_sleep, sys_uptime};
 
 pub const QEMU_DNS: &'static str = "10.0.2.3:53";
 const LOCALHOST_ADDR: Ipv4Addr = Ipv4Addr::new(10, 0, 2, 2);
 const DNS_TIMEOUT_MS: u64 = 5000;
+const DNS_POLL_INTERVAL_MS: u64 = 10;
 
 pub struct DnsClient {
     dns_server: &'static str,
@@ -75,6 +76,8 @@ impl DnsClient {
                 n = res;
                 break;
             }
+
+            unsafe { sys_sleep(DNS_POLL_INTERVAL_MS) };
         }
 
         if n == 0 {

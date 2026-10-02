@@ -106,6 +106,6 @@ pub fn _start() {
     paint_display_items(&mut eg_fb, &display_items);
 
     loop {
-        print!(""); // yield
+        unsafe { sys_sleep(IDLE_SLEEP_MS) };
     }
 }

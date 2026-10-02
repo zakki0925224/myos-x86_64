@@ -7,6 +7,7 @@ use libc_rs::*;
 
 const WIDTH: usize = 450;
 const HEIGHT: usize = 400;
+const IDLE_SLEEP_MS: u64 = 1000;
 
 const SCALE: i32 = 1 << 16; // 16.16 fixed-point
 const MAX_ITER: u32 = 100;
@@ -194,6 +195,6 @@ pub unsafe fn _start() {
     mandelbrot_fixed(&mut eg_fb);
 
     loop {
-        print!(""); // yield
+        sys_sleep(IDLE_SLEEP_MS);
     }
 }

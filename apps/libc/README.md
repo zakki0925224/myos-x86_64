@@ -6,6 +6,8 @@ Standard C Library for MyOS
 
 `whence` (sys_lseek) is one of `SEEK_SET` (0), `SEEK_CUR` (1), or `SEEK_END` (2).
 
+`sys_sleep` wakes on the 10ms timer tick: the actual sleep is `ms` rounded up to a tick, plus up to one more tick. `ms` of 0 behaves like `sys_yield`.
+
 | number | name          | description                                               | syscall num(%rax) | arg1(%rdi)            | arg2(%rsi)                   | arg3(%rdx)             | arg4(%r10) | arg5(%r8)                         | arg6(%r9)      | ret(%rax)                                  |
 | ------ | ------------- | --------------------------------------------------------- | ----------------- | --------------------- | ---------------------------- | ---------------------- | ---------- | --------------------------------- | -------------- | ------------------------------------------ |
 | 0      | sys_read      | Reads from a file.                                        | 0x00              | int fd                | void \*buf                   | size_t buf_len         | -          | -                                 | -              | int (read bytes, -1 on error)              |
@@ -39,3 +41,5 @@ Standard C Library for MyOS
 | 28     | sys_pipe      | Creates an unnamed pipe.                                  | 0x1c              | int pipefd[2]         | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)            |
 | 29     | sys_lseek     | Repositions a file descriptor's offset.                   | 0x1d              | int fd                | off_t offset                 | int whence             | -          | -                                 | -              | off_t (new offset, -1 on error)            |
 | 30     | sys_fork      | Creates a new process by duplicating the calling process. | 0x1e              | -                     | -                            | -                      | -          | -                                 | -              | pid_t (child pid, 0 in child, -1 on error) |
+| 31     | sys_sleep     | Suspends the calling process for at least `ms` ms.        | 0x1f              | uint64_t ms           | -                            | -                      | -          | -                                 | -              | void                                       |
+| 32     | sys_yield     | Yields the CPU to another ready process.                  | 0x20              | -                     | -                            | -                      | -          | -                                 | -              | void                                       |

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define RC_LUA_PATH "/mnt/initramfs/rc.lua"
 #define MAX_SERVICES 16
@@ -121,6 +122,7 @@ int main(int argc, char* argv[]) {
     }
 
     while (1) {
+        sleep(1);
     }
 
     return 0;

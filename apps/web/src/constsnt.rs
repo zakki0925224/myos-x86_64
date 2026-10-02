@@ -12,3 +12,5 @@ pub static CONTENT_AREA_HEIGHT: i64 =
 pub static CHAR_WIDTH: i64 = 8;
 pub static CHAR_HEIGHT: i64 = 16;
 pub static CHAR_HEIGHT_WITH_PADDING: i64 = CHAR_HEIGHT + 4;
+
+pub static IDLE_SLEEP_MS: u64 = 1000;
