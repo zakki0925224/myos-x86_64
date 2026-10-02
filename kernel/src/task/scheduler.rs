@@ -137,7 +137,7 @@ impl TaskScheduler {
         if let Some(i) = self
             .sleeping_tasks
             .iter()
-            .position(|t| t.waiting_for == Some(exiting_id))
+            .position(|t| t.waiting_for == Some(WaitReason::Child(exiting_id)))
         {
             let mut waiter = self.sleeping_tasks.remove(i);
             waiter.state = TaskState::Ready;
@@ -158,9 +158,9 @@ impl TaskScheduler {
         (prev_ptr, next_ptr, old)
     }
 
-    fn sleep_current_waiting_for(&mut self, child_id: TaskId) -> (*const Task, *const Task) {
+    fn sleep_current(&mut self, reason: WaitReason) -> (*const Task, *const Task) {
         let mut current = self.current_task.take().expect("No current task to sleep");
-        current.waiting_for = Some(child_id);
+        current.waiting_for = Some(reason);
         current.state = TaskState::Sleeping;
         self.sleeping_tasks.push(current);
 
@@ -184,7 +184,30 @@ impl TaskScheduler {
         if self.exit_codes.contains_key(&child_id) {
             return None;
         }
-        Some(self.sleep_current_waiting_for(child_id))
+        Some(self.sleep_current(WaitReason::Child(child_id)))
+    }
+
+    fn wake_expired(&mut self, now: Duration) {
+        let mut i = 0;
+        let mut woken = 0;
+
+        while i < self.sleeping_tasks.len() {
+            let expired = matches!(
+                self.sleeping_tasks[i].waiting_for,
+                Some(WaitReason::Until(deadline)) if deadline <= now
+            );
+
+            if !expired {
+                i += 1;
+                continue;
+            }
+
+            let mut task = self.sleeping_tasks.remove(i);
+            task.state = TaskState::Ready;
+            task.waiting_for = None;
+            self.ready_queue.insert(woken, task);
+            woken += 1;
+        }
     }
 }
 
@@ -249,6 +272,19 @@ pub fn sleep_waiting_for(child_id: TaskId) {
             set_kernel_stack(&*next);
             (*prev).switch_to(&*next);
         }
+    }
+    saved.write();
+}
+
+pub fn sleep_until(deadline: Duration) {
+    let saved = Rflags::read_with_cli();
+    let (prev, next) = TASK_SCHED
+        .spin_lock()
+        .sleep_current(WaitReason::Until(deadline));
+
+    unsafe {
+        set_kernel_stack(&*next);
+        (*prev).switch_to(&*next);
     }
     saved.write();
 }
@@ -333,6 +369,8 @@ pub fn preempt_sched(interrupted: &InterruptedContext) -> *const Context {
         if let Some(current) = s.current_task.as_mut() {
             current.context.capture_from_interrupted(interrupted);
         }
+
+        s.wake_expired(util::time::global_uptime());
 
         let pair = s.pick_next_task();
         let stale = core::mem::take(&mut s.exited_tasks);
@@ -510,7 +548,7 @@ fn test_multitask_scheduler_exit() {
         panic!("No current task");
     }
 
-    let (prev_ptr, next_ptr, stale) = sched.pick_next_task_on_exit(123);
+    let (prev_ptr, next_ptr, _) = sched.pick_next_task_on_exit(123);
 
     unsafe {
         let prev = &*prev_ptr; // T1 (Exited)

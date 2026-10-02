@@ -139,3 +139,11 @@ off_t sys_lseek(int fd, off_t offset, int whence) {
 pid_t sys_fork(void) {
     return (pid_t)syscall(SN_FORK, 0, 0, 0, 0, 0, 0);
 }
+
+void sys_sleep(uint64_t ms) {
+    syscall(SN_SLEEP, ms, 0, 0, 0, 0, 0);
+}
+
+void sys_yield(void) {
+    syscall(SN_YIELD, 0, 0, 0, 0, 0, 0);
+}

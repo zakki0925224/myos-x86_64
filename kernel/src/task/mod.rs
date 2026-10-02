@@ -23,6 +23,7 @@ use common::elf::{self, Elf64};
 use core::{
     fmt,
     sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
 };
 
 pub mod async_task;
@@ -205,6 +206,12 @@ pub struct TaskSnapshot {
     pub parent: Option<TaskId>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaitReason {
+    Child(TaskId),
+    Until(Duration),
+}
+
 #[derive(Debug)]
 pub(crate) struct Task {
     id: TaskId,
@@ -213,7 +220,7 @@ pub(crate) struct Task {
     context: Context,
     resource: TaskResource,
     dwarf: Option<Dwarf>,
-    waiting_for: Option<TaskId>,
+    waiting_for: Option<WaitReason>,
     parent: Option<TaskId>,
     children: Vec<TaskId>,
 }

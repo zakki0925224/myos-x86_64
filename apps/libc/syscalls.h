@@ -42,6 +42,8 @@
 #define SN_PIPE 28
 #define SN_LSEEK 29
 #define SN_FORK 30
+#define SN_SLEEP 31
+#define SN_YIELD 32
 
 // defined file descriptor numbers
 #define FDN_STDIN 0
@@ -92,5 +94,6 @@ int sys_accept(int sockfd, struct sockaddr* addr, size_t* addrlen);
 int sys_pipe(int pipefd[2]);
 off_t sys_lseek(int fd, off_t offset, int whence);
 pid_t sys_fork(void);
-
+void sys_sleep(uint64_t ms);
+void sys_yield(void);
 #endif

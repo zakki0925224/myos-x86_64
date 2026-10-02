@@ -118,7 +118,49 @@ static int build_exec_args(const char* cmd_str, char* out, int out_len) {
     return 0;
 }
 
+static int strip_background(const char* cmd, char* out, int out_len) {
+    int len = strlen(cmd);
+    while (len > 0 && cmd[len - 1] == ' ') len--;
+    if (len == 0 || cmd[len - 1] != '&') return 0;
+
+    len--;
+    while (len > 0 && cmd[len - 1] == ' ') len--;
+    if (len > out_len - 1) len = out_len - 1;
+
+    strncpy(out, cmd, len);
+    out[len] = '\0';
+    return 1;
+}
+
+static void exec_background(const char* cmd) {
+    static char args[BUF_LEN];
+
+    if (strchr(cmd, '|') != NULL) {
+        printf("sh: &: pipe is not supported\n");
+        return;
+    }
+
+    if (build_exec_args(cmd, args, BUF_LEN) < 0) {
+        printf("sh: &: invalid command\n");
+        return;
+    }
+
+    pid_t pid = sys_exec(args, EXEC_PIPE_NONE);
+    if (pid < 0) {
+        printf("sh: exec: failed\n");
+        return;
+    }
+
+    printf("[%d]\n", (int)pid);
+}
+
 void exec_cmd(char* cmd) {
+    static char bg_cmd[BUF_LEN];
+    if (strip_background(cmd, bg_cmd, BUF_LEN)) {
+        exec_background(bg_cmd);
+        return;
+    }
+
     char* pipe_pos = strchr(cmd, '|');
     if (pipe_pos != NULL) {
         *pipe_pos = '\0';

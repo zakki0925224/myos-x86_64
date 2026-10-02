@@ -498,6 +498,7 @@ impl UserPageTable {
                     pwt,
                     pcd,
                 );
+                core::arch::asm!("invlpg [{0}]", in(reg) i, options(nostack));
             }
         }
 

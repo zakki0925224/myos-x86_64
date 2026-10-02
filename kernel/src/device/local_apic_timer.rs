@@ -21,7 +21,7 @@ use core::{
 static ATTACHED: AtomicBool = AtomicBool::new(false);
 
 const DIV_VALUE: DivideValue = DivideValue::By1;
-const INT_INTERVAL_MS: usize = 10;
+pub const INT_INTERVAL_MS: usize = 10;
 
 const WINDOW_PM_TICKS: u32 = acpi::PM_TIMER_FREQ / 10; // 100ms
 const MAX_CALIBRATION_ATTEMPTS: usize = 10;

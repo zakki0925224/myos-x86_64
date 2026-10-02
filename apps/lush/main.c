@@ -273,6 +273,26 @@ static void exec_pipe(char* cmd, char* pipe_pos) {
     sys_close(pipefd[0]);
 }
 
+static void exec_background(char* cmd, char* resolved) {
+    if (find_unquoted_pipe(cmd) != NULL) {
+        printf("lush: &: pipe is not supported\n");
+        return;
+    }
+
+    if (build_exec_args(cmd, resolved, BUF_LEN) < 0) {
+        printf("lush: &: invalid command\n");
+        return;
+    }
+
+    pid_t pid = sys_exec(resolved, EXEC_PIPE_NONE);
+    if (pid < 0) {
+        printf("lush: %s: command not found\n", cmd);
+        return;
+    }
+
+    printf("[%d]\n", (int)pid);
+}
+
 int main(int argc, char const* argv[]) {
     if (argc > 1) {
         strncpy(envpath, argv[1], BUF_LEN - 1);
@@ -308,6 +328,14 @@ int main(int argc, char const* argv[]) {
         if (strncmp(line, "cd", 2) == 0 && (line[2] == '\0' || line[2] == ' ')) {
             builtin_cd(line + 2);
             history_push(buf);
+            continue;
+        }
+
+        size_t line_len = strlen(line);
+        if (line[line_len - 1] == '&') {
+            history_push(buf);
+            line[line_len - 1] = '\0';
+            exec_background(trim(line), resolved);
             continue;
         }
 

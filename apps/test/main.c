@@ -258,10 +258,31 @@ int test_fork() {
     return 0;
 }
 
+int test_sleep() {
+    const uint64_t cases[] = {10, 20, 55, 100, 1000, 10000};
+
+    for (int i = 0; i < 6; i++) {
+        uint64_t ms = cases[i];
+        uint64_t start = sys_uptime();
+        sys_sleep(ms);
+        uint64_t elapsed = sys_uptime() - start;
+
+        printf("sleep(%d): elapsed=%d\n", (int)ms, (int)elapsed);
+
+        if (elapsed < ms || elapsed > ms + 20) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+
 int main(int argc, const char* argv[]) {
     // return test_tcp_server();
     // return test_tcp_client();
     // return test_pipe();
     // return test_crash();
-    return test_fork();
+    // return test_fork();
+    return test_sleep();
 }

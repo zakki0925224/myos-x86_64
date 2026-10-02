@@ -9,7 +9,7 @@ use crate::{
         },
         VirtualAddress,
     },
-    device::tty,
+    device::{local_apic_timer::INT_INTERVAL_MS, tty},
     env,
     error::{Error, Result},
     fs::{
@@ -30,7 +30,7 @@ use alloc::{
     vec::Vec,
 };
 use common::geometry::{Point, Size};
-use core::{arch::naked_asm, net::Ipv4Addr, slice};
+use core::{arch::naked_asm, net::Ipv4Addr, slice, time::Duration};
 use libc_rs::*;
 
 #[derive(Debug, Clone, Copy)]
@@ -463,6 +463,11 @@ fn syscall_handler_inner(
                 return -1;
             }
         },
+        SN_SLEEP => {
+            let ms = arg0;
+            sys_sleep(ms);
+        }
+        SN_YIELD => sys_yield(),
         num => {
             kerror!("syscall: Syscall number {:#x} is not defined", num);
             return -1;
@@ -1160,6 +1165,21 @@ fn sys_lseek(fd_num: i32, offset: i64, whence: u32) -> Result<i64> {
 fn sys_fork() -> Result<pid_t> {
     let child_id = task::scheduler::fork_current()?;
     Ok(child_id.get() as pid_t)
+}
+
+fn sys_sleep(ms: u64) {
+    if ms == 0 {
+        task::scheduler::sched();
+        return;
+    }
+
+    let tick = Duration::from_millis(INT_INTERVAL_MS as u64);
+    let deadline = util::time::global_uptime() + Duration::from_millis(ms) + tick;
+    task::scheduler::sleep_until(deadline);
+}
+
+fn sys_yield() {
+    task::scheduler::sched();
 }
 
 pub fn enable() {
