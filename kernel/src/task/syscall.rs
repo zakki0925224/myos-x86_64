@@ -14,6 +14,7 @@ use crate::{
     error::{Error, Result},
     fs::{
         self,
+        pipe::PipeEnd,
         vfs::{self, FileDescriptorNumber, SeekFrom},
     },
     graphics::{multi_layer::LayerId, window_manager},
@@ -468,6 +469,20 @@ fn syscall_handler_inner(
             sys_sleep(ms);
         }
         SN_YIELD => sys_yield(),
+        SN_MKFIFO => {
+            let path = arg0 as *const u8;
+            if let Err(err) = sys_mkfifo(path) {
+                kerror!("syscall: mkfifo: {:?}", err);
+                return -1;
+            }
+        }
+        SN_UNLINK => {
+            let path = arg0 as *const u8;
+            if let Err(err) = sys_unlink(path) {
+                kerror!("syscall: unlink: {:?}", err);
+                return -1;
+            }
+        }
         num => {
             kerror!("syscall: Syscall number {:#x} is not defined", num);
             return -1;
@@ -606,8 +621,15 @@ fn sys_open(filepath: *const u8, flags: i32) -> Result<i32> {
     let filepath = unsafe { util::cstring::from_cstring_ptr(filepath) }
         .as_str()
         .into();
-    let create = (flags as u32) & OPEN_FLAG_CREATE != 0;
-    let fd_num = vfs::open_file(&filepath, create)?;
+    let flags = flags as u32;
+    let create = flags & OPEN_FLAG_CREATE != 0;
+    let pipe_end = match (flags & OPEN_FLAG_READ != 0, flags & OPEN_FLAG_WRITE != 0) {
+        (true, false) => Some(PipeEnd::Read),
+        (false, true) => Some(PipeEnd::Write),
+        _ => None,
+    };
+
+    let fd_num = vfs::open_file(&filepath, create, pipe_end)?;
     task::scheduler::with_current_resource(|r| r.fd_nums.push(fd_num))?;
 
     Ok(fd_num.get() as i32)
@@ -1180,6 +1202,20 @@ fn sys_sleep(ms: u64) {
 
 fn sys_yield() {
     task::scheduler::sched();
+}
+
+fn sys_mkfifo(path: *const u8) -> Result<()> {
+    let path = unsafe { util::cstring::from_cstring_ptr(path) }
+        .as_str()
+        .into();
+    vfs::create_named_pipe(&path)
+}
+
+fn sys_unlink(path: *const u8) -> Result<()> {
+    let path = unsafe { util::cstring::from_cstring_ptr(path) }
+        .as_str()
+        .into();
+    vfs::unlink(&path)
 }
 
 pub fn enable() {

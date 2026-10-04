@@ -13,7 +13,7 @@ pub fn exec_elf(
     args: &[&str],
     pipe_fd: [Option<FileDescriptorNumber>; 3],
 ) -> Result<TaskId> {
-    let fd_num = vfs::open_file(elf_path, false)?;
+    let fd_num = vfs::open_file(elf_path, false, None)?;
     let elf_data = vfs::read_file(fd_num, usize::MAX)?;
     let elf64 = Elf64::new(&elf_data)?;
 

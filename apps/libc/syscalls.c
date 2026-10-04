@@ -147,3 +147,11 @@ void sys_sleep(uint64_t ms) {
 void sys_yield(void) {
     syscall(SN_YIELD, 0, 0, 0, 0, 0, 0);
 }
+
+int sys_mkfifo(const char* path) {
+    return (int)syscall(SN_MKFIFO, (uint64_t)path, 0, 0, 0, 0, 0);
+}
+
+int sys_unlink(const char* path) {
+    return (int)syscall(SN_UNLINK, (uint64_t)path, 0, 0, 0, 0, 0);
+}

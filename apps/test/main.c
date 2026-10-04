@@ -4,6 +4,8 @@
 #include <syscalls.h>
 #include <input.h>
 
+#define FIFO_PATH "/fifo-test"
+
 int test_udp() {
     int sockfd = sys_socket(SOCKET_DOMAIN_AF_INET, SOCKET_TYPE_SOCK_DGRAM, SOCKET_PROTO_UDP);
     if (sockfd < 0) {
@@ -315,12 +317,57 @@ int test_input() {
     return 0;
 }
 
+int test_fifo_reader() {
+    sys_mkfifo(FIFO_PATH);
+
+    int fd = sys_open(FIFO_PATH, OPEN_FLAG_READ);
+    if (fd < 0) {
+        printf("reader: open failed\n");
+        return 1;
+    }
+
+    for (int i = 0; i < 1000; i++) {
+        char buf[64];
+        int len = sys_read(fd, buf, sizeof(buf) - 1);
+        if (len > 0) {
+            buf[len] = '\0';
+            printf("reader: %s\n", buf);
+        }
+        sys_sleep(10);
+    }
+
+    sys_close(fd);
+    sys_unlink(FIFO_PATH);
+    return 0;
+}
+
+int test_fifo_writer(const char* msg) {
+    int fd = sys_open(FIFO_PATH, OPEN_FLAG_WRITE);
+    if (fd < 0) {
+        printf("writer: open failed\n");
+        return 1;
+    }
+
+    sys_write(fd, msg, strlen(msg));
+    sys_close(fd);
+    return 0;
+}
+
 int main(int argc, const char* argv[]) {
-  // return test_tcp_server();
-  // return test_tcp_client();
-  // return test_pipe();
-  // return test_crash();
-  // return test_fork();
-  // return test_sleep();
-  return test_input();
+    // return test_tcp_server();
+    // return test_tcp_client();
+    // return test_pipe();
+    // return test_crash();
+    // return test_fork();
+    // return test_sleep();
+    // return test_input();
+
+    if (argc > 2 && strcmp(argv[1], "fifo-write") == 0) {
+        return test_fifo_writer(argv[2]);
+    }
+        if (argc > 1 && strcmp(argv[1], "fifo-read") == 0) {
+        return test_fifo_reader();
+    }
+
+    return test_input();
 }

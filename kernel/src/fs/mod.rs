@@ -13,6 +13,7 @@ use common::kernel_config::KernelConfig;
 pub mod fat;
 pub mod file;
 pub mod path;
+pub mod pipe;
 pub mod procfs;
 pub mod vfs;
 

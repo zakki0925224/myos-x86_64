@@ -44,6 +44,8 @@
 #define SN_FORK 30
 #define SN_SLEEP 31
 #define SN_YIELD 32
+#define SN_MKFIFO 33
+#define SN_UNLINK 34
 
 // defined file descriptor numbers
 #define FDN_STDIN 0
@@ -53,6 +55,8 @@
 // sys_open flags
 #define OPEN_FLAG_NONE 0x0
 #define OPEN_FLAG_CREATE 0x1
+#define OPEN_FLAG_READ 0x2
+#define OPEN_FLAG_WRITE 0x4
 
 // sys_exec pipe
 #define EXEC_PIPE_NONE (int[]){-1, -1, -1}
@@ -96,4 +100,7 @@ off_t sys_lseek(int fd, off_t offset, int whence);
 pid_t sys_fork(void);
 void sys_sleep(uint64_t ms);
 void sys_yield(void);
+int sys_mkfifo(const char *path);
+int sys_unlink(const char *path);
+
 #endif
