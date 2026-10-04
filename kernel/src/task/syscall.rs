@@ -22,7 +22,7 @@ use crate::{
     mem::bitmap,
     net::{self, socket::*},
     print,
-    task::{self, TaskId},
+    task::{self, *},
     util,
 };
 use alloc::{
@@ -483,6 +483,18 @@ fn syscall_handler_inner(
                 return -1;
             }
         }
+        SN_POLL => {
+            let fds = arg0 as *mut pollfd;
+            let nfds = arg1 as usize;
+            let timeout_ms = arg2 as i64;
+            match sys_poll(fds, nfds, timeout_ms) {
+                Ok(ready) => return ready as i64,
+                Err(err) => {
+                    kerror!("syscall: poll: {:?}", err);
+                    return -1;
+                }
+            }
+        }
         num => {
             kerror!("syscall: Syscall number {:#x} is not defined", num);
             return -1;
@@ -503,23 +515,11 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
             if let Some(fd_num) =
                 task::scheduler::with_current_resource(|r| r.pipe_fd).map(|fds| fds[0])?
             {
-                // block until data arrives or all write ends are closed (EOF)
-                loop {
-                    tty::check_sigint();
-                    match vfs::read_file(fd_num, buf_len) {
-                        Ok(data) => {
-                            unsafe {
-                                buf.copy_from_nonoverlapping(data.as_ptr(), data.len());
-                            }
-                            return Ok(data.len());
-                        }
-                        Err(err) if matches!(err.kind(), Error::BufferEmpty) => {
-                            task::scheduler::sched();
-                            x86_64::stihlt();
-                        }
-                        Err(err) => return Err(err),
-                    }
+                let data = read_blocking(fd_num, buf_len)?;
+                unsafe {
+                    buf.copy_from_nonoverlapping(data.as_ptr(), data.len());
                 }
+                return Ok(data.len());
             }
 
             if buf_len > 1 {
@@ -576,17 +576,10 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
             }
         }
         fd => {
-            let data = match vfs::read_file(fd, buf_len) {
-                Ok(data) => data,
-                // reading a raw pipe fd stays non-blocking: empty means "no data yet"
-                Err(err) if matches!(err.kind(), Error::BufferEmpty) => Vec::new(),
-                Err(err) => return Err(err),
-            };
-
+            let data = read_blocking(fd, buf_len)?;
             unsafe {
                 buf.copy_from_nonoverlapping(data.as_ptr(), data.len());
             }
-
             Ok(data.len())
         }
     }
@@ -629,7 +622,8 @@ fn sys_open(filepath: *const u8, flags: i32) -> Result<i32> {
         _ => None,
     };
 
-    let fd_num = vfs::open_file(&filepath, create, pipe_end)?;
+    let nonblock = flags & OPEN_FLAG_NONBLOCK != 0;
+    let fd_num = vfs::open_file(&filepath, create, pipe_end, nonblock)?;
     task::scheduler::with_current_resource(|r| r.fd_nums.push(fd_num))?;
 
     Ok(fd_num.get() as i32)
@@ -1218,6 +1212,76 @@ fn sys_unlink(path: *const u8) -> Result<()> {
     vfs::unlink(&path)
 }
 
+fn sys_poll(fds: *mut pollfd, nfds: usize, timeout_ms: i64) -> Result<usize> {
+    fn poll_once(
+        fds: &mut [pollfd],
+        owned: &[Option<FileDescriptorNumber>],
+    ) -> Result<(usize, Vec<WaitKey>)> {
+        let mut ready = 0;
+        let mut keys = Vec::new();
+
+        for (p, fd) in fds.iter_mut().zip(owned) {
+            p.revents = 0;
+
+            let Some(fd) = fd else {
+                continue;
+            };
+
+            match vfs::readiness(*fd)? {
+                Readiness::Ready => {
+                    p.revents = POLLIN as i16;
+                    ready += 1;
+                }
+                Readiness::Wait(key) => keys.push(key),
+            }
+        }
+
+        Ok((ready, keys))
+    }
+
+    let fds = unsafe { slice::from_raw_parts_mut(fds, nfds) };
+
+    let owned = fds
+        .iter()
+        .map(|p| {
+            if p.events as u32 & POLLIN == 0 {
+                Ok(None)
+            } else {
+                resolve_owned_fd(p.fd).map(Some)
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let deadline = (timeout_ms > 0).then(|| {
+        let tick = Duration::from_millis(INT_INTERVAL_MS as u64);
+        util::time::global_uptime() + Duration::from_millis(timeout_ms as u64) + tick
+    });
+
+    loop {
+        tty::check_sigint();
+
+        let saved = Rflags::read_with_cli();
+        let (ready, keys) = match poll_once(fds, &owned) {
+            Ok(res) => res,
+            Err(err) => {
+                saved.write();
+                return Err(err);
+            }
+        };
+
+        let timed_out =
+            timeout_ms == 0 || deadline.is_some_and(|d| util::time::global_uptime() >= d);
+
+        if ready > 0 || timed_out {
+            saved.write();
+            return Ok(ready);
+        }
+
+        task::scheduler::sleep_poll(keys, deadline);
+        saved.write();
+    }
+}
+
 pub fn enable() {
     let mut efer = ExtendedFeatureEnableRegister::read();
     efer.set_syscall_enable(true);
@@ -1275,4 +1339,26 @@ fn resolve_owned_layer_id(layer_id: i32) -> Result<LayerId> {
     owned
         .then_some(id)
         .ok_or(Error::NotFound.with_context("layer id"))
+}
+
+fn read_blocking(fd_num: FileDescriptorNumber, buf_len: usize) -> Result<Vec<u8>> {
+    loop {
+        tty::check_sigint();
+
+        let saved = Rflags::read_with_cli();
+        match vfs::read_file(fd_num, buf_len) {
+            Err(err) if matches!(err.kind(), Error::BufferEmpty) => {
+                let key = vfs::wait_key(fd_num);
+                if let Ok(key) = &key {
+                    task::scheduler::sleep_on(*key);
+                }
+                saved.write();
+                key?;
+            }
+            res => {
+                saved.write();
+                return res;
+            }
+        }
+    }
 }

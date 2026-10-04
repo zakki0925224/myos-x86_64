@@ -5,8 +5,9 @@ use super::{
 use crate::{
     device::CharDevice,
     error::{Error, Result},
-    kwarn,
+    kwarn, scheduler,
     sync::mutex::Mutex,
+    task::WaitKey,
 };
 use alloc::{
     boxed::Box,
@@ -97,6 +98,7 @@ pub struct FileDescriptor {
     backing: FileBacking,
     offset: usize,
     pipe_end: Option<PipeEnd>,
+    nonblock: bool,
     fs_content_cache: Option<Vec<u8>>,
 }
 
@@ -226,6 +228,16 @@ fn resolve_mount(mount_id: VfsFileId, fs: &dyn FileSystem, rel_path: Path) -> Op
         rel_path,
         metadata,
     })
+}
+
+pub enum Readiness {
+    Ready,
+    Wait(WaitKey),
+}
+
+enum ReadinessOutcome {
+    Known(Readiness),
+    Device(&'static dyn CharDevice),
 }
 
 #[derive(Debug)]
@@ -546,6 +558,7 @@ impl VirtualFileSystem {
         path: &Path,
         create: bool,
         pipe_end: Option<PipeEnd>,
+        nonblock: bool,
     ) -> Result<(FileDescriptorNumber, Option<&'static dyn CharDevice>)> {
         let mut dev_open = None;
         let mut opened_pipe_end = None;
@@ -614,6 +627,7 @@ impl VirtualFileSystem {
             backing,
             offset: 0,
             pipe_end: opened_pipe_end,
+            nonblock,
             fs_content_cache: None,
         });
 
@@ -680,6 +694,7 @@ impl VirtualFileSystem {
             if let Ok(pipe) = self.pipe_mut(file_id) {
                 pipe.close_write();
             }
+            scheduler::wake(WaitKey::Pipe(file_id));
         }
     }
 
@@ -812,6 +827,7 @@ impl VirtualFileSystem {
                     VfsFileType::DeviceFile(dev) => Ok(WriteOutcome::Device(dev)),
                     VfsFileType::Pipe => {
                         self.pipe_mut(file_id)?.write(data);
+                        scheduler::wake(WaitKey::Pipe(file_id));
                         Ok(WriteOutcome::Done)
                     }
                     VfsFileType::Directory => {
@@ -880,6 +896,7 @@ impl VirtualFileSystem {
             offset: 0,
             pipe_end: Some(PipeEnd::Read),
             fs_content_cache: None,
+            nonblock: false,
         });
         self.fds.push(FileDescriptor {
             num: write_fd_num,
@@ -887,6 +904,7 @@ impl VirtualFileSystem {
             offset: 0,
             pipe_end: Some(PipeEnd::Write),
             fs_content_cache: None,
+            nonblock: false,
         });
 
         Ok((read_fd_num, write_fd_num))
@@ -933,6 +951,46 @@ impl VirtualFileSystem {
             .and_then(|f| self.find_file(f.parent))
             .is_some_and(|p| p.children.contains(&file_id))
     }
+
+    fn wait_key(&self, fd_num: FileDescriptorNumber) -> Result<WaitKey> {
+        let FileBacking::Vfs(file_id) = self.file_desc(fd_num)?.backing.clone() else {
+            return Err(VirtualFileSystemError::InvalidFileType(None).into());
+        };
+
+        match &self.file_ref(file_id)?.ty {
+            VfsFileType::Pipe => Ok(WaitKey::Pipe(file_id)),
+            VfsFileType::DeviceFile(dev) => Ok(WaitKey::Device(dev.info()?.name)),
+            _ => Err(VirtualFileSystemError::InvalidFileType(None).into()),
+        }
+    }
+
+    fn readiness(&self, fd_num: FileDescriptorNumber) -> Result<ReadinessOutcome> {
+        let FileBacking::Vfs(file_id) = self.file_desc(fd_num)?.backing.clone() else {
+            return Ok(ReadinessOutcome::Known(Readiness::Ready));
+        };
+
+        let outcome = match &self.file_ref(file_id)?.ty {
+            VfsFileType::Pipe => {
+                let readable = self
+                    .find_file(file_id)
+                    .and_then(|f| f.pipe_buf.as_ref())
+                    .is_some_and(|p| p.readable());
+
+                if readable {
+                    ReadinessOutcome::Known(Readiness::Ready)
+                } else {
+                    ReadinessOutcome::Known(Readiness::Wait(WaitKey::Pipe(file_id)))
+                }
+            }
+            VfsFileType::DeviceFile(dev) => ReadinessOutcome::Device(*dev),
+            VfsFileType::VirtualFile => ReadinessOutcome::Known(Readiness::Ready),
+            VfsFileType::Directory => {
+                return Err(VirtualFileSystemError::InvalidFileType(None).into())
+            }
+        };
+
+        Ok(outcome)
+    }
 }
 
 pub fn init() -> Result<()> {
@@ -964,10 +1022,11 @@ pub fn open_file(
     path: &Path,
     create: bool,
     pipe_end: Option<PipeEnd>,
+    nonblock: bool,
 ) -> Result<FileDescriptorNumber> {
     let (fd_num, dev_open) = {
         let mut vfs = VFS.spin_lock();
-        vfs.open_file(path, create, pipe_end)?
+        vfs.open_file(path, create, pipe_end, nonblock)?
     };
 
     if let Some(dev) = dev_open {
@@ -995,23 +1054,26 @@ pub fn close_file(fd_num: FileDescriptorNumber) -> Result<()> {
 }
 
 pub fn read_file(fd_num: FileDescriptorNumber, buf_len: usize) -> Result<Vec<u8>> {
-    let outcome = {
+    let (outcome, nonblock) = {
         let mut vfs = VFS.spin_lock();
-        vfs.read_file(fd_num, buf_len)?
+        let nonblock = vfs.file_desc(fd_num)?.nonblock;
+        (vfs.read_file(fd_num, buf_len)?, nonblock)
     };
 
-    match outcome {
+    let res = match outcome {
         ReadOutcome::Data(bytes) => Ok(bytes),
-        ReadOutcome::Device { dev, offset } => {
-            let bytes = dev.read(offset, buf_len)?;
-
+        ReadOutcome::Device { dev, offset } => dev.read(offset, buf_len).map(|bytes| {
             let mut vfs = VFS.spin_lock();
             if let Ok(desc) = vfs.file_desc_mut(fd_num) {
                 desc.offset = offset.saturating_add(bytes.len());
             }
+            bytes
+        }),
+    };
 
-            Ok(bytes)
-        }
+    match res {
+        Err(err) if nonblock && matches!(err.kind(), Error::BufferEmpty) => Ok(Vec::new()),
+        res => res,
     }
 }
 
@@ -1062,4 +1124,23 @@ pub fn create_named_pipe(path: &Path) -> Result<()> {
 pub fn unlink(path: &Path) -> Result<()> {
     let mut vfs = VFS.spin_lock();
     vfs.unlink(path)
+}
+
+pub fn wait_key(fd_num: FileDescriptorNumber) -> Result<WaitKey> {
+    VFS.spin_lock().wait_key(fd_num)
+}
+
+pub fn readiness(fd_num: FileDescriptorNumber) -> Result<Readiness> {
+    let outcome = VFS.spin_lock().readiness(fd_num)?;
+
+    match outcome {
+        ReadinessOutcome::Known(readiness) => Ok(readiness),
+        ReadinessOutcome::Device(dev) => {
+            if dev.readable()? {
+                Ok(Readiness::Ready)
+            } else {
+                Ok(Readiness::Wait(WaitKey::Device(dev.info()?.name)))
+            }
+        }
+    }
 }

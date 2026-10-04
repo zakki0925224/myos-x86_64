@@ -1,10 +1,11 @@
 use crate::{
     device::{DeviceInfo, Driver},
-    error::Result,
+    error::{Error, Result},
     fs::vfs,
     graphics::window_manager,
     kinfo,
     sync::mutex::Mutex,
+    task::{scheduler, WaitKey},
     util::{mouse::mouse_event::MouseEvent, slice::Sliceable},
 };
 use alloc::{collections::VecDeque, vec::Vec};
@@ -30,9 +31,9 @@ impl MouseDriver {
         }
     }
 
-    fn push(&mut self, event: mouse_event) {
+    fn push(&mut self, event: mouse_event) -> bool {
         if !self.is_opened {
-            return;
+            return false;
         }
 
         if self.queue.len() == QUEUE_CAPACITY {
@@ -40,6 +41,7 @@ impl MouseDriver {
         }
 
         self.queue.push_back(event);
+        true
     }
 }
 
@@ -65,6 +67,10 @@ impl Driver for MouseDriver {
     }
 
     fn read(&mut self, _offset: usize, max_len: usize) -> Result<Vec<u8>> {
+        if self.queue.is_empty() {
+            return Err(Error::BufferEmpty.into());
+        }
+
         let count = (max_len / size_of::<mouse_event>()).min(self.queue.len());
         let mut bytes = Vec::with_capacity(count * size_of::<mouse_event>());
 
@@ -73,6 +79,10 @@ impl Driver for MouseDriver {
         }
 
         Ok(bytes)
+    }
+
+    fn readable(&mut self) -> bool {
+        !self.queue.is_empty()
     }
 }
 
@@ -125,6 +135,10 @@ pub fn probe_and_attach() -> Result<()> {
 }
 
 pub fn push_event(event: MouseEvent) -> Result<()> {
-    MOUSE_DRIVER.try_lock()?.push(to_user_event(&event));
+    let pushed = MOUSE_DRIVER.try_lock()?.push(to_user_event(&event));
+    if pushed {
+        scheduler::wake(WaitKey::Device(NAME));
+    }
+
     window_manager::mouse_pointer_event(event)
 }

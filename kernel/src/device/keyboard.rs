@@ -1,9 +1,10 @@
 use crate::{
     device::{tty, DeviceInfo, Driver},
-    error::Result,
+    error::{Error, Result},
     fs::vfs,
     kinfo,
     sync::mutex::Mutex,
+    task::{scheduler, WaitKey},
     util::{
         keyboard::{key_event::*, scan_code::KeyCode},
         slice::Sliceable,
@@ -82,6 +83,10 @@ impl Driver for KeyboardDriver {
     }
 
     fn read(&mut self, _offset: usize, max_len: usize) -> Result<Vec<u8>> {
+        if self.read_queue.is_empty() {
+            return Err(Error::BufferEmpty.into());
+        }
+
         let count = (max_len / size_of::<key_event>()).min(self.read_queue.len());
         let mut bytes = Vec::with_capacity(count * size_of::<key_event>());
 
@@ -90,6 +95,10 @@ impl Driver for KeyboardDriver {
         }
 
         Ok(bytes)
+    }
+
+    fn readable(&mut self) -> bool {
+        !self.read_queue.is_empty()
     }
 }
 
@@ -102,22 +111,30 @@ pub fn probe_and_attach() -> Result<()> {
 }
 
 pub fn push_key_event(event: KeyEvent) -> Result<()> {
-    let mut driver = KEYBOARD_DRIVER.try_lock()?;
+    let pushed = {
+        let mut driver = KEYBOARD_DRIVER.try_lock()?;
+        let opened = driver.is_opened;
 
-    if driver.is_opened {
-        if driver.read_queue.len() == QUEUE_CAPACITY {
-            driver.read_queue.pop_front();
+        if opened {
+            if driver.read_queue.len() == QUEUE_CAPACITY {
+                driver.read_queue.pop_front();
+            }
+
+            driver.read_queue.push_back(key_event {
+                code: event.code as u16,
+                pressed: (event.state == KeyState::Pressed) as u8,
+                _reserved: 0,
+                c: event.c.map_or(0, |c| c as u32),
+            });
         }
 
-        driver.read_queue.push_back(key_event {
-            code: event.code as u16,
-            pressed: (event.state == KeyState::Pressed) as u8,
-            _reserved: 0,
-            c: event.c.map_or(0, |c| c as u32),
-        });
-    }
+        driver.queue.push_back(event);
+        opened
+    };
 
-    driver.queue.push_back(event);
+    if pushed {
+        scheduler::wake(WaitKey::Device(NAME));
+    }
 
     Ok(())
 }

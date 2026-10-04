@@ -51,6 +51,10 @@ pub trait Driver {
     fn write(&mut self, _data: &[u8]) -> Result<()> {
         Err(Error::NotSupported.into())
     }
+
+    fn readable(&mut self) -> bool {
+        true
+    }
 }
 
 pub trait CharDevice: Sync {
@@ -59,6 +63,7 @@ pub trait CharDevice: Sync {
     fn close(&self) -> Result<()>;
     fn read(&self, offset: usize, max_len: usize) -> Result<Vec<u8>>;
     fn write(&self, data: &[u8]) -> Result<()>;
+    fn readable(&self) -> Result<bool>;
 }
 
 impl<T: Driver> CharDevice for Mutex<T> {
@@ -80,5 +85,9 @@ impl<T: Driver> CharDevice for Mutex<T> {
 
     fn write(&self, data: &[u8]) -> Result<()> {
         self.try_lock()?.write(data)
+    }
+
+    fn readable(&self) -> Result<bool> {
+        Ok(self.try_lock()?.readable())
     }
 }

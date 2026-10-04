@@ -155,3 +155,7 @@ int sys_mkfifo(const char* path) {
 int sys_unlink(const char* path) {
     return (int)syscall(SN_UNLINK, (uint64_t)path, 0, 0, 0, 0, 0);
 }
+
+int sys_poll(pollfd* fds, size_t nfds, int64_t timeout_ms) {
+    return (int)syscall(SN_POLL, (uint64_t)fds, (uint64_t)nfds, (uint64_t)timeout_ms, 0, 0, 0);
+}

@@ -1,4 +1,5 @@
 #include <input.h>
+#include <poll.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -280,67 +281,6 @@ int test_sleep() {
     return 0;
 }
 
-int test_input() {
-    int mfd = sys_open("/dev/mouse", OPEN_FLAG_NONE);
-    int kfd = sys_open("/dev/keyboard", OPEN_FLAG_NONE);
-
-    if (mfd < 0 || kfd < 0) {
-        printf("failed to open input devices\n");
-        return 1;
-    }
-
-    int running = 1;
-    while (running) {
-        mouse_event me[16];
-        int mlen = sys_read(mfd, me, sizeof(me));
-        for (int i = 0; i < mlen / (int)sizeof(mouse_event); i++) {
-            printf("mouse: buttons=%d abs=%d x=%d y=%d\n",
-                   me[i].buttons, me[i].is_abs, me[i].x, me[i].y);
-        }
-
-        key_event ke[16];
-        int klen = sys_read(kfd, ke, sizeof(ke));
-        for (int i = 0; i < klen / (int)sizeof(key_event); i++) {
-            printf("key: code=%d pressed=%d c=%d\n",
-                   ke[i].code, ke[i].pressed, (int)ke[i].c);
-
-            if (ke[i].c == 'q' && ke[i].pressed) {
-                running = 0;
-            }
-        }
-
-        sys_sleep(10);
-    }
-
-    sys_close(mfd);
-    sys_close(kfd);
-    return 0;
-}
-
-int test_fifo_reader() {
-    sys_mkfifo(FIFO_PATH);
-
-    int fd = sys_open(FIFO_PATH, OPEN_FLAG_READ);
-    if (fd < 0) {
-        printf("reader: open failed\n");
-        return 1;
-    }
-
-    for (int i = 0; i < 1000; i++) {
-        char buf[64];
-        int len = sys_read(fd, buf, sizeof(buf) - 1);
-        if (len > 0) {
-            buf[len] = '\0';
-            printf("reader: %s\n", buf);
-        }
-        sys_sleep(10);
-    }
-
-    sys_close(fd);
-    sys_unlink(FIFO_PATH);
-    return 0;
-}
-
 int test_fifo_writer(const char* msg) {
     int fd = sys_open(FIFO_PATH, OPEN_FLAG_WRITE);
     if (fd < 0) {
@@ -353,21 +293,107 @@ int test_fifo_writer(const char* msg) {
     return 0;
 }
 
-int main(int argc, const char* argv[]) {
-    // return test_tcp_server();
-    // return test_tcp_client();
-    // return test_pipe();
-    // return test_crash();
-    // return test_fork();
-    // return test_sleep();
-    // return test_input();
+int test_poll() {
+    sys_mkfifo(FIFO_PATH);
 
+    int mfd = sys_open("/dev/mouse", OPEN_FLAG_NONE);
+    int kfd = sys_open("/dev/keyboard", OPEN_FLAG_NONE);
+    int pfd = sys_open(FIFO_PATH, OPEN_FLAG_READ);
+    int keep = sys_open(FIFO_PATH, OPEN_FLAG_WRITE);
+
+    if (mfd < 0 || kfd < 0 || pfd < 0 || keep < 0) {
+        printf("poll: open failed\n");
+        return 1;
+    }
+
+    pollfd fds[3] = {
+        {mfd, POLLIN, 0},
+        {kfd, POLLIN, 0},
+        {pfd, POLLIN, 0},
+    };
+
+    int running = 1;
+    while (running) {
+        int n = sys_poll(fds, 3, 1000);
+        if (n < 0) {
+            printf("poll: failed\n");
+            break;
+        }
+        if (n == 0) {
+            printf("poll: timeout\n");
+            continue;
+        }
+
+        if (fds[0].revents & POLLIN) {
+            mouse_event me[16];
+            int len = sys_read(mfd, me, sizeof(me));
+            for (int i = 0; i < len / (int)sizeof(mouse_event); i++) {
+                printf("mouse: buttons=%d abs=%d x=%d y=%d\n",
+                       me[i].buttons, me[i].is_abs, me[i].x, me[i].y);
+            }
+        }
+
+        if (fds[1].revents & POLLIN) {
+            key_event ke[16];
+            int len = sys_read(kfd, ke, sizeof(ke));
+            for (int i = 0; i < len / (int)sizeof(key_event); i++) {
+                printf("key: code=%d pressed=%d c=%d\n",
+                       ke[i].code, ke[i].pressed, (int)ke[i].c);
+                if (ke[i].c == 'q' && ke[i].pressed) {
+                    running = 0;
+                }
+            }
+        }
+
+        if (fds[2].revents & POLLIN) {
+            char buf[64];
+            int len = sys_read(pfd, buf, sizeof(buf) - 1);
+            buf[len] = '\0';
+            printf("pipe: %s\n", buf);
+        }
+    }
+
+    sys_close(keep);
+    sys_close(pfd);
+    sys_close(kfd);
+    sys_close(mfd);
+    sys_unlink(FIFO_PATH);
+    return 0;
+}
+
+typedef struct {
+    const char* name;
+    int (*func)(void);
+} test_case;
+
+static const test_case tests[] = {
+    {"udp", test_udp},
+    {"tcp-server", test_tcp_server},
+    {"tcp-client", test_tcp_client},
+    {"pipe", test_pipe},
+    {"crash", test_crash},
+    {"fork", test_fork},
+    {"sleep", test_sleep},
+    {"poll", test_poll},
+};
+
+int main(int argc, const char* argv[]) {
     if (argc > 2 && strcmp(argv[1], "fifo-write") == 0) {
         return test_fifo_writer(argv[2]);
     }
-    if (argc > 1 && strcmp(argv[1], "fifo-read") == 0) {
-        return test_fifo_reader();
+
+    if (argc > 1) {
+        for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
+            if (strcmp(argv[1], tests[i].name) == 0) {
+                return tests[i].func();
+            }
+        }
     }
 
-    return test_input();
+    printf("usage: test <name>\n");
+    printf("  fifo-write <message>\n");
+    for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
+        printf("  %s\n", tests[i].name);
+    }
+    return 1;
 }

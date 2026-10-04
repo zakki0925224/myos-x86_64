@@ -187,17 +187,16 @@ impl TaskScheduler {
         Some(self.sleep_current(WaitReason::Child(child_id)))
     }
 
-    fn wake_expired(&mut self, now: Duration) {
+    fn wake_where(&mut self, pred: impl Fn(&WaitReason) -> bool) {
         let mut i = 0;
         let mut woken = 0;
 
         while i < self.sleeping_tasks.len() {
-            let expired = matches!(
-                self.sleeping_tasks[i].waiting_for,
-                Some(WaitReason::Until(deadline)) if deadline <= now
-            );
-
-            if !expired {
+            if !self.sleeping_tasks[i]
+                .waiting_for
+                .as_ref()
+                .is_some_and(&pred)
+            {
                 i += 1;
                 continue;
             }
@@ -208,6 +207,17 @@ impl TaskScheduler {
             self.ready_queue.insert(woken, task);
             woken += 1;
         }
+    }
+
+    fn wake_expired(&mut self, now: Duration) {
+        self.wake_where(|r| match r {
+            WaitReason::Until(deadline) => *deadline <= now,
+            WaitReason::Poll {
+                deadline: Some(deadline),
+                ..
+            } => *deadline <= now,
+            _ => false,
+        });
     }
 }
 
@@ -287,6 +297,38 @@ pub fn sleep_until(deadline: Duration) {
         (*prev).switch_to(&*next);
     }
     saved.write();
+}
+
+pub fn sleep_on(key: WaitKey) {
+    let saved = Rflags::read_with_cli();
+    let (prev, next) = TASK_SCHED.spin_lock().sleep_current(WaitReason::Event(key));
+
+    unsafe {
+        set_kernel_stack(&*next);
+        (*prev).switch_to(&*next);
+    }
+    saved.write();
+}
+
+pub fn sleep_poll(keys: Vec<WaitKey>, deadline: Option<Duration>) {
+    let saved = Rflags::read_with_cli();
+    let (prev, next) = TASK_SCHED
+        .spin_lock()
+        .sleep_current(WaitReason::Poll { keys, deadline });
+
+    unsafe {
+        set_kernel_stack(&*next);
+        (*prev).switch_to(&*next);
+    }
+    saved.write();
+}
+
+pub fn wake(key: WaitKey) {
+    TASK_SCHED.spin_lock().wake_where(|r| match r {
+        WaitReason::Event(k) => *k == key,
+        WaitReason::Poll { keys, .. } => keys.contains(&key),
+        _ => false,
+    });
 }
 
 pub fn sched() {

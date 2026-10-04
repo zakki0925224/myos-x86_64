@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "iomsg.h"
+#include "poll.h"
 #include "sys/socket.h"
 #include "sys/stat.h"
 #include "sys/types.h"
@@ -46,6 +47,7 @@
 #define SN_YIELD 32
 #define SN_MKFIFO 33
 #define SN_UNLINK 34
+#define SN_POLL 35
 
 // defined file descriptor numbers
 #define FDN_STDIN 0
@@ -57,6 +59,7 @@
 #define OPEN_FLAG_CREATE 0x1
 #define OPEN_FLAG_READ 0x2
 #define OPEN_FLAG_WRITE 0x4
+#define OPEN_FLAG_NONBLOCK 0x8
 
 // sys_exec pipe
 #define EXEC_PIPE_NONE (int[]){-1, -1, -1}
@@ -102,5 +105,6 @@ void sys_sleep(uint64_t ms);
 void sys_yield(void);
 int sys_mkfifo(const char* path);
 int sys_unlink(const char* path);
+int sys_poll(pollfd* fds, size_t nfds, int64_t timeout_ms);
 
 #endif

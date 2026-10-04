@@ -4,14 +4,6 @@ Standard C Library for MyOS
 
 ## Syscalls
 
-`whence` (sys_lseek) is one of `SEEK_SET` (0), `SEEK_CUR` (1), or `SEEK_END` (2).
-
-`sys_sleep` wakes on the 10ms timer tick: the actual sleep is `ms` rounded up to a tick, plus up to one more tick. `ms` of 0 behaves like `sys_yield`.
-
-`flags` (sys_open) is a bitwise OR of `OPEN_FLAG_CREATE` (0x1), `OPEN_FLAG_READ` (0x2), and `OPEN_FLAG_WRITE` (0x4). Opening a named pipe requires exactly one of `OPEN_FLAG_READ` or `OPEN_FLAG_WRITE`; regular files ignore them.
-
-A named pipe stays in the file system until `sys_unlink` removes it. Its buffered data is discarded when the last descriptor is closed. Named pipes can only be created in the in-memory tree, not under a mounted file system such as `/mnt/initramfs`.
-
 | number | name          | description                                               | syscall num(%rax) | arg1(%rdi)            | arg2(%rsi)                   | arg3(%rdx)             | arg4(%r10) | arg5(%r8)                         | arg6(%r9)      | ret(%rax)                                  |
 | ------ | ------------- | --------------------------------------------------------- | ----------------- | --------------------- | ---------------------------- | ---------------------- | ---------- | --------------------------------- | -------------- | ------------------------------------------ |
 | 0      | sys_read      | Reads from a file.                                        | 0x00              | int fd                | void \*buf                   | size_t buf_len         | -          | -                                 | -              | int (read bytes, -1 on error)              |
@@ -49,3 +41,4 @@ A named pipe stays in the file system until `sys_unlink` removes it. Its buffere
 | 32     | sys_yield     | Yields the CPU to another ready process.                  | 0x20              | -                     | -                            | -                      | -          | -                                 | -              | void                                       |
 | 33     | sys_mkfifo    | Creates a named pipe.                                     | 0x21              | const char \*path     | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)            |
 | 34     | sys_unlink    | Removes a named pipe from the file system.                | 0x22              | const char \*path     | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)            |
+| 35     | sys_poll      | Waits until any of the descriptors becomes readable.      | 0x23              | pollfd \*fds          | size_t nfds                  | int64_t timeout_ms     | -          | -                                 | -              | int (ready fds, 0 on timeout, -1 on error) |

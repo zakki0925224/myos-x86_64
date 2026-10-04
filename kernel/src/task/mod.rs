@@ -207,9 +207,20 @@ pub struct TaskSnapshot {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaitKey {
+    Pipe(VfsFileId),
+    Device(&'static str),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaitReason {
     Child(TaskId),
     Until(Duration),
+    Event(WaitKey),
+    Poll {
+        keys: Vec<WaitKey>,
+        deadline: Option<Duration>,
+    },
 }
 
 #[derive(Debug)]

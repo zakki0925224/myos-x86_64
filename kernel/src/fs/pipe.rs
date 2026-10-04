@@ -37,6 +37,10 @@ impl PipeBuffer {
     pub fn clear(&mut self) {
         *self = Self::default();
     }
+
+    pub fn readable(&self) -> bool {
+        !self.buf.is_empty() || self.write_closed
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
