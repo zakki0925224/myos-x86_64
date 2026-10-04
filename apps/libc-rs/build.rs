@@ -27,10 +27,7 @@ fn main() {
 
     let libc_path = PathBuf::from("../libc");
 
-    println!(
-        "cargo:rerun-if-changed={}",
-        libc_path.join("Makefile").display()
-    );
+    println!("cargo:rerun-if-changed={}", libc_path.display());
 
     let headers = find_headers_recursively(libc_path.clone());
     if headers.is_empty() {

@@ -2,6 +2,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <syscalls.h>
+#include <input.h>
 
 int test_udp() {
     int sockfd = sys_socket(SOCKET_DOMAIN_AF_INET, SOCKET_TYPE_SOCK_DGRAM, SOCKET_PROTO_UDP);
@@ -277,12 +278,49 @@ int test_sleep() {
     return 0;
 }
 
+int test_input() {
+    int mfd = sys_open("/dev/mouse", OPEN_FLAG_NONE);
+    int kfd = sys_open("/dev/keyboard", OPEN_FLAG_NONE);
+
+    if (mfd < 0 || kfd < 0) {
+        printf("failed to open input devices\n");
+        return 1;
+    }
+
+    int running = 1;
+    while (running) {
+        mouse_event me[16];
+        int mlen = sys_read(mfd, me, sizeof(me));
+        for (int i = 0; i < mlen / (int)sizeof(mouse_event); i++) {
+            printf("mouse: buttons=%d abs=%d x=%d y=%d\n",
+                    me[i].buttons, me[i].is_abs, me[i].x, me[i].y);
+        }
+
+        key_event ke[16];
+        int klen = sys_read(kfd, ke, sizeof(ke));
+        for (int i = 0; i < klen / (int)sizeof(key_event); i++) {
+            printf("key: code=%d pressed=%d c=%d\n",
+                    ke[i].code, ke[i].pressed, (int)ke[i].c);
+
+            if (ke[i].c == 'q' && ke[i].pressed) {
+                running = 0;
+            }
+        }
+
+        sys_sleep(10);
+    }
+
+    sys_close(mfd);
+    sys_close(kfd);
+    return 0;
+}
 
 int main(int argc, const char* argv[]) {
-    // return test_tcp_server();
-    // return test_tcp_client();
-    // return test_pipe();
-    // return test_crash();
-    // return test_fork();
-    return test_sleep();
+  // return test_tcp_server();
+  // return test_tcp_client();
+  // return test_pipe();
+  // return test_crash();
+  // return test_fork();
+  // return test_sleep();
+  return test_input();
 }

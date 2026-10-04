@@ -3,11 +3,10 @@ use super::{
     multi_layer::{LayerId, LayerInfo},
 };
 use crate::{
-    device::{ps2_mouse::Ps2MouseEvent, usb::hid_tablet::UsbHidMouseEvent},
     error::{Error, Result},
     fs::{file::bitmap::BitmapImage, vfs},
     sync::mutex::Mutex,
-    util,
+    util::{self, mouse::mouse_event::MouseEvent},
 };
 use alloc::{
     boxed::Box,
@@ -20,11 +19,6 @@ use components::*;
 pub mod components;
 
 static WINDOW_MAN: Mutex<WindowManager> = Mutex::new(WindowManager::new());
-
-pub enum MouseEvent {
-    Ps2MouseDevice(Ps2MouseEvent),
-    UsbHidMouse(UsbHidMouseEvent),
-}
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug)]

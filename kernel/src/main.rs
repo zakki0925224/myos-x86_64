@@ -110,6 +110,9 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     // initialize keyboard
     device::keyboard::probe_and_attach().unwrap();
 
+    // initialize mouse
+    device::mouse::probe_and_attach().unwrap();
+
     // initialize PS/2 keyboard and mouse
     device::ps2_keyboard::probe_and_attach().unwrap();
     device::ps2_mouse::probe_and_attach().unwrap();

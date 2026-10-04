@@ -3,13 +3,12 @@ use crate::{
         x86_64::idt::{self, GateType, InterruptHandler, InterruptStackFrame},
         IoPortAddress,
     },
-    device::{Driver, DeviceInfo},
+    device::{mouse, DeviceInfo, Driver},
     error::Result,
     fs::vfs,
-    graphics::window_manager::{self, MouseEvent},
     kinfo,
     sync::mutex::Mutex,
-    util::fifo::Fifo,
+    util::{fifo::Fifo, mouse::mouse_event::*},
 };
 
 const PS2_DATA_REG_ADDR: IoPortAddress = IoPortAddress::new(0x60);
@@ -17,15 +16,6 @@ const PS2_CMD_AND_STATE_REG_ADDR: IoPortAddress = IoPortAddress::new(0x64);
 
 const VEC_PS2_MOUSE: u8 = 0x2c;
 const NAME: &str = "ps2-mouse";
-
-#[derive(Default, Debug)]
-pub struct Ps2MouseEvent {
-    pub middle: bool,
-    pub right: bool,
-    pub left: bool,
-    pub rel_x: i16,
-    pub rel_y: i16,
-}
 
 enum MousePhase {
     WaitingAck,
@@ -180,7 +170,7 @@ impl Driver for Ps2MouseDriver {
         loop {
             match self.event() {
                 Ok(Some(e)) => {
-                    let _ = window_manager::mouse_pointer_event(MouseEvent::Ps2MouseDevice(e));
+                    let _ = mouse::push_event(MouseEvent::Ps2MouseDevice(e));
                 }
                 Ok(None) => continue,
                 Err(_) => return Ok(()),

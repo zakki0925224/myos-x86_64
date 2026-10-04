@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 
 pub mod keyboard;
 pub mod local_apic_timer;
+pub mod mouse;
 pub mod panic_screen;
 pub mod pci_bus;
 pub mod power;

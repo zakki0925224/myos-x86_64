@@ -1,20 +1,18 @@
 use crate::{
-    device::usb::{usb_bus::*, xhc, xhc::desc::*, UsbDriver},
+    device::{
+        mouse,
+        usb::{
+            usb_bus::*,
+            xhc::{self, desc::*},
+            UsbDriver,
+        },
+    },
     error::{Error, Result},
-    graphics::{frame_buf, window_manager},
-    util,
+    graphics::frame_buf,
+    util::{self, mouse::mouse_event::*},
 };
 use alloc::{boxed::Box, collections::vec_deque::VecDeque, vec::Vec};
 use common::geometry::Size;
-
-#[derive(Default, Debug)]
-pub struct UsbHidMouseEvent {
-    pub middle: bool,
-    pub right: bool,
-    pub left: bool,
-    pub abs_x: usize,
-    pub abs_y: usize,
-}
 
 const NAME: &str = "usb-hid-tablet";
 const INTERFACE_TRIPLE: (u8, u8, u8) = (3, 0, 0);
@@ -55,7 +53,8 @@ impl UsbDriver for UsbHidTabletDriver {
         self.interface_num = target_interface_desc.interface_num;
 
         // request HID report
-        let report = xhc::hid_report_desc(slot, xhci_info.ctrl_ep_ring_mut(), self.interface_num, 4096)?;
+        let report =
+            xhc::hid_report_desc(slot, xhci_info.ctrl_ep_ring_mut(), self.interface_num, 4096)?;
 
         self.input_report_items = self.parse_hid_report_desc(&report)?;
         self.report_size_in_byte = if let Some(last_item) = self.input_report_items.last() {
@@ -125,9 +124,7 @@ impl UsbDriver for UsbHidTabletDriver {
         };
 
         self.prev_report = report;
-        let _ = window_manager::mouse_pointer_event(window_manager::MouseEvent::UsbHidMouse(
-            mouse_event,
-        ));
+        let _ = mouse::push_event(MouseEvent::UsbHidMouse(mouse_event));
 
         Ok(())
     }

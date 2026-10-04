@@ -30,10 +30,6 @@ pub fn key_event_from_ps2(
         mod_keys_state.alt = key_state == KeyState::Pressed;
     }
 
-    if key_state == KeyState::Released {
-        return None;
-    }
-
     let mut c = if mod_keys_state.shift {
         scan_code.on_shift_c
     } else {
@@ -70,10 +66,6 @@ pub fn key_event_from_usb_hid(
 
     let key_code = scan_code.key_code;
     assert!(usage_id == scan_code.usb_hid_usage_id);
-
-    if key_state == KeyState::Released {
-        return None;
-    }
 
     let mut c = if mod_keys_state.shift {
         scan_code.on_shift_c

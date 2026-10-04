@@ -4,6 +4,7 @@ pub mod cstring;
 pub mod fifo;
 pub mod keyboard;
 pub mod mmio;
+pub mod mouse;
 pub mod random;
 pub mod range;
 pub mod slice;

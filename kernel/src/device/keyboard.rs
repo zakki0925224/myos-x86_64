@@ -1,25 +1,36 @@
 use crate::{
-    device::{tty, Driver, DeviceInfo},
+    device::{tty, DeviceInfo, Driver},
     error::Result,
     fs::vfs,
     kinfo,
     sync::mutex::Mutex,
-    util::keyboard::{key_event::*, scan_code::KeyCode},
+    util::{
+        keyboard::{key_event::*, scan_code::KeyCode},
+        slice::Sliceable,
+    },
 };
-use alloc::collections::vec_deque::VecDeque;
+use alloc::{collections::vec_deque::VecDeque, vec::Vec};
+use libc_rs::key_event;
 
 const NAME: &str = "keyboard";
+const QUEUE_CAPACITY: usize = 256;
 
 static KEYBOARD_DRIVER: Mutex<KeyboardDriver> = Mutex::new(KeyboardDriver::new());
 
+unsafe impl Sliceable for key_event {}
+
 struct KeyboardDriver {
     queue: VecDeque<KeyEvent>,
+    read_queue: VecDeque<key_event>,
+    is_opened: bool,
 }
 
 impl KeyboardDriver {
     const fn new() -> Self {
         Self {
             queue: VecDeque::new(),
+            read_queue: VecDeque::new(),
+            is_opened: false,
         }
     }
 }
@@ -57,6 +68,29 @@ impl Driver for KeyboardDriver {
             }
         }
     }
+
+    fn open(&mut self) -> Result<()> {
+        self.read_queue.clear();
+        self.is_opened = true;
+        Ok(())
+    }
+
+    fn close(&mut self) -> Result<()> {
+        self.is_opened = false;
+        self.read_queue.clear();
+        Ok(())
+    }
+
+    fn read(&mut self, _offset: usize, max_len: usize) -> Result<Vec<u8>> {
+        let count = (max_len / size_of::<key_event>()).min(self.read_queue.len());
+        let mut bytes = Vec::with_capacity(count * size_of::<key_event>());
+
+        for event in self.read_queue.drain(..count) {
+            bytes.extend_from_slice(event.as_slice());
+        }
+
+        Ok(bytes)
+    }
 }
 
 pub fn probe_and_attach() -> Result<()> {
@@ -68,7 +102,22 @@ pub fn probe_and_attach() -> Result<()> {
 }
 
 pub fn push_key_event(event: KeyEvent) -> Result<()> {
-    KEYBOARD_DRIVER.try_lock()?.queue.push_back(event);
+    let mut driver = KEYBOARD_DRIVER.try_lock()?;
+
+    if driver.is_opened {
+        if driver.read_queue.len() == QUEUE_CAPACITY {
+            driver.read_queue.pop_front();
+        }
+
+        driver.read_queue.push_back(key_event {
+            code: event.code as u16,
+            pressed: (event.state == KeyState::Pressed) as u8,
+            _reserved: 0,
+            c: event.c.map_or(0, |c| c as u32),
+        });
+    }
+
+    driver.queue.push_back(event);
 
     Ok(())
 }
