@@ -17,8 +17,13 @@ use crate::{
         pipe::PipeEnd,
         vfs::{self, FileDescriptorNumber, SeekFrom},
     },
-    graphics::{multi_layer::LayerId, window_manager},
-    kdebug, kerror, kinfo,
+    graphics::{
+        draw::Draw,
+        frame_buf,
+        multi_layer::{self, LayerId},
+        window_manager,
+    },
+    kerror, kinfo,
     mem::bitmap,
     net::{self, socket::*},
     print,
@@ -40,6 +45,9 @@ enum IomsgCommand {
     RemoveComponent = IOMSG_CMD_REMOVE_COMPONENT,
     CreateComponentWindow = IOMSG_CMD_CREATE_COMPONENT_WINDOW,
     CreateComponentImage = IOMSG_CMD_CREATE_COMPONENT_IMAGE,
+    CreateLayer = IOMSG_CMD_CREATE_LAYER,
+    MoveLayer = IOMSG_CMD_MOVE_LAYER,
+    GetScreenSize = IOMSG_CMD_GET_SCREEN_SIZE,
 }
 
 trait IomsgHeaderExt {
@@ -65,6 +73,9 @@ impl IomsgHeaderExt for iomsg_header {
             IOMSG_CMD_REMOVE_COMPONENT => Ok(IomsgCommand::RemoveComponent),
             IOMSG_CMD_CREATE_COMPONENT_WINDOW => Ok(IomsgCommand::CreateComponentWindow),
             IOMSG_CMD_CREATE_COMPONENT_IMAGE => Ok(IomsgCommand::CreateComponentImage),
+            IOMSG_CMD_CREATE_LAYER => Ok(IomsgCommand::CreateLayer),
+            IOMSG_CMD_MOVE_LAYER => Ok(IomsgCommand::MoveLayer),
+            IOMSG_CMD_GET_SCREEN_SIZE => Ok(IomsgCommand::GetScreenSize),
             _ => Err(Error::InvalidData.with_context("syscall command ID")),
         }
     }
@@ -868,9 +879,66 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
     let mut offset = 0;
     let header: &iomsg_header = unsafe { &*(msgbuf as *const iomsg_header) };
     offset += size_of::<iomsg_header>();
-    kdebug!("{:?}", header);
 
     match header.cmd()? {
+        IomsgCommand::CreateLayer => {
+            check_iomsg_payload::<iomsg_create_layer>(header)?;
+            let msg = unsafe { &*(msgbuf as *const iomsg_create_layer) };
+
+            let size = Size::new(msg.width as usize, msg.height as usize);
+            let pixels = unsafe {
+                slice::from_raw_parts(msg.framebuf as *const u32, size.width * size.height)
+            };
+
+            let mut layer =
+                multi_layer::create_layer(Point::new(msg.x as usize, msg.y as usize), size)?;
+            layer.always_on_top = msg.flags & LAYER_FLAG_ALWAYS_ON_TOP != 0;
+            unsafe { layer.copy_from_slice_u32(pixels)? };
+
+            let layer_id = layer.id;
+            multi_layer::push_layer(layer)?;
+            task::scheduler::with_current_resource(|r| r.layer_ids.push(layer_id))?;
+
+            let reply_header =
+                iomsg_header::new(IomsgCommand::CreateLayer, size_of::<i32>() as u32);
+            write_iomsg_reply(
+                replymsgbuf,
+                replymsgbuf_len,
+                iomsg_reply_create_component {
+                    header: reply_header,
+                    layer_id: layer_id.get() as i32,
+                },
+            )?;
+        }
+        IomsgCommand::MoveLayer => {
+            check_iomsg_payload::<iomsg_move_layer>(header)?;
+            let msg = unsafe { &*(msgbuf as *const iomsg_move_layer) };
+
+            let layer_id = resolve_owned_layer_id(msg.layer_id)?;
+            multi_layer::move_layer(layer_id, Point::new(msg.x as usize, msg.y as usize))?;
+
+            write_iomsg_reply(
+                replymsgbuf,
+                replymsgbuf_len,
+                iomsg_header::new(IomsgCommand::MoveLayer, 0),
+            )?;
+        }
+        IomsgCommand::GetScreenSize => {
+            let res = frame_buf::resolution()?;
+            let reply_header = iomsg_header::new(
+                IomsgCommand::GetScreenSize,
+                (size_of::<iomsg_reply_get_screen_size>() - size_of::<iomsg_header>()) as u32,
+            );
+            write_iomsg_reply(
+                replymsgbuf,
+                replymsgbuf_len,
+                iomsg_reply_get_screen_size {
+                    header: reply_header,
+                    width: res.width as _,
+                    height: res.height as _,
+                },
+            )?;
+        }
         IomsgCommand::RemoveComponent => {
             let layer_id: i32 = unsafe { *(msgbuf.add(offset) as *const i32) };
             offset += size_of::<i32>();
@@ -882,7 +950,9 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             }
 
             let layer_id = resolve_owned_layer_id(layer_id)?;
-            window_manager::remove_component(layer_id)?;
+            if window_manager::remove_component(layer_id).is_err() {
+                multi_layer::remove_layer(layer_id)?;
+            }
             task::scheduler::with_current_resource(|r| r.layer_ids.retain(|id| *id != layer_id))?;
 
             // reply
@@ -997,6 +1067,29 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
         }
     }
 
+    Ok(())
+}
+
+fn check_iomsg_payload<T>(header: &iomsg_header) -> Result<()> {
+    let required = size_of::<T>() - size_of::<iomsg_header>();
+    let actual = header.payload_size as usize;
+    if required != actual {
+        return Err(Error::InvalidBufferSize { required, actual }.into());
+    }
+
+    Ok(())
+}
+
+fn write_iomsg_reply<T>(replymsgbuf: *mut u8, replymsgbuf_len: usize, reply: T) -> Result<()> {
+    if replymsgbuf_len < size_of::<T>() {
+        return Err(Error::InvalidBufferSize {
+            required: size_of::<T>(),
+            actual: replymsgbuf_len,
+        }
+        .into());
+    }
+
+    unsafe { (replymsgbuf as *mut T).write_unaligned(reply) };
     Ok(())
 }
 

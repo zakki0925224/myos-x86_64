@@ -13,7 +13,10 @@ use crate::{
         path::Path,
         vfs::{self, *},
     },
-    graphics::{multi_layer::LayerId, window_manager},
+    graphics::{
+        multi_layer::{self, LayerId},
+        window_manager,
+    },
     kdebug,
     mem::bitmap::{self, MemoryFrame},
     util,
@@ -99,7 +102,9 @@ impl Drop for TaskResource {
 
         // destroy all created windows
         for layer_id in self.layer_ids.iter() {
-            let _ = window_manager::remove_component(*layer_id);
+            if window_manager::remove_component(*layer_id).is_err() {
+                let _ = multi_layer::remove_layer(*layer_id);
+            }
         }
 
         // close all opened files

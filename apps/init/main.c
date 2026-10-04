@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syscalls.h>
 #include <unistd.h>
 
 #define RC_LUA_PATH "/mnt/initramfs/rc.lua"
@@ -15,6 +16,7 @@ typedef struct {
     char name[NAME_MAX_LEN];
     char cmd[CMD_MAX_LEN];
     int required;
+    int background;
 } service_t;
 
 static service_t services[MAX_SERVICES];
@@ -84,6 +86,10 @@ static int load_services_from_lua(const char* path) {
         svc->required = lua_toboolean(L, -1);
         lua_pop(L, 1);
 
+        lua_getfield(L, -1, "background");
+        svc->background = lua_toboolean(L, -1);
+        lua_pop(L, 1);
+
         lua_pop(L, 1);  // services[i]
 
         if (svc->cmd[0] != '\0') {
@@ -105,19 +111,30 @@ int main(int argc, char* argv[]) {
 
     for (int i = 0; i < service_count; i++) {
         printf("init: starting %s\n", services[i].name);
-        int exit_code = system(services[i].cmd);
-        if (exit_code == -1) {
-            printf("init: failed to start %s\n", services[i].name);
-            if (services[i].required) {
+
+        // background service
+        if (services[i].background) {
+            pid_t pid = sys_exec(services[i].cmd, EXEC_PIPE_NONE);
+            if (pid == -1) {
+                printf("init: failed to start %s\n", services[i].name);
+            } else {
+                printf("init: started %s in background (pid %d)\n", services[i].name, (int)pid);
+            }
+        } else {
+            int exit_code = system(services[i].cmd);
+            if (exit_code == -1) {
+                printf("init: failed to start %s\n", services[i].name);
+                if (services[i].required) {
+                    break;
+                }
+                continue;
+            }
+            printf("init: %s exited with %d\n", services[i].name, exit_code);
+
+            if (services[i].required && exit_code != 0) {
+                printf("init: required service '%s' failed, halting\n", services[i].name);
                 break;
             }
-            continue;
-        }
-        printf("init: %s exited with %d\n", services[i].name, exit_code);
-
-        if (services[i].required && exit_code != 0) {
-            printf("init: required service '%s' failed, halting\n", services[i].name);
-            break;
         }
     }
 

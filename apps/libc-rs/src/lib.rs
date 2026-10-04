@@ -27,6 +27,9 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 pub enum LibcError {
     FopenFailed,
     FreadFailed,
+    OpenFailed,
+    ReadFailed,
+    Failed,
 }
 
 #[cfg(not(feature = "kernel"))]
@@ -194,5 +197,135 @@ impl File {
 
     pub fn read(&self, buf: &mut [u8]) -> Result<()> {
         self.call_fread(buf)
+    }
+}
+
+// fd
+#[cfg(not(feature = "kernel"))]
+pub struct Fd(i32);
+
+#[cfg(not(feature = "kernel"))]
+impl Drop for Fd {
+    fn drop(&mut self) {
+        unsafe {
+            sys_close(self.0);
+        }
+    }
+}
+
+#[cfg(not(feature = "kernel"))]
+impl Fd {
+    pub fn open(path: &str, flags: u32) -> Result<Self> {
+        let path = CString::from_str(path).unwrap();
+        let fd = unsafe { sys_open(path.as_ptr(), flags as i32) };
+        if fd < 0 {
+            return Err(LibcError::OpenFailed);
+        }
+        Ok(Self(fd))
+    }
+
+    pub fn raw(&self) -> i32 {
+        self.0
+    }
+
+    pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
+        let len = unsafe { sys_read(self.0, buf.as_mut_ptr() as *mut _, buf.len() as _) };
+        if len < 0 {
+            return Err(LibcError::ReadFailed);
+        }
+        Ok(len as usize)
+    }
+
+    pub fn read_events<T: Copy>(&self, buf: &mut [T]) -> Result<usize> {
+        let bytes = unsafe {
+            core::slice::from_raw_parts_mut(
+                buf.as_mut_ptr() as *mut u8,
+                buf.len() * core::mem::size_of::<T>(),
+            )
+        };
+        Ok(self.read(bytes)? / core::mem::size_of::<T>())
+    }
+
+    pub fn poll_in(&self) -> pollfd {
+        pollfd {
+            fd: self.0,
+            events: POLLIN as i16,
+            revents: 0,
+        }
+    }
+}
+
+// poll
+#[cfg(not(feature = "kernel"))]
+pub fn poll(fds: &mut [pollfd], timeout_ms: i64) -> Result<usize> {
+    let n = unsafe { sys_poll(fds.as_mut_ptr(), fds.len() as _, timeout_ms) };
+    if n < 0 {
+        return Err(LibcError::Failed);
+    }
+    Ok(n as usize)
+}
+
+// screen
+#[cfg(not(feature = "kernel"))]
+pub fn screen_size() -> Result<(usize, usize)> {
+    let mut width = 0;
+    let mut height = 0;
+    if unsafe { get_screen_size(&mut width, &mut height) } < 0 {
+        return Err(LibcError::Failed);
+    }
+    Ok((width as usize, height as usize))
+}
+
+// layer
+#[cfg(not(feature = "kernel"))]
+pub struct Layer(i32);
+
+#[cfg(not(feature = "kernel"))]
+impl Drop for Layer {
+    fn drop(&mut self) {
+        unsafe {
+            remove_layer(self.0);
+        }
+    }
+}
+
+#[cfg(not(feature = "kernel"))]
+impl Layer {
+    pub fn create(
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+        pixels: &[u32],
+        always_on_top: bool,
+    ) -> Result<Self> {
+        assert_eq!(pixels.len(), width * height);
+
+        let flags = if always_on_top {
+            LAYER_FLAG_ALWAYS_ON_TOP
+        } else {
+            0
+        };
+        let id = unsafe {
+            create_layer(
+                x as _,
+                y as _,
+                width as _,
+                height as _,
+                pixels.as_ptr() as *const _,
+                flags,
+            )
+        };
+        if id < 0 {
+            return Err(LibcError::Failed);
+        }
+        Ok(Self(id))
+    }
+
+    pub fn move_to(&self, x: usize, y: usize) -> Result<()> {
+        if unsafe { move_layer(self.0, x as _, y as _) } < 0 {
+            return Err(LibcError::Failed);
+        }
+        Ok(())
     }
 }

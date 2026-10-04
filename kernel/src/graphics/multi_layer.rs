@@ -1,5 +1,5 @@
 use super::{draw::Draw, frame_buf};
-use crate::{error::Result, fs::file::bitmap::BitmapImage, sync::mutex::Mutex};
+use crate::{error::Result, sync::mutex::Mutex};
 use alloc::vec::Vec;
 use common::geometry::{Point, Rect, Size};
 use common::graphic_info::PixelFormat;
@@ -325,23 +325,6 @@ fn merge_rect(r1: Option<Rect>, r2: Rect) -> Option<Rect> {
 pub fn create_layer(pos: Point, size: Size) -> Result<Layer> {
     let format = frame_buf::format()?;
     let layer = Layer::new(pos, size, format);
-    Ok(layer)
-}
-
-pub fn create_layer_from_bitmap_image(pos: Point, bitmap_image: &BitmapImage) -> Result<Layer> {
-    let bitmap_image_info_header = bitmap_image.info_header();
-    let bitmap_image_data = bitmap_image.bitmap_to_color_code();
-    let b_w = bitmap_image_info_header.width as usize;
-    let b_h = bitmap_image_info_header.height as usize;
-    let mut layer = Layer::new(pos, Size::new(b_w, b_h), PixelFormat::Bgr);
-
-    for h in 0..b_h {
-        for w in 0..b_w {
-            let pixel_data = bitmap_image_data[h * b_w + w];
-            layer.draw_pixel(Point::new(w, h), pixel_data)?;
-        }
-    }
-
     Ok(layer)
 }
 

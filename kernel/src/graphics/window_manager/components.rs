@@ -1,7 +1,6 @@
 use crate::{
     arch::VirtualAddress,
     error::{Error, Result},
-    fs::file::bitmap::BitmapImage,
     graphics::{
         color::ColorCode,
         draw::Draw,
@@ -155,27 +154,6 @@ impl Component for Image {
 }
 
 impl Image {
-    pub fn create_and_push_from_bitmap_image(
-        bitmap_image: &BitmapImage,
-        pos: Point,
-        always_on_top: bool,
-    ) -> Result<Self> {
-        if !bitmap_image.is_valid() {
-            return Err(Error::InvalidData.with_context("bitmap_image"));
-        }
-
-        let mut layer = multi_layer::create_layer_from_bitmap_image(pos, bitmap_image)?;
-        layer.always_on_top = always_on_top;
-        let layer_id = layer.id;
-        multi_layer::push_layer(layer)?;
-        Ok(Self {
-            layer_id,
-            framebuf_virt_addr: None,
-            pixel_format: None,
-            buf: None,
-        })
-    }
-
     pub fn create_and_push_from_framebuf(
         pos: Point,
         size: Size,
@@ -204,7 +182,6 @@ pub struct Window {
     minimize_button: Button,
     children: Vec<Box<dyn Component>>,
     contents_base_rel_pos: Point,
-    pub is_closed: bool,
     pub request_bring_to_front: bool,
     content_dirty: bool,
 }
@@ -332,7 +309,6 @@ impl Window {
         Ok(Self {
             layer_id,
             title,
-            is_closed: false,
             close_button,
             resize_button,
             children: Vec::new(),
@@ -345,17 +321,6 @@ impl Window {
 
     pub fn title(&self) -> &str {
         &self.title
-    }
-
-    pub fn is_close_button_clickable(&self, point: Point) -> Result<bool> {
-        let LayerInfo {
-            pos: cb_pos,
-            size: cb_size,
-            format: _,
-        } = self.close_button.layer_info()?;
-
-        let rect = Rect::from_point_and_size(cb_pos, cb_size);
-        Ok(rect.contains(point))
     }
 
     pub fn push_child(&mut self, child: Box<dyn Component>) -> Result<LayerId> {

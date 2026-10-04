@@ -2,7 +2,6 @@ use crate::{
     device::{DeviceInfo, Driver},
     error::{Error, Result},
     fs::vfs,
-    graphics::window_manager,
     kinfo,
     sync::mutex::Mutex,
     task::{scheduler, WaitKey},
@@ -140,5 +139,5 @@ pub fn push_event(event: MouseEvent) -> Result<()> {
         scheduler::wake(WaitKey::Device(NAME));
     }
 
-    window_manager::mouse_pointer_event(event)
+    Ok(())
 }

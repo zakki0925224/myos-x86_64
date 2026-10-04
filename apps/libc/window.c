@@ -146,3 +146,77 @@ component_descriptor* create_component_image(component_descriptor* cdesc, size_t
     free(replymsgbuf);
     return new_cdesc;
 }
+
+int create_layer(size_t x, size_t y, size_t width, size_t height, const void* framebuf, uint32_t flags) {
+    iomsg_create_layer msg = {
+        .header = {.cmd_id = IOMSG_CMD_CREATE_LAYER,
+                   .payload_size = sizeof(iomsg_create_layer) - sizeof(iomsg_header)},
+        .x = x,
+        .y = y,
+        .width = width,
+        .height = height,
+        .framebuf = framebuf,
+        .flags = flags,
+    };
+    iomsg_reply_create_component reply;
+
+    if (sys_iomsg(&msg, &reply, sizeof(reply)) == -1) {
+        return -1;
+    }
+
+    if (reply.header.cmd_id != IOMSG_CMD_CREATE_LAYER) {
+        return -1;
+    }
+
+    return reply.layer_id;
+}
+
+int move_layer(int layer_id, size_t x, size_t y) {
+    iomsg_move_layer msg = {
+        .header = {.cmd_id = IOMSG_CMD_MOVE_LAYER,
+                   .payload_size = sizeof(iomsg_move_layer) - sizeof(iomsg_header)},
+        .layer_id = layer_id,
+        .x = x,
+        .y = y,
+    };
+    iomsg_header reply;
+
+    if (sys_iomsg(&msg, &reply, sizeof(reply)) == -1) {
+        return -1;
+    }
+
+    return reply.cmd_id == IOMSG_CMD_MOVE_LAYER ? 0 : -1;
+}
+
+int remove_layer(int layer_id) {
+    iomsg_remove_component msg = {
+        .header = {.cmd_id = IOMSG_CMD_REMOVE_COMPONENT, .payload_size = sizeof(int)},
+        .layer_id = layer_id,
+    };
+    iomsg_reply_remove_component reply;
+
+    if (sys_iomsg(&msg, &reply, sizeof(reply)) == -1) {
+        return -1;
+    }
+
+    return reply.header.cmd_id == IOMSG_CMD_REMOVE_COMPONENT ? 0 : -1;
+}
+
+int get_screen_size(size_t* width, size_t* height) {
+    iomsg_get_screen_size msg = {
+        .header = {.cmd_id = IOMSG_CMD_GET_SCREEN_SIZE, .payload_size = 0},
+    };
+    iomsg_reply_get_screen_size reply;
+
+    if (sys_iomsg(&msg, &reply, sizeof(reply)) == -1) {
+        return -1;
+    }
+
+    if (reply.header.cmd_id != IOMSG_CMD_GET_SCREEN_SIZE) {
+        return -1;
+    }
+
+    *width = reply.width;
+    *height = reply.height;
+    return 0;
+}

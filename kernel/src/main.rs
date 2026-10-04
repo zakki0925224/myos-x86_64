@@ -34,7 +34,7 @@ use crate::{
     },
     theme::GLOBAL_THEME,
 };
-use alloc::{string::ToString, vec::Vec};
+use alloc::vec::Vec;
 use common::boot_info::BootInfo;
 use core::time::Duration;
 
@@ -78,7 +78,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     graphics::init_layer_man(&boot_info.graphic_info).unwrap();
 
     // initialize window manager
-    graphics::init_window_man(boot_info.kernel_config.mouse_pointer_bmp_path.to_string()).unwrap();
+    graphics::init_window_man().unwrap();
 
     // initialize ACPI
     acpi::init(boot_info.rsdp_virt_addr.unwrap().into()).unwrap();

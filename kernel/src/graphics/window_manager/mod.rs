@@ -1,12 +1,8 @@
-use super::{
-    frame_buf,
-    multi_layer::{LayerId, LayerInfo},
-};
+use super::{frame_buf, multi_layer::LayerId};
 use crate::{
     error::{Error, Result},
-    fs::{file::bitmap::BitmapImage, vfs},
     sync::mutex::Mutex,
-    util::{self, mouse::mouse_event::MouseEvent},
+    util,
 };
 use alloc::{
     boxed::Box,
@@ -43,40 +39,20 @@ impl core::fmt::Display for WindowManagerError {
 struct WindowManager {
     windows: Vec<Window>,
     taskbar: Option<Panel>,
-    mouse_pointer: Option<Image>,
     res: Option<Size>,
-    mouse_pointer_bmp_path: String,
-    dragging_window_id: Option<LayerId>,
-    dragging_offset: Option<Point>,
     last_taskbar_uptime: String,
     last_taskbar_titles: String,
 }
 
 impl WindowManager {
-    const PS2_MOUSE_MAX_REL_MOVEMENT: isize = 100;
-
     const fn new() -> Self {
         Self {
             windows: Vec::new(),
             taskbar: None,
-            mouse_pointer: None,
             res: None,
-            mouse_pointer_bmp_path: String::new(),
-            dragging_window_id: None,
-            dragging_offset: None,
             last_taskbar_uptime: String::new(),
             last_taskbar_titles: String::new(),
         }
-    }
-
-    fn create_mouse_pointer(&mut self, pointer_bmp: &BitmapImage) -> Result<()> {
-        self.mouse_pointer = Some(Image::create_and_push_from_bitmap_image(
-            pointer_bmp,
-            Point::default(),
-            true,
-        )?);
-
-        Ok(())
     }
 
     fn create_taskbar(&mut self) -> Result<()> {
@@ -85,169 +61,6 @@ impl WindowManager {
         let h = 30;
         let panel = Panel::create_and_push(Point::new(0, res.height - h), Size::new(res.width, h))?;
         self.taskbar = Some(panel);
-        Ok(())
-    }
-
-    fn mouse_pointer_event(&mut self, mouse_event: MouseEvent) -> Result<()> {
-        let res = self.res.ok_or(Error::NotInitialized)?;
-
-        // create mouse pointer layer if not created
-        if self.mouse_pointer.is_none() {
-            let mouse_pointer_bmp_fd =
-                vfs::open_file(&((&self.mouse_pointer_bmp_path).into()), false, None, false)?;
-            let bmp_data = vfs::read_file(mouse_pointer_bmp_fd, usize::MAX)?;
-            let pointer_bmp = BitmapImage::new(&bmp_data);
-            vfs::close_file(mouse_pointer_bmp_fd)?;
-            self.create_mouse_pointer(&pointer_bmp)?;
-        }
-
-        let mouse_pointer = self
-            .mouse_pointer
-            .as_mut()
-            .ok_or(WindowManagerError::MousePointerLayerWasNotFound)?;
-
-        let LayerInfo {
-            pos: Point {
-                x: m_x_before,
-                y: m_y_before,
-            },
-            size: Size {
-                width: m_w,
-                height: m_h,
-            },
-            format: _,
-        } = mouse_pointer.layer_info()?;
-
-        let m_pos_after = match &mouse_event {
-            MouseEvent::Ps2MouseDevice(e) => {
-                let rel_x = (e.rel_x as isize).clamp(
-                    -Self::PS2_MOUSE_MAX_REL_MOVEMENT,
-                    Self::PS2_MOUSE_MAX_REL_MOVEMENT,
-                );
-                let rel_y = (e.rel_y as isize).clamp(
-                    -Self::PS2_MOUSE_MAX_REL_MOVEMENT,
-                    Self::PS2_MOUSE_MAX_REL_MOVEMENT,
-                );
-                let m_x_after = (m_x_before as isize + rel_x)
-                    .clamp(0, res.width as isize - m_w as isize)
-                    as usize;
-                let m_y_after = (m_y_before as isize + rel_y)
-                    .clamp(0, res.height as isize - m_h as isize)
-                    as usize;
-                Point::new(m_x_after, m_y_after)
-            }
-            MouseEvent::UsbHidMouse(e) => {
-                let m_x_after = e.abs_x.clamp(0, res.width.saturating_sub(m_w));
-                let m_y_after = e.abs_y.clamp(0, res.height.saturating_sub(m_h));
-                Point::new(m_x_after, m_y_after)
-            }
-        };
-
-        // move mouse pointer
-        mouse_pointer.move_by_root(m_pos_after)?;
-
-        let e_left = match &mouse_event {
-            MouseEvent::Ps2MouseDevice(e) => e.left,
-            MouseEvent::UsbHidMouse(e) => e.left,
-        };
-
-        // click window event
-        if e_left {
-            if self.dragging_window_id.is_none() {
-                // single pass: check close button (higher priority) and drag start together
-                for i in (0..self.windows.len()).rev() {
-                    let LayerInfo {
-                        pos: w_pos,
-                        size: w_size,
-                        format: _,
-                    } = self.windows[i].layer_info()?;
-
-                    let w_rect = Rect::from_point_and_size(w_pos, w_size);
-                    if !w_rect.contains(m_pos_after) {
-                        continue;
-                    }
-
-                    // close button takes priority over drag
-                    if self.windows[i].is_close_button_clickable(m_pos_after)? {
-                        self.windows[i].is_closed = true;
-                        self.windows.retain(|w| !w.is_closed);
-                        self.dragging_window_id = None;
-                        self.dragging_offset = None;
-                        break;
-                    }
-
-                    // bring to front and start drag
-                    let mut w = self.windows.remove(i);
-                    w.request_bring_to_front = true;
-                    let offset_x = m_pos_after.x - w_pos.x;
-                    let offset_y = m_pos_after.y - w_pos.y;
-                    let id = w.layer_id();
-                    self.windows.push(w);
-                    self.dragging_window_id = Some(id);
-                    self.dragging_offset = Some(Point::new(offset_x, offset_y));
-                    break;
-                }
-            }
-
-            // drag the window
-            if let (Some(window_id), Some(offset)) =
-                (&self.dragging_window_id, &self.dragging_offset)
-            {
-                let w = self
-                    .windows
-                    .iter_mut()
-                    .find(|w| w.layer_id() == *window_id)
-                    .ok_or(WindowManagerError::WindowWasNotFound {
-                        layer_id: window_id.get(),
-                    })?;
-
-                let LayerInfo {
-                    pos: _,
-                    size:
-                        Size {
-                            width: w_w,
-                            height: w_h,
-                        },
-                    format: _,
-                } = w.layer_info()?;
-
-                let max_w_x = res.width.saturating_sub(w_w);
-                let max_w_y = res.height.saturating_sub(w_h);
-                let new_w_x = (m_pos_after.x as isize - offset.x as isize)
-                    .clamp(0, max_w_x as isize) as usize;
-                let new_w_y = (m_pos_after.y as isize - offset.y as isize)
-                    .clamp(0, max_w_y as isize) as usize;
-                w.move_by_root(Point::new(new_w_x, new_w_y))?;
-            } else {
-                for w in self.windows.iter_mut().rev() {
-                    let LayerInfo {
-                        pos: w_pos,
-                        size: w_size,
-                        format: _,
-                    } = w.layer_info()?;
-
-                    let w_rect = Rect::from_point_and_size(w_pos, w_size);
-                    if w_rect.contains(m_pos_after) {
-                        let delta_x = m_pos_after.x as isize - m_x_before as isize;
-                        let delta_y = m_pos_after.y as isize - m_y_before as isize;
-                        let max_w_x = res.width.saturating_sub(w_size.width);
-                        let max_w_y = res.height.saturating_sub(w_size.height);
-                        let new_w_x =
-                            (w_pos.x as isize + delta_x).clamp(0, max_w_x as isize) as usize;
-                        let new_w_y =
-                            (w_pos.y as isize + delta_y).clamp(0, max_w_y as isize) as usize;
-
-                        w.move_by_root(Point::new(new_w_x, new_w_y))?;
-                        self.dragging_window_id = Some(w.layer_id());
-                        break;
-                    }
-                }
-            }
-        } else {
-            self.dragging_window_id = None;
-            self.dragging_offset = None;
-        }
-
         Ok(())
     }
 
@@ -373,20 +186,15 @@ impl WindowManager {
     }
 }
 
-pub fn init(mouse_pointer_bmp_path: String) -> Result<()> {
+pub fn init() -> Result<()> {
     let mut window_man = WINDOW_MAN.try_lock()?;
     let res = frame_buf::resolution()?;
     window_man.res = Some(res);
-    window_man.mouse_pointer_bmp_path = mouse_pointer_bmp_path;
     Ok(())
 }
 
 pub fn create_taskbar() -> Result<()> {
     WINDOW_MAN.try_lock()?.create_taskbar()
-}
-
-pub fn mouse_pointer_event(mouse_event: MouseEvent) -> Result<()> {
-    WINDOW_MAN.try_lock()?.mouse_pointer_event(mouse_event)
 }
 
 pub fn create_window(title: String, pos: Point, size: Size) -> Result<LayerId> {

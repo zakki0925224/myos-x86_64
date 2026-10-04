@@ -1,6 +1,5 @@
 use self::{color::ColorCode, font::FONT};
 use crate::{error::Result, kinfo};
-use alloc::string::String;
 use common::{
     geometry::{Point, Size},
     graphic_info::GraphicInfo,
@@ -46,8 +45,8 @@ pub fn init_layer_man(graphic_info: &GraphicInfo) -> Result<()> {
     Ok(())
 }
 
-pub fn init_window_man(mouse_pointer_bmp_path: String) -> Result<()> {
-    window_manager::init(mouse_pointer_bmp_path)?;
+pub fn init_window_man() -> Result<()> {
+    window_manager::init()?;
     window_manager::create_taskbar()?;
 
     kinfo!("graphics: Window manager initialized");

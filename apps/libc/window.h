@@ -17,4 +17,9 @@ int remove_component(component_descriptor* cdesc);
 component_descriptor* create_component_window(const char* title, size_t x_pos, size_t y_pos, size_t width, size_t height);
 component_descriptor* create_component_image(component_descriptor* cdesc, size_t image_width, size_t image_height, uint8_t pixel_format, const void* framebuf);
 
+int create_layer(size_t x, size_t y, size_t width, size_t height, const void* framebuf, uint32_t flags);
+int move_layer(int layer_id, size_t x, size_t y);
+int remove_layer(int layer_id);
+int get_screen_size(size_t* width, size_t* height);
+
 #endif
