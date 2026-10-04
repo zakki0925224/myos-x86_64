@@ -1,8 +1,8 @@
+#include <input.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <syscalls.h>
-#include <input.h>
 
 #define FIFO_PATH "/fifo-test"
 
@@ -295,14 +295,14 @@ int test_input() {
         int mlen = sys_read(mfd, me, sizeof(me));
         for (int i = 0; i < mlen / (int)sizeof(mouse_event); i++) {
             printf("mouse: buttons=%d abs=%d x=%d y=%d\n",
-                    me[i].buttons, me[i].is_abs, me[i].x, me[i].y);
+                   me[i].buttons, me[i].is_abs, me[i].x, me[i].y);
         }
 
         key_event ke[16];
         int klen = sys_read(kfd, ke, sizeof(ke));
         for (int i = 0; i < klen / (int)sizeof(key_event); i++) {
             printf("key: code=%d pressed=%d c=%d\n",
-                    ke[i].code, ke[i].pressed, (int)ke[i].c);
+                   ke[i].code, ke[i].pressed, (int)ke[i].c);
 
             if (ke[i].c == 'q' && ke[i].pressed) {
                 running = 0;
@@ -365,7 +365,7 @@ int main(int argc, const char* argv[]) {
     if (argc > 2 && strcmp(argv[1], "fifo-write") == 0) {
         return test_fifo_writer(argv[2]);
     }
-        if (argc > 1 && strcmp(argv[1], "fifo-read") == 0) {
+    if (argc > 1 && strcmp(argv[1], "fifo-read") == 0) {
         return test_fifo_reader();
     }
 

@@ -100,7 +100,7 @@ off_t sys_lseek(int fd, off_t offset, int whence);
 pid_t sys_fork(void);
 void sys_sleep(uint64_t ms);
 void sys_yield(void);
-int sys_mkfifo(const char *path);
-int sys_unlink(const char *path);
+int sys_mkfifo(const char* path);
+int sys_unlink(const char* path);
 
 #endif

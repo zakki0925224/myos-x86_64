@@ -268,7 +268,7 @@ static void exec_pipe(char* cmd, char* pipe_pos) {
     }
 
     if (pid1 >= 0) sys_wait(pid1);
-    sys_close(pipefd[1]); // EOF for the reader
+    sys_close(pipefd[1]);  // EOF for the reader
     if (pid2 >= 0) sys_wait(pid2);
     sys_close(pipefd[0]);
 }

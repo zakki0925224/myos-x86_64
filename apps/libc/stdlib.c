@@ -188,7 +188,7 @@ int system(const char* command) {
         pid_t pid1 = sys_exec(left, (int[]){-1, pipefd[1], -1});
         pid_t pid2 = sys_exec(right, (int[]){pipefd[0], -1, -1});
         if (pid1 != -1) sys_wait(pid1);
-        sys_close(pipefd[1]); // EOF for the reader
+        sys_close(pipefd[1]);  // EOF for the reader
         int ret = pid2 != -1 ? sys_wait(pid2) : -1;
         sys_close(pipefd[0]);
         return pid1 == -1 ? -1 : ret;

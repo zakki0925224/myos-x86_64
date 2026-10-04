@@ -1,6 +1,6 @@
 use crate::{
     arch::IoPortAddress,
-    device::{tty, Driver, DeviceInfo},
+    device::{tty, DeviceInfo, Driver},
     error::{Error, Result},
     fs::vfs,
     kinfo,

@@ -5,7 +5,7 @@ use crate::{
             xhc::{desc::*, register::CommandRing},
             UsbDriver,
         },
-        Driver, DeviceInfo,
+        DeviceInfo, Driver,
     },
     error::Result,
     fs::vfs,

@@ -48,7 +48,7 @@ QEMU_DRIVES = [
     f"-drive if=pflash,format=raw,readonly=on,file=./{THIRD_PARTY_DIR}/{OVMF_CODE_FILE}",
 ]
 QEMU_ARGS = [
-    "-machine q35", # ICH9 chipset
+    "-machine q35",  # ICH9 chipset
     "-accel kvm",
     "-cpu host",
     # "-no-reboot",

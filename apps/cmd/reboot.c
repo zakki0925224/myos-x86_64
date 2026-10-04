@@ -17,6 +17,6 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    fclose(file); // unreachable on success
+    fclose(file);  // unreachable on success
     return 0;
 }

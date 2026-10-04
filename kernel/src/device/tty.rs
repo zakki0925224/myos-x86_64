@@ -1,12 +1,5 @@
-use super::{uart, Driver, DeviceInfo};
-use crate::{
-    error::Result,
-    fs::vfs,
-    graphics::frame_buf_console,
-    kinfo,
-    sync::mutex::Mutex,
-    task,
-};
+use super::{uart, DeviceInfo, Driver};
+use crate::{error::Result, fs::vfs, graphics::frame_buf_console, kinfo, sync::mutex::Mutex, task};
 use alloc::string::String;
 use core::{
     fmt::{self, Write},

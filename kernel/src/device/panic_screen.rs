@@ -1,6 +1,6 @@
 use crate::{
     arch::VirtualAddress,
-    device::{Driver, DeviceInfo},
+    device::{DeviceInfo, Driver},
     error::Result,
     graphics::{color::ColorCode, font::FONT},
     kinfo,

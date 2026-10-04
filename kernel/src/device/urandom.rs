@@ -1,5 +1,5 @@
 use crate::{
-    device::{self, Driver, DeviceInfo},
+    device::{self, DeviceInfo, Driver},
     error::Result,
     fs::vfs,
     kinfo,

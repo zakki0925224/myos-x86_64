@@ -1,6 +1,6 @@
 use crate::{
     arch::IoPortAddress,
-    device::{self, pci_bus, Driver, DeviceInfo},
+    device::{self, pci_bus, DeviceInfo, Driver},
     error::{Error, Result},
     kdebug, kinfo,
     net::{self, eth::*},

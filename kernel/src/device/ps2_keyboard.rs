@@ -3,7 +3,7 @@ use crate::{
         x86_64::idt::{self, GateType, InterruptHandler, InterruptStackFrame},
         IoPortAddress,
     },
-    device::{keyboard, Driver, DeviceInfo},
+    device::{keyboard, DeviceInfo, Driver},
     error::{Error, Result},
     fs::vfs,
     kinfo,
