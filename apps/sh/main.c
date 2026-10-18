@@ -4,7 +4,6 @@
 #include <syscalls.h>
 
 #define BUF_LEN 128
-#define HISTORY_MAX 16
 
 static char buf[BUF_LEN] = {0};
 static char* splitted_buf[BUF_LEN];
@@ -12,83 +11,22 @@ static char cwd_path[BUF_LEN] = {0};
 static char envpath[BUF_LEN] = {0};
 static char filepath_buf[BUF_LEN] = {0};
 
-static char history[HISTORY_MAX][BUF_LEN];
-static int hist_count = 0;
-
-static void history_push(const char* line) {
-    if (strlen(line) == 0) return;
-    if (hist_count > 0 && strcmp(history[(hist_count - 1) % HISTORY_MAX], line) == 0) return;
-    strncpy(history[hist_count % HISTORY_MAX], line, BUF_LEN - 1);
-    history[hist_count % HISTORY_MAX][BUF_LEN - 1] = '\0';
-    hist_count++;
-}
-
 static int sh_readline(char* dst, int dst_len) {
     int len = 0;
-    int hist_pos = hist_count;
-    char saved_line[BUF_LEN] = {0};
+    char tmp[BUF_LEN];
 
     while (1) {
-        char c;
-        if (sys_read(0, &c, 1) == -1) return -1;
+        int ret = sys_read(0, tmp, sizeof(tmp));
+        if (ret <= 0) return -1;
 
-        if (c == '\n') {
-            dst[len] = '\0';
-            break;
-        } else if (c == '\x08' || c == '\x7f') {
-            if (len > 0) {
-                len--;
+        for (int i = 0; i < ret; i++) {
+            if (tmp[i] == '\n') {
                 dst[len] = '\0';
+                return 0;
             }
-            continue;
-        } else if (c == '\x1b') { /* escape sequence */
-            char c2, c3;
-            if (sys_read(0, &c2, 1) == -1) return -1;
-            if (c2 != '[') continue;
-            if (sys_read(0, &c3, 1) == -1) return -1;
-            c = (c3 == 'A') ? '\x10' : (c3 == 'B') ? '\x0e'
-                                                   : '\0';
-            if (c == '\0') continue;
-        }
-
-        if (c == '\x10') { /* cursor up: history prev */
-            if (hist_count == 0) continue;
-            if (hist_pos == hist_count)
-                strncpy(saved_line, dst, BUF_LEN - 1);
-            if (hist_pos > 0 &&
-                (hist_count <= HISTORY_MAX || hist_pos > hist_count - HISTORY_MAX)) {
-                hist_pos--;
-                int old_len = len;
-                strncpy(dst, history[hist_pos % HISTORY_MAX], dst_len - 1);
-                dst[dst_len - 1] = '\0';
-                len = strlen(dst);
-                for (int i = 0; i < old_len; i++) sys_write(1, "\x08", 1);
-                sys_write(1, dst, len);
-                for (int i = len; i < old_len; i++) sys_write(1, " ", 1);
-                for (int i = len; i < old_len; i++) sys_write(1, "\x08", 1);
-            }
-        } else if (c == '\x0e') { /* cursor down: history next */
-            if (hist_pos >= hist_count) continue;
-            int old_len = len;
-            hist_pos++;
-            if (hist_pos == hist_count)
-                strncpy(dst, saved_line, dst_len - 1);
-            else
-                strncpy(dst, history[hist_pos % HISTORY_MAX], dst_len - 1);
-            dst[dst_len - 1] = '\0';
-            len = strlen(dst);
-            for (int i = 0; i < old_len; i++) sys_write(1, "\x08", 1);
-            sys_write(1, dst, len);
-            for (int i = len; i < old_len; i++) sys_write(1, " ", 1);
-            for (int i = len; i < old_len; i++) sys_write(1, "\x08", 1);
-        } else {
-            if (len < dst_len - 1) {
-                dst[len++] = c;
-                dst[len] = '\0';
-            }
+            if (len < dst_len - 1) dst[len++] = tmp[i];
         }
     }
-    return 0;
 }
 
 static int build_exec_args(const char* cmd_str, char* out, int out_len) {
@@ -289,7 +227,6 @@ int main(int argc, char const* argv[]) {
         }
 
         exec_cmd(buf);
-        history_push(buf);
     }
 
     return 0;

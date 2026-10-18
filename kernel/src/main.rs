@@ -8,6 +8,7 @@
 #![reexport_test_harness_main = "test_main"]
 
 mod arch;
+mod console;
 mod debug;
 mod device;
 mod env;

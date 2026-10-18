@@ -110,7 +110,7 @@ impl Driver for UartDriver {
             None => return Ok(()),
         };
 
-        tty::input(received_data as char)
+        tty::input(received_data)
     }
 
     fn write(&mut self, data: &[u8]) -> Result<()> {

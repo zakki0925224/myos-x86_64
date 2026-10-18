@@ -1,4 +1,4 @@
-use super::{draw::Draw, frame_buf};
+use super::{draw::Draw, fb};
 use crate::{error::Result, sync::mutex::Mutex};
 use alloc::vec::Vec;
 use common::geometry::{Point, Rect, Size};
@@ -297,14 +297,14 @@ impl LayerManager {
                 continue;
             }
 
-            frame_buf::apply_layer_buf(layer, Some(rect))?;
+            fb::apply_layer_buf(layer, Some(rect))?;
 
             layer.set_dirty(false);
             layer.pos_moved = false;
             layer.old_pos = None;
         }
 
-        frame_buf::flush_rect_to_vram(rect)?;
+        fb::flush_rect_to_vram(rect)?;
         Ok(())
     }
 }
@@ -323,7 +323,7 @@ fn merge_rect(r1: Option<Rect>, r2: Rect) -> Option<Rect> {
 }
 
 pub fn create_layer(pos: Point, size: Size) -> Result<Layer> {
-    let format = frame_buf::format()?;
+    let format = fb::format()?;
     let layer = Layer::new(pos, size, format);
     Ok(layer)
 }

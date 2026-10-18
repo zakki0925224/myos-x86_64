@@ -138,20 +138,9 @@ size_t fread(void* buf, size_t size, size_t count, FILE* stream) {
                 dst[read_bytes++] = _stdin_line_buf[_stdin_line_pos++];
                 continue;
             }
-            f_stat st;
-            int has_input = (sys_stat(FDN_STDIN, &st) == 0 && st.size > 0);
-            if (has_input) {
-                int ret = sys_read(FDN_STDIN, dst + read_bytes, 1);
-                if (ret <= 0) {
-                    stream->flags |= _FILE_EOF_FLAG;
-                    break;
-                }
-                read_bytes += ret;
-            } else {
-                if (stdin_refill() == 0) {
-                    stream->flags |= _FILE_EOF_FLAG;
-                    break;
-                }
+            if (stdin_refill() == 0) {
+                stream->flags |= _FILE_EOF_FLAG;
+                break;
             }
         }
         if (read_bytes == 0) return 0;

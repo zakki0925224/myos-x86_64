@@ -1,4 +1,4 @@
-use crate::{graphics::frame_buf_console, print, theme::GLOBAL_THEME, util};
+use crate::{print, theme::GLOBAL_THEME, util};
 
 static LOGGER: SimpleLogger = SimpleLogger::new(LogLevel::max());
 
@@ -53,7 +53,10 @@ impl SimpleLogger {
             LogLevel::Trace => GLOBAL_THEME.log.trace,
         };
 
-        let _ = frame_buf_console::set_fore_color(fore_color);
+        print!(
+            "\x1b[38;2;{};{};{}m",
+            fore_color.r, fore_color.g, fore_color.b
+        );
 
         let uptime = util::time::global_uptime();
         if uptime.is_zero() {
@@ -69,9 +72,7 @@ impl SimpleLogger {
             print!("{}@{}:{}: ", file, line, col);
         }
 
-        print!("{:?}\n", args);
-
-        let _ = frame_buf_console::reset_fore_color();
+        print!("{:?}\x1b[39m\n", args);
     }
 }
 

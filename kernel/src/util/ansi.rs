@@ -1,7 +1,40 @@
-use crate::{error::Result, util::fifo::Fifo};
-use alloc::string::String;
+const MAX_PARAMS: usize = 16;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CsiParams {
+    buf: [u32; MAX_PARAMS],
+    len: usize,
+}
+
+impl CsiParams {
+    const fn new() -> Self {
+        Self {
+            buf: [0; MAX_PARAMS],
+            len: 0,
+        }
+    }
+
+    pub fn get(&self, i: usize) -> u32 {
+        if i < self.len {
+            self.buf[i]
+        } else {
+            0
+        }
+    }
+
+    fn get_or(&self, i: usize, default: u32) -> u32 {
+        match self.get(i) {
+            0 => default,
+            n => n,
+        }
+    }
+
+    pub fn sgr(&self) -> SgrIter<'_> {
+        SgrIter { params: self, i: 0 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CsiSequence {
     CursorUp(u32),
     CursorDown(u32),
@@ -19,255 +52,292 @@ pub enum CsiSequence {
     ClearRowAfterCursor,
     ClearRowBeforeCursor,
     ClearRowAll,
-    CharReset,
-    CharBold,
-    CharDim,
-    CharItalic,
-    CharUnderline,
-    CharBlink,
-    CharBlinkFast,
-    CharReverseColor,
-    CharHidden,
-    CharCancel,
-    ForeColorBlack,
-    ForeColorRed,
-    ForeColorGreen,
-    ForeColorYellow,
-    ForeColorBlue,
-    ForeColorMagenta,
-    ForeColorCyan,
-    ForeColorWhite,
-    BackColorBlack,
-    BackColorRed,
-    BackColorGreen,
-    BackColorYellow,
-    BackColorBlue,
-    BackColorMagenta,
-    BackColorCyan,
-    BackColorWhite,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AnsiEvent {
-    AnsiControlChar(char),
-    CsiSequence(CsiSequence),
+    Sgr(CsiParams),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum State {
+pub enum AnsiColor {
+    Indexed(u8),
+    Rgb(u8, u8, u8),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SgrAttr {
+    Reset,
+    Reverse,
+    Hidden,
+    Fore(AnsiColor),
+    Back(AnsiColor),
+    DefaultFore,
+    DefaultBack,
+    Unsupported(u32),
+}
+
+pub struct SgrIter<'a> {
+    params: &'a CsiParams,
+    i: usize,
+}
+
+impl SgrIter<'_> {
+    fn extended_color(&mut self) -> Option<AnsiColor> {
+        let p = self.params;
+        match p.get(self.i) {
+            5 => {
+                let n = p.get(self.i + 1);
+                self.i += 2;
+                Some(AnsiColor::Indexed(n.min(255) as u8))
+            }
+            2 => {
+                let (r, g, b) = (p.get(self.i + 1), p.get(self.i + 2), p.get(self.i + 3));
+                self.i += 4;
+                Some(AnsiColor::Rgb(
+                    r.min(255) as u8,
+                    g.min(255) as u8,
+                    b.min(255) as u8,
+                ))
+            }
+            _ => None,
+        }
+    }
+}
+
+impl Iterator for SgrIter<'_> {
+    type Item = SgrAttr;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.params.len == 0 {
+            if self.i == 0 {
+                self.i = 1;
+                return Some(SgrAttr::Reset); // "ESC[m" == "ESC[0m"
+            }
+            return None;
+        }
+
+        if self.i >= self.params.len {
+            return None;
+        }
+
+        let code = self.params.buf[self.i];
+        self.i += 1;
+
+        let attr = match code {
+            0 => SgrAttr::Reset,
+            7 => SgrAttr::Reverse,
+            8 => SgrAttr::Hidden,
+            30..=37 => SgrAttr::Fore(AnsiColor::Indexed((code - 30) as u8)),
+            40..=47 => SgrAttr::Back(AnsiColor::Indexed((code - 40) as u8)),
+            90..=97 => SgrAttr::Fore(AnsiColor::Indexed((code - 90 + 8) as u8)),
+            100..=107 => SgrAttr::Back(AnsiColor::Indexed((code - 100 + 8) as u8)),
+            38 => self
+                .extended_color()
+                .map_or(SgrAttr::Unsupported(code), SgrAttr::Fore),
+            48 => self
+                .extended_color()
+                .map_or(SgrAttr::Unsupported(code), SgrAttr::Back),
+            39 => SgrAttr::DefaultFore,
+            49 => SgrAttr::DefaultBack,
+            _ => SgrAttr::Unsupported(code),
+        };
+        Some(attr)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnsiEvent {
+    Print,
+    Consumed,
+    Csi(CsiSequence),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EscState {
     Normal,
     Esc,
     Csi,
 }
 
 pub struct AnsiEscapeStream {
-    state: State,
-    buf: Fifo<char, 16>,
+    state: EscState,
+    params: CsiParams,
+    ignore: bool,
 }
 
 impl AnsiEscapeStream {
     pub const fn new() -> Self {
         Self {
-            state: State::Normal,
-            buf: Fifo::new('\0'),
+            state: EscState::Normal,
+            params: CsiParams::new(),
+            ignore: false,
         }
     }
 
-    pub fn reset(&mut self) {
-        self.state = State::Normal;
-        self.buf.reset_ptr();
-    }
-
-    fn parse_csi_seq(&mut self) -> Option<AnsiEvent> {
-        let mut seq = String::new();
-        while let Ok(ch) = self.buf.dequeue() {
-            seq.push(ch);
-        }
-        self.reset();
-
-        let mut num_buf1 = String::new();
-        let mut num_buf2 = String::new();
-        for ch in seq.as_str().chars() {
-            match ch {
-                '0'..='9' => num_buf1.push(ch),
-                'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'S' | 'T' => {
-                    let num = num_buf1.parse().unwrap_or(1);
-                    let seq = match ch {
-                        'A' => CsiSequence::CursorUp(num),
-                        'B' => CsiSequence::CursorDown(num),
-                        'C' => CsiSequence::CursorRight(num),
-                        'D' => CsiSequence::CursorLeft(num),
-                        'E' => CsiSequence::CursorNextLineHead(num),
-                        'F' => CsiSequence::CursorPrevLineHead(num),
-                        'G' => CsiSequence::CursorColumn(num),
-                        'S' => CsiSequence::ScrollUp(num),
-                        'T' => CsiSequence::ScrollDown(num),
-                        _ => unreachable!(),
-                    };
-                    return Some(AnsiEvent::CsiSequence(seq));
+    pub fn push(&mut self, c: char) -> AnsiEvent {
+        match self.state {
+            EscState::Normal => match c {
+                '\x1b' => {
+                    self.state = EscState::Esc;
+                    AnsiEvent::Consumed
                 }
-                'H' | 'f' => {
-                    if let (Ok(num1), Ok(num2)) = (num_buf1.parse(), num_buf2.parse()) {
-                        return Some(AnsiEvent::CsiSequence(CsiSequence::CursorPosition {
-                            row: num2,
-                            col: num1,
-                        }));
+                '\0'..='\x1f' | '\x7f' => AnsiEvent::Consumed,
+                _ => AnsiEvent::Print,
+            },
+            EscState::Esc => {
+                match c {
+                    '[' => {
+                        self.state = EscState::Csi;
+                        self.params = CsiParams::new();
+                        self.ignore = false;
+                    }
+                    '\x1b' => (),
+                    _ => self.state = EscState::Normal, // 2-byte ESC sequences are ignored
+                }
+                AnsiEvent::Consumed
+            }
+            EscState::Csi => self.push_csi(c),
+        }
+    }
+
+    fn push_csi(&mut self, c: char) -> AnsiEvent {
+        let p = &mut self.params;
+
+        match c {
+            '0'..='9' => {
+                if p.len == 0 {
+                    p.len = 1;
+                }
+                let v = &mut p.buf[p.len - 1];
+                *v = v.saturating_mul(10).saturating_add(c as u32 - '0' as u32);
+            }
+            ';' => {
+                if p.len == 0 {
+                    p.len = 1;
+                }
+                if p.len < MAX_PARAMS {
+                    p.len += 1;
+                } else {
+                    self.ignore = true;
+                }
+            }
+            ':' | '<'..='?' | ' '..='/' => self.ignore = true, // sub-params, private markers, intermediates
+            '\x1b' => self.state = EscState::Esc,
+            '@'..='~' => {
+                self.state = EscState::Normal;
+                if !self.ignore {
+                    if let Some(seq) = self.dispatch(c) {
+                        return AnsiEvent::Csi(seq);
                     }
                 }
-                'J' | 'K' => {
-                    let seq = match ch {
-                        'J' => {
-                            if let Ok(num) = num_buf1.parse() {
-                                match num {
-                                    0 => CsiSequence::ClearScreenAfterCursor,
-                                    1 => CsiSequence::ClearScreenBeforeCursor,
-                                    2 => CsiSequence::ClearScreenAll,
-                                    _ => continue,
-                                }
-                            } else {
-                                CsiSequence::ClearScreenAfterCursor
-                            }
-                        }
-                        'K' => {
-                            if let Ok(num) = num_buf1.parse() {
-                                match num {
-                                    0 => CsiSequence::ClearRowAfterCursor,
-                                    1 => CsiSequence::ClearRowBeforeCursor,
-                                    2 => CsiSequence::ClearRowAll,
-                                    _ => continue,
-                                }
-                            } else {
-                                CsiSequence::ClearRowAfterCursor
-                            }
-                        }
-                        _ => unreachable!(),
-                    };
-                    return Some(AnsiEvent::CsiSequence(seq));
-                }
-                'm' => {
-                    let seq = if let Ok(num) = num_buf1.parse() {
-                        match num {
-                            0 => CsiSequence::CharReset,
-                            1 => CsiSequence::CharBold,
-                            2 => CsiSequence::CharDim,
-                            3 => CsiSequence::CharItalic,
-                            4 => CsiSequence::CharUnderline,
-                            5 => CsiSequence::CharBlink,
-                            6 => CsiSequence::CharBlinkFast,
-                            7 => CsiSequence::CharReverseColor,
-                            8 => CsiSequence::CharHidden,
-                            9 => CsiSequence::CharCancel,
-                            30 => CsiSequence::ForeColorBlack,
-                            31 => CsiSequence::ForeColorRed,
-                            32 => CsiSequence::ForeColorGreen,
-                            33 => CsiSequence::ForeColorYellow,
-                            34 => CsiSequence::ForeColorBlue,
-                            35 => CsiSequence::ForeColorMagenta,
-                            36 => CsiSequence::ForeColorCyan,
-                            37 => CsiSequence::ForeColorWhite,
-                            40 => CsiSequence::BackColorBlack,
-                            41 => CsiSequence::BackColorRed,
-                            42 => CsiSequence::BackColorGreen,
-                            43 => CsiSequence::BackColorYellow,
-                            44 => CsiSequence::BackColorBlue,
-                            45 => CsiSequence::BackColorMagenta,
-                            46 => CsiSequence::BackColorCyan,
-                            47 => CsiSequence::BackColorWhite,
-                            _ => continue,
-                        }
-                    } else {
-                        CsiSequence::CharReset
-                    };
-
-                    return Some(AnsiEvent::CsiSequence(seq));
-                }
-                ';' if !num_buf1.is_empty() => {
-                    num_buf2 = num_buf1.clone();
-                    num_buf1.clear();
-                }
-                _ => (),
             }
+            '\0'..='\x1f' => (),
+            _ => self.state = EscState::Normal,
         }
 
-        None
+        AnsiEvent::Consumed
     }
 
-    pub fn push(&mut self, c: char) -> Result<Option<AnsiEvent>> {
-        match self.state {
-            State::Normal => {
-                if c == '\x1b' {
-                    self.state = State::Esc;
-                    Ok(Some(AnsiEvent::AnsiControlChar(c)))
-                } else {
-                    Ok(None)
-                }
-            }
-            State::Esc => {
-                if c == '[' {
-                    self.state = State::Csi;
-                    self.buf.reset_ptr();
-                    Ok(Some(AnsiEvent::AnsiControlChar(c)))
-                } else {
-                    self.state = State::Normal;
-                    Ok(None)
-                }
-            }
-            State::Csi => {
-                if self.buf.enqueue(c).is_err() {
-                    self.buf.reset_ptr();
-                    self.buf.enqueue(c)?;
-                }
+    fn dispatch(&self, final_byte: char) -> Option<CsiSequence> {
+        let p = &self.params;
+        let n = p.get_or(0, 1);
 
-                // end of CSI sequence
-                if c.is_ascii_alphabetic() {
-                    return Ok(self.parse_csi_seq());
-                }
-
-                Ok(Some(AnsiEvent::AnsiControlChar(c)))
-            }
-        }
+        let seq = match final_byte {
+            'A' => CsiSequence::CursorUp(n),
+            'B' => CsiSequence::CursorDown(n),
+            'C' => CsiSequence::CursorRight(n),
+            'D' => CsiSequence::CursorLeft(n),
+            'E' => CsiSequence::CursorNextLineHead(n),
+            'F' => CsiSequence::CursorPrevLineHead(n),
+            'G' => CsiSequence::CursorColumn(n),
+            'H' | 'f' => CsiSequence::CursorPosition {
+                row: p.get_or(0, 1),
+                col: p.get_or(1, 1),
+            },
+            'J' => match p.get(0) {
+                0 => CsiSequence::ClearScreenAfterCursor,
+                1 => CsiSequence::ClearScreenBeforeCursor,
+                2 | 3 => CsiSequence::ClearScreenAll,
+                _ => return None,
+            },
+            'K' => match p.get(0) {
+                0 => CsiSequence::ClearRowAfterCursor,
+                1 => CsiSequence::ClearRowBeforeCursor,
+                2 => CsiSequence::ClearRowAll,
+                _ => return None,
+            },
+            'S' => CsiSequence::ScrollUp(n),
+            'T' => CsiSequence::ScrollDown(n),
+            'm' => CsiSequence::Sgr(*p),
+            _ => return None,
+        };
+        Some(seq)
     }
+}
+
+#[cfg(test)]
+fn push_str(stream: &mut AnsiEscapeStream, s: &str) -> AnsiEvent {
+    let mut last = AnsiEvent::Consumed;
+    for c in s.chars() {
+        last = stream.push(c);
+    }
+    last
 }
 
 #[test_case]
 fn test_new() {
     let stream = AnsiEscapeStream::new();
-    assert_eq!(stream.state, State::Normal);
-    assert_eq!(stream.buf.read_write_ptr(), (0, 0));
+    assert_eq!(stream.state, EscState::Normal);
 }
 
 #[test_case]
 fn test_simple_csi() {
     let mut stream = AnsiEscapeStream::new();
+    assert_eq!(stream.push('a'), AnsiEvent::Print);
+    assert_eq!(stream.push('\x1b'), AnsiEvent::Consumed);
+    assert_eq!(stream.push('['), AnsiEvent::Consumed);
+    assert_eq!(stream.push('1'), AnsiEvent::Consumed);
     assert_eq!(
-        stream.push('\x1b').unwrap(),
-        Some(AnsiEvent::AnsiControlChar('\x1b'))
-    );
-    assert_eq!(
-        stream.push('[').unwrap(),
-        Some(AnsiEvent::AnsiControlChar('['))
-    );
-    assert_eq!(
-        stream.push('1').unwrap(),
-        Some(AnsiEvent::AnsiControlChar('1'))
-    );
-    assert_eq!(
-        stream.push('A').unwrap(),
-        Some(AnsiEvent::CsiSequence(CsiSequence::CursorUp(1)))
+        stream.push('A'),
+        AnsiEvent::Csi(CsiSequence::CursorUp(1))
     );
 
-    stream.push('\x1b').unwrap();
-    stream.push('[').unwrap();
-    stream.push('2').unwrap();
-    stream.push('4').unwrap();
-    stream.push(';').unwrap();
-    stream.push('5').unwrap();
-    stream.push('1').unwrap();
     assert_eq!(
-        stream.push('H').unwrap(),
-        Some(AnsiEvent::CsiSequence(CsiSequence::CursorPosition {
-            row: 24,
-            col: 51
-        }))
-    )
+        push_str(&mut stream, "\x1b[24;51H"),
+        AnsiEvent::Csi(CsiSequence::CursorPosition { row: 24, col: 51 })
+    );
+    assert_eq!(
+        push_str(&mut stream, "\x1b[H"),
+        AnsiEvent::Csi(CsiSequence::CursorPosition { row: 1, col: 1 })
+    );
+    assert_eq!(stream.push('a'), AnsiEvent::Print);
+}
+
+#[test_case]
+fn test_unknown_and_private() {
+    let mut stream = AnsiEscapeStream::new();
+    assert_eq!(push_str(&mut stream, "\x1b[3~"), AnsiEvent::Consumed);
+    assert_eq!(stream.push('a'), AnsiEvent::Print);
+    assert_eq!(push_str(&mut stream, "\x1b[?25l"), AnsiEvent::Consumed);
+    assert_eq!(stream.push('a'), AnsiEvent::Print);
+}
+
+#[test_case]
+fn test_sgr() {
+    let mut stream = AnsiEscapeStream::new();
+    let AnsiEvent::Csi(CsiSequence::Sgr(p)) = push_str(&mut stream, "\x1b[1;31;38;2;10;20;30;48;5;200m")
+    else {
+        panic!();
+    };
+
+    let mut it = p.sgr();
+    assert_eq!(it.next(), Some(SgrAttr::Unsupported(1)));
+    assert_eq!(it.next(), Some(SgrAttr::Fore(AnsiColor::Indexed(1))));
+    assert_eq!(it.next(), Some(SgrAttr::Fore(AnsiColor::Rgb(10, 20, 30))));
+    assert_eq!(it.next(), Some(SgrAttr::Back(AnsiColor::Indexed(200))));
+    assert_eq!(it.next(), None);
+
+    let AnsiEvent::Csi(CsiSequence::Sgr(p)) = push_str(&mut stream, "\x1b[m") else {
+        panic!();
+    };
+    let mut it = p.sgr();
+    assert_eq!(it.next(), Some(SgrAttr::Reset));
+    assert_eq!(it.next(), None);
 }

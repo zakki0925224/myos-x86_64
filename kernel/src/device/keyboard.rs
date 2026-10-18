@@ -6,7 +6,7 @@ use crate::{
     sync::mutex::Mutex,
     task::{scheduler, WaitKey},
     util::{
-        keyboard::{key_event::*, scan_code::KeyCode},
+        keyboard::key_event::*,
         slice::Sliceable,
     },
 };
@@ -56,16 +56,8 @@ impl Driver for KeyboardDriver {
                 continue;
             }
 
-            match event.code {
-                KeyCode::CursorUp => tty::input_str("\x1b[A")?,
-                KeyCode::CursorDown => tty::input_str("\x1b[B")?,
-                KeyCode::CursorRight => tty::input_str("\x1b[C")?,
-                KeyCode::CursorLeft => tty::input_str("\x1b[D")?,
-                _ => {
-                    if let Some(c) = event.c {
-                        tty::input(c)?;
-                    }
-                }
+            if let Some(c) = event.c {
+                tty::input_bytes(c.encode_utf8(&mut [0; 4]).as_bytes())?;
             }
         }
     }

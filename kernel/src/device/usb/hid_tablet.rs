@@ -8,7 +8,7 @@ use crate::{
         },
     },
     error::{Error, Result},
-    graphics::frame_buf,
+    graphics::fb,
     util::{self, mouse::mouse_event::*},
 };
 use alloc::{boxed::Box, collections::vec_deque::VecDeque, vec::Vec};
@@ -63,7 +63,7 @@ impl UsbDriver for UsbHidTabletDriver {
             return Err(Error::InvalidData.with_context("HID report descriptor"));
         };
         self.prev_report = vec![0u8; self.report_size_in_byte];
-        self.res = frame_buf::resolution()?;
+        self.res = fb::resolution()?;
 
         Ok(())
     }

@@ -1,4 +1,4 @@
-use super::{frame_buf, multi_layer::LayerId};
+use super::{fb, multi_layer::LayerId};
 use crate::{
     error::{Error, Result},
     sync::mutex::Mutex,
@@ -188,7 +188,7 @@ impl WindowManager {
 
 pub fn init() -> Result<()> {
     let mut window_man = WINDOW_MAN.try_lock()?;
-    let res = frame_buf::resolution()?;
+    let res = fb::resolution()?;
     window_man.res = Some(res);
     Ok(())
 }

@@ -9,6 +9,7 @@ use crate::{
         },
         VirtualAddress,
     },
+    console,
     device::{local_apic_timer::INT_INTERVAL_MS, tty},
     env,
     error::{Error, Result},
@@ -19,22 +20,17 @@ use crate::{
     },
     graphics::{
         draw::Draw,
-        frame_buf,
+        fb,
         multi_layer::{self, LayerId},
         window_manager,
     },
     kerror, kinfo,
     mem::bitmap,
     net::{self, socket::*},
-    print,
     task::{self, *},
     util,
 };
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{boxed::Box, vec::Vec};
 use common::geometry::{Point, Size};
 use core::{arch::naked_asm, net::Ipv4Addr, slice, time::Duration};
 use libc_rs::*;
@@ -523,68 +519,20 @@ fn sys_read(fd_num: i32, buf: *mut u8, buf_len: usize) -> Result<usize> {
             Err(Error::NotFound.with_context("file descriptor"))
         }
         FileDescriptorNumber::STDIN => {
-            if let Some(fd_num) =
-                task::scheduler::with_current_resource(|r| r.pipe_fd).map(|fds| fds[0])?
-            {
-                let data = read_blocking(fd_num, buf_len)?;
-                unsafe {
-                    buf.copy_from_nonoverlapping(data.as_ptr(), data.len());
-                }
-                return Ok(data.len());
+            if buf_len == 0 {
+                return Ok(0);
             }
 
-            if buf_len > 1 {
-                let mut input_s = None;
+            let data =
+                match task::scheduler::with_current_resource(|r| r.pipe_fd).map(|fds| fds[0])? {
+                    Some(fd_num) => read_blocking(fd_num, buf_len)?,
+                    None => read_tty_blocking(buf_len)?,
+                };
 
-                while input_s.is_none() {
-                    tty::check_sigint();
-                    input_s = x86_64::disabled_int(tty::line).ok().flatten();
-                    task::scheduler::sched();
-                    x86_64::stihlt();
-                }
-
-                let c_s = util::cstring::into_cstring_bytes_with_nul(&input_s.unwrap());
-
-                if buf_len < c_s.len() {
-                    return Err(Error::InvalidBufferSize {
-                        required: c_s.len(),
-                        actual: buf_len,
-                    }
-                    .into());
-                }
-
-                unsafe {
-                    buf.copy_from_nonoverlapping(c_s.as_ptr(), c_s.len());
-                }
-
-                Ok(c_s.len())
-            } else if buf_len == 1 {
-                let mut c = None;
-                while c.is_none() {
-                    tty::check_sigint();
-                    c = x86_64::disabled_int(tty::char).ok().flatten();
-                    if c.is_none() {
-                        task::scheduler::sched();
-                        x86_64::stihlt();
-                    }
-                }
-
-                if buf_len < 1 {
-                    return Err(Error::InvalidBufferSize {
-                        required: 1,
-                        actual: buf_len,
-                    }
-                    .into());
-                }
-
-                unsafe {
-                    buf.write(c.unwrap() as u8);
-                }
-
-                Ok(1)
-            } else {
-                Ok(0)
+            unsafe {
+                buf.copy_from_nonoverlapping(data.as_ptr(), data.len());
             }
+            Ok(data.len())
         }
         fd => {
             let data = read_blocking(fd, buf_len)?;
@@ -609,8 +557,7 @@ fn sys_write(fd_num: i32, buf: *const u8, buf_len: usize) -> Result<usize> {
                 return Ok(buf_len);
             }
 
-            let s = String::from_utf8_lossy(buf_slice).to_string();
-            print!("{}", s);
+            console::write_bytes(buf_slice);
             Ok(buf_len)
         }
         FileDescriptorNumber::STDIN => Err(Error::InvalidData.with_context("stdin write")),
@@ -735,7 +682,7 @@ fn sys_stat(fd_num: i32, buf: *mut f_stat) -> Result<()> {
     let stat_mut = unsafe { &mut *buf };
 
     let size = match fd_num {
-        FileDescriptorNumber::STDIN => tty::input_count()? as usize,
+        FileDescriptorNumber::STDIN => 0,
         FileDescriptorNumber::STDOUT | FileDescriptorNumber::STDERR => 0,
         fd => vfs::file_size(fd)?,
     };
@@ -924,7 +871,7 @@ fn sys_iomsg(msgbuf: *const u8, replymsgbuf: *mut u8, replymsgbuf_len: usize) ->
             )?;
         }
         IomsgCommand::GetScreenSize => {
-            let res = frame_buf::resolution()?;
+            let res = fb::resolution()?;
             let reply_header = iomsg_header::new(
                 IomsgCommand::GetScreenSize,
                 (size_of::<iomsg_reply_get_screen_size>() - size_of::<iomsg_header>()) as u32,
@@ -1447,6 +1394,24 @@ fn read_blocking(fd_num: FileDescriptorNumber, buf_len: usize) -> Result<Vec<u8>
                 }
                 saved.write();
                 key?;
+            }
+            res => {
+                saved.write();
+                return res;
+            }
+        }
+    }
+}
+
+fn read_tty_blocking(buf_len: usize) -> Result<Vec<u8>> {
+    loop {
+        tty::check_sigint();
+
+        let saved = Rflags::read_with_cli();
+        match tty::read(buf_len) {
+            Err(err) if matches!(err.kind(), Error::BufferEmpty) => {
+                task::scheduler::sleep_on(WaitKey::Device(tty::NAME));
+                saved.write();
             }
             res => {
                 saved.write();
