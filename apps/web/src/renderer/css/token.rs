@@ -82,9 +82,7 @@ impl Iterator for CssTokenizer {
                     self.pos -= 1;
                     t
                 }
-                _ => {
-                    unimplemented!("char {} is not supported yet", c);
-                }
+                _ => CssToken::Delim(c),
             };
 
             self.pos += 1;

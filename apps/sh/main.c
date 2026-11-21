@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
+#include <sys/wait.h>
 #include <syscalls.h>
 
 #define BUF_LEN 128
@@ -127,9 +129,9 @@ void exec_cmd(char* cmd) {
             printf("sh: pipe: exec failed\n");
         }
 
-        if (pid1 >= 0) sys_wait(pid1);
+        if (pid1 >= 0) sys_wait(pid1, NULL);
         sys_close(pipefd[1]);  // EOF for the reader
-        if (pid2 >= 0) sys_wait(pid2);
+        if (pid2 >= 0) sys_wait(pid2, NULL);
         sys_close(pipefd[0]);
         return;
     }
@@ -173,8 +175,8 @@ void exec_cmd(char* cmd) {
             }
         }
 
-        int exit_code = system(args);
-        if (exit_code == -1) {
+        int status = system(args);
+        if (status == -1 || (WIFEXITED(status) && WEXITSTATUS(status) == 127)) {
             printf("sh: exec: failed\n");
             return;
         }
@@ -196,12 +198,16 @@ void exec_cmd(char* cmd) {
             }
         }
 
-        int exit_code = system(args);
-        if (exit_code == -1) {
+        int status = system(args);
+        if (status == -1 || (WIFEXITED(status) && WEXITSTATUS(status) == 127)) {
             printf("sh: exec: failed\n");
             return;
         }
-        printf("sh: exit code: %d\n", exit_code);
+        if (WIFSIGNALED(status)) {
+            if (WTERMSIG(status) != SIGINT) printf("sh: killed by signal %d\n", WTERMSIG(status));
+            return;
+        }
+        printf("sh: exit code: %d\n", WEXITSTATUS(status));
     }
     // unreachable
     else {

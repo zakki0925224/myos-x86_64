@@ -7,6 +7,7 @@
 #include "stdio.h"  // for printf
 #include "string.h"
 #include "syscalls.h"
+#include "sys/wait.h"
 
 // malloc/free
 #define PAGE_SIZE 4096
@@ -187,19 +188,24 @@ int system(const char* command) {
 
         pid_t pid1 = sys_exec(left, (int[]){-1, pipefd[1], -1});
         pid_t pid2 = sys_exec(right, (int[]){pipefd[0], -1, -1});
-        if (pid1 != -1) sys_wait(pid1);
+        if (pid1 != -1) sys_wait(pid1, NULL);
         sys_close(pipefd[1]);  // EOF for the reader
-        int ret = pid2 != -1 ? sys_wait(pid2) : -1;
+        int status = W_EXITCODE(127, 0);
+        if (pid2 != -1 && sys_wait(pid2, &status) == -1) status = -1;
         sys_close(pipefd[0]);
-        return pid1 == -1 ? -1 : ret;
+        return pid1 == -1 ? W_EXITCODE(127, 0) : status;
     }
 
     pid_t pid = sys_exec(command, EXEC_PIPE_NONE);
     if (pid == -1) {
-        return -1;
+        return W_EXITCODE(127, 0);
     }
 
-    return sys_wait(pid);
+    int status;
+    if (sys_wait(pid, &status) == -1) {
+        return -1;
+    }
+    return status;
 }
 
 int remove(const char* filepath) {

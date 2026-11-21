@@ -231,6 +231,6 @@ pub fn read(max_len: usize) -> Result<Vec<u8>> {
 
 pub fn check_sigint() {
     if FLAG_SIGINT.swap(false, Ordering::Relaxed) {
-        scheduler::exit_current(-1);
+        scheduler::kill_current(libc_rs::SIGINT);
     }
 }

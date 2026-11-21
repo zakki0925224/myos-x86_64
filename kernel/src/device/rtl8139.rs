@@ -294,8 +294,8 @@ impl Driver for Rtl8139Driver {
         let io_register = self.io_register()?;
         let status = io_register.read_int_status();
 
-        // clear TOK and ROK
-        io_register.write_int_status(0x5);
+        // ack observed TOK/ROK only
+        io_register.write_int_status(status & 0x5);
 
         // RX
         // TOK

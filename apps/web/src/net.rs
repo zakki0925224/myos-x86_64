@@ -183,8 +183,8 @@ impl UdpSocket {
             return Err(WebError::RecvFromFailed);
         }
 
-        let ip = Ipv4Addr::from(u32::from_be(addr.sin_addr.s_addr));
-        let port = u16::from_be(addr.sin_port);
+        let ip = Ipv4Addr::from(addr.sin_addr.s_addr);
+        let port = addr.sin_port;
 
         Ok((n as usize, ip, port))
     }

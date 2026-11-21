@@ -20,7 +20,7 @@ Standard C Library for MyOS
 | 11     | sys_getcwd    | Gets the absolute path of the current working directory.  | 0x0b              | char \*buf            | size_t buf_len               | -                      | -          | -                                 | -              | int (0 on success, -1 on error)            |
 | 12     | sys_chdir     | Changes the current working directory.                    | 0x0c              | const char \*path     | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)            |
 | 13     | sys_free      | Frees memory allocated by sbrk.                           | 0x0d              | void \*ptr            | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)            |
-| 14     | sys_wait      | Waits for the process with the given pid to exit.         | 0x0e              | pid_t pid             | -                            | -                      | -          | -                                 | -              | int (exit code, -1 on error)               |
+| 14     | sys_wait      | Waits for the process with the given pid to exit.         | 0x0e              | pid_t pid             | int \*status (`sys/wait.h`)  | -                      | -          | -                                 | -              | int (0 on success, -1 on error)            |
 | 15     | sys_sbrksz    | Gets the size of memory acquired by sbrk.                 | 0x0f              | const void \*target   | -                            | -                      | -          | -                                 | -              | size_t (size, 0 on error)                  |
 | 16     | sys_getpid    | Returns the pid of the current process.                   | 0x10              | -                     | -                            | -                      | -          | -                                 | -              | pid_t (current pid)                        |
 | 17     | sys_getenames | Lists entry names in a directory, NUL-separated.          | 0x11              | const char \*path     | char \*buf                   | size_t buf_len         | -          | -                                 | -              | int (0 on success, -1 on error)            |
@@ -28,7 +28,7 @@ Standard C Library for MyOS
 | 19     | sys_socket    | Creates an endpoint for communication.                    | 0x13              | int domain            | int type                     | int protocol           | -          | -                                 | -              | int (sockfd, -1 on error)                  |
 | 20     | sys_bind      | Binds a port to a socket.                                 | 0x14              | int sockfd            | const struct sockaddr \*addr | size_t addrlen         | -          | -                                 | -              | int (0 on success, -1 on error)            |
 | 21     | sys_sendto    | Sends a message on a socket.                              | 0x15              | int sockfd            | const void \*buf             | size_t len             | int flags  | const struct sockaddr \*dest_addr | size_t addrlen | int (sent bytes, -1 on error)              |
-| 22     | sys_recvfrom  | Receives a message from a socket.                         | 0x16              | int sockfd            | void \*buf                   | size_t len             | int flags  | struct sockaddr \*src_addr        | size_t addrlen | int (received bytes, -1 on error)          |
+| 22     | sys_recvfrom  | Receives a datagram and writes its sender to src_addr.    | 0x16              | int sockfd            | void \*buf                   | size_t len             | int flags  | struct sockaddr \*src_addr        | size_t addrlen | int (received bytes, -1 on error)          |
 | 23     | sys_send      | Sends a message on a connected socket.                    | 0x17              | int sockfd            | const void \*buf             | size_t len             | int flags  | -                                 | -              | int (sent bytes, -1 on error)              |
 | 24     | sys_recv      | Receives a message from a connected socket.               | 0x18              | int sockfd            | void \*buf                   | size_t len             | int flags  | -                                 | -              | int (received bytes, -1 on error)          |
 | 25     | sys_connect   | Initiates a connection on a socket.                       | 0x19              | int sockfd            | const struct sockaddr \*addr | size_t addrlen         | -          | -                                 | -              | int (0 on success, -1 on error)            |
@@ -42,3 +42,53 @@ Standard C Library for MyOS
 | 33     | sys_mkfifo    | Creates a named pipe.                                     | 0x21              | const char \*path     | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)            |
 | 34     | sys_unlink    | Removes a named pipe from the file system.                | 0x22              | const char \*path     | -                            | -                      | -          | -                                 | -              | int (0 on success, -1 on error)            |
 | 35     | sys_poll      | Waits until any of the descriptors becomes readable.      | 0x23              | pollfd \*fds          | size_t nfds                  | int64_t timeout_ms     | -          | -                                 | -              | int (ready fds, 0 on timeout, -1 on error) |
+
+## Notes
+
+### sys_open flags (`syscalls.h`)
+
+| flag                 | value | description                                                         |
+| -------------------- | ----- | ------------------------------------------------------------------- |
+| `OPEN_FLAG_NONE`     | 0x0   | -                                                                   |
+| `OPEN_FLAG_CREATE`   | 0x1   | Creates the file if it does not exist.                              |
+| `OPEN_FLAG_READ`     | 0x2   | Opens the read end of a named pipe.                                 |
+| `OPEN_FLAG_WRITE`    | 0x4   | Opens the write end of a named pipe.                                |
+| `OPEN_FLAG_NONBLOCK` | 0x8   | `sys_read` returns 0 immediately instead of blocking when no data. |
+
+### sys_read
+
+- stdin (TTY) is line-buffered: it blocks until a line is entered and returns at most one line, including the trailing `\n`. Line editing (backspace, `^C`) is handled by the kernel.
+- Pipes and input devices block until data is available. A return value of 0 means EOF (or no data with `OPEN_FLAG_NONBLOCK`).
+
+### sys_exec
+
+- `pipefd[3]` replaces stdin / stdout / stderr of the child. `-1` keeps the TTY. Use `EXEC_PIPE_NONE` for no redirection.
+
+### sys_wait (`sys/wait.h`)
+
+`status` receives a POSIX-style wait status. Pass `NULL` to discard it.
+
+| macro                 | description                                         |
+| --------------------- | --------------------------------------------------- |
+| `WIFEXITED(status)`   | True if the process exited via `sys_exit`.          |
+| `WEXITSTATUS(status)` | Exit code (0-255). `exit(-1)` is reported as 255.   |
+| `WIFSIGNALED(status)` | True if the process was killed by the kernel.       |
+| `WTERMSIG(status)`    | Signal number (`SIGINT` for `^C`, `SIGSEGV` for faults). |
+
+- `system()` returns the wait status, `W_EXITCODE(127, 0)` if the command could not be executed, and -1 only if waiting failed.
+- A Rust app that panics exits with code 101.
+
+### Sockets
+
+- `struct sockaddr_in` uses **host byte order** for `sin_port` and `sin_addr.s_addr` (unlike POSIX).
+- UDP `sys_recvfrom` is non-blocking: it returns 0 when no datagram is queued. Each call returns one datagram; bytes beyond `len` are discarded. `src_addr` must be non-NULL and `addrlen >= sizeof(struct sockaddr_in)`.
+- Ephemeral ports are assigned round-robin from 49152-65535.
+
+### sys_poll (`poll.h`)
+
+- Only `POLLIN` is supported.
+- `timeout_ms`: 0 returns immediately, negative waits forever, positive waits at least that long.
+
+### Timing
+
+- `sys_sleep` and `sys_poll` timeouts are rounded up to the 10ms timer tick, plus one tick.

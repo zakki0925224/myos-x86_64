@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <syscalls.h>
 
 #define FIFO_PATH "/fifo-test"
@@ -246,10 +247,14 @@ int test_fork() {
     printf("parent: forked child pid=%d\n", pid);
     printf("parent: local_var=%d, global_counter=%d (should be unchanged)\n", local_var, global_counter);
 
-    int status = sys_wait(pid);
-    printf("parent: child exited with status=%d\n", status);
+    int status;
+    if (sys_wait(pid, &status) == -1) {
+        printf("FAIL: wait failed\n");
+        return -1;
+    }
+    printf("parent: child exited with status=%d\n", WEXITSTATUS(status));
 
-    if (status != 0) {
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
         printf("FAIL: child reported bad state\n");
         return -1;
     }

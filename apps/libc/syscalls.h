@@ -84,7 +84,7 @@ pid_t sys_exec(const char* args, int pipefd[3]);
 int sys_getcwd(char* buf, size_t buf_len);
 int sys_chdir(const char* path);
 int sys_free(void* ptr);
-int sys_wait(pid_t pid);
+int sys_wait(pid_t pid, int* status);
 size_t sys_sbrksz(const void* target);
 pid_t sys_getpid(void);
 int sys_getenames(const char* path, char* buf, size_t buf_len);

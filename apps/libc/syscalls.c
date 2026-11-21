@@ -72,8 +72,8 @@ int sys_free(void* ptr) {
     return (int)syscall(SN_FREE, (uint64_t)ptr, 0, 0, 0, 0, 0);
 }
 
-int sys_wait(pid_t pid) {
-    return (int)syscall(SN_WAIT, (uint64_t)pid, 0, 0, 0, 0, 0);
+int sys_wait(pid_t pid, int* status) {
+    return (int)syscall(SN_WAIT, (uint64_t)pid, (uint64_t)status, 0, 0, 0, 0);
 }
 
 size_t sys_sbrksz(const void* target) {

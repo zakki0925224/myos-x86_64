@@ -177,11 +177,15 @@ impl NetworkManager {
         self.send_udp_packet(src_port, dst_port, dst_addr, data)
     }
 
-    fn recvfrom_udp_v4(&mut self, socket_id: SocketId, buf: &mut [u8]) -> Result<usize> {
+    fn recvfrom_udp_v4(
+        &mut self,
+        socket_id: SocketId,
+        buf: &mut [u8],
+    ) -> Result<Option<(usize, Ipv4Addr, u16)>> {
         let socket = self.socket_table.socket_mut_by_id(socket_id)?;
         let udp_socket = socket.inner_udp_mut()?;
-        let read_len = udp_socket.read_buf(buf);
-        Ok(read_len)
+
+        Ok(udp_socket.recv(buf))
     }
 
     fn listen_tcp_v4(&mut self, socket_id: SocketId) -> Result<()> {
@@ -484,12 +488,12 @@ impl NetworkManager {
     fn receive_tcp_packet(
         &mut self,
         packet: TcpPacket,
-        remote_addr: Ipv4Addr,
+        src_addr: Ipv4Addr,
     ) -> Result<Option<TcpPacket>> {
         let src_port = packet.src_port;
         let dst_port = packet.dst_port;
         let seq_num = packet.seq_num;
-        let socket_mut = match self.tcp_socket_mut_by_port(dst_port, remote_addr, src_port) {
+        let socket_mut = match self.tcp_socket_mut_by_port(dst_port, src_addr, src_port) {
             Ok(s) => s,
             Err(e) => {
                 kwarn!("net: TCP socket not found: {:?}", e);
@@ -515,7 +519,7 @@ impl NetworkManager {
                 new_socket.set_port(dst_port); // manually set port without registering to map
                 let new_tcp_socket = new_socket.inner_tcp_mut()?;
                 new_tcp_socket.start_passive(dst_port)?;
-                new_tcp_socket.set_dst_ipv4_addr(remote_addr);
+                new_tcp_socket.set_dst_ipv4_addr(src_addr);
                 new_tcp_socket.set_dst_port(src_port);
                 let next_seq_num = new_tcp_socket.receive_syn(seq_num)?;
                 let ack_num = new_tcp_socket.next_recv_seq();
@@ -625,12 +629,11 @@ impl NetworkManager {
         Ok(None)
     }
 
-    fn receive_udp_packet(&mut self, packet: UdpPacket) -> Result<Option<UdpPacket>> {
-        let dst_port = packet.dst_port;
-        let socket_mut = self.udp_socket_mut_by_port(dst_port)?;
-        socket_mut.receive(&packet.data);
+    fn receive_udp_packet(&mut self, packet: UdpPacket, src_addr: Ipv4Addr) -> Result<()> {
+        let socket_mut = self.udp_socket_mut_by_port(packet.dst_port)?;
+        socket_mut.push_queue(src_addr, packet.src_port, &packet.data);
 
-        Ok(None)
+        Ok(())
     }
 
     fn receive_arp_packet(&mut self, packet: ArpPacket) -> Result<Option<ArpPacket>> {
@@ -696,7 +699,7 @@ impl NetworkManager {
                 }
             }
             Ipv4Payload::Udp(udp_packet) => {
-                self.receive_udp_packet(udp_packet)?;
+                self.receive_udp_packet(udp_packet, packet.src_addr)?;
             }
         }
 
@@ -902,7 +905,10 @@ pub fn sendto_udp_v4(
         .sendto_udp_v4(socket_id, dst_addr, dst_port, data)
 }
 
-pub fn recvfrom_udp_v4(socket_id: SocketId, buf: &mut [u8]) -> Result<usize> {
+pub fn recvfrom_udp_v4(
+    socket_id: SocketId,
+    buf: &mut [u8],
+) -> Result<Option<(usize, Ipv4Addr, u16)>> {
     NETWORK_MAN.try_lock()?.recvfrom_udp_v4(socket_id, buf)
 }
 

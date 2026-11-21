@@ -58,7 +58,7 @@ fn panic(info: &PanicInfo) -> ! {
     println!("{:?}", info.location());
 
     unsafe {
-        exit(-1);
+        exit(101);
     }
 }
 

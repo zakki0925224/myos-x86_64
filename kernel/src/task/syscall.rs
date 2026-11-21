@@ -287,12 +287,10 @@ fn syscall_handler_inner(
         }
         SN_WAIT => {
             let pid = arg0 as pid_t;
-            match sys_wait(pid) {
-                Ok(exit_code) => return exit_code as i64,
-                Err(err) => {
-                    kerror!("syscall: wait: {:?}", err);
-                    return -1;
-                }
+            let status = arg1 as *mut i32;
+            if let Err(err) = sys_wait(pid, status) {
+                kerror!("syscall: wait: {:?}", err);
+                return -1;
             }
         }
         SN_SBRKSZ => {
@@ -372,7 +370,7 @@ fn syscall_handler_inner(
             let buf = arg1 as *mut u8;
             let len = arg2 as usize;
             let flags = arg3 as i32;
-            let src_addr = arg4 as *const sockaddr;
+            let src_addr = arg4 as *mut sockaddr;
             let addrlen = arg5 as usize;
 
             match sys_recvfrom(sockfd, buf, len, flags, src_addr, addrlen) {
@@ -403,7 +401,7 @@ fn syscall_handler_inner(
             let len = arg2 as usize;
             let flags = arg3 as i32;
 
-            match sys_recvfrom(sockfd, buf, len, flags, core::ptr::null(), 0) {
+            match sys_recvfrom(sockfd, buf, len, flags, core::ptr::null_mut(), 0) {
                 Ok(read_len) => return read_len as i64,
                 Err(err) => {
                     kerror!("syscall: recv: {:?}", err);
@@ -766,14 +764,18 @@ fn sys_free(ptr: *const u8) -> Result<()> {
     Ok(())
 }
 
-fn sys_wait(pid: pid_t) -> Result<i32> {
+fn sys_wait(pid: pid_t, status: *mut i32) -> Result<()> {
     let task_id = TaskId::from(pid as usize);
     task::scheduler::sleep_waiting_for(task_id);
 
-    let exit_code = task::scheduler::take_exit_code(task_id)
-        .ok_or(Error::NotFound.with_context("exit code"))?;
+    let wait_status = task::scheduler::take_wait_status(task_id)
+        .ok_or(Error::NotFound.with_context("wait status"))?;
 
-    Ok(exit_code)
+    if !status.is_null() {
+        unsafe { status.write(wait_status) };
+    }
+
+    Ok(())
 }
 
 fn sys_sbrksz(target: *const u8) -> Result<usize> {
@@ -1116,8 +1118,8 @@ fn sys_recvfrom(
     buf: *mut u8,
     len: usize,
     _flags: i32,
-    src_addr: *const sockaddr,
-    _addrlen: usize,
+    src_addr: *mut sockaddr,
+    addrlen: usize,
 ) -> Result<usize> {
     let socket_id = SocketId::try_new(sockfd)?;
     let buf_mut = unsafe { slice::from_raw_parts_mut(buf, len) };
@@ -1143,8 +1145,30 @@ fn sys_recvfrom(
     }
 
     // UDP
-    let read_len = net::recvfrom_udp_v4(socket_id, buf_mut)?;
-    Ok(read_len)
+    if addrlen < size_of::<sockaddr_in>() {
+        return Err(Error::InvalidBufferSize {
+            required: size_of::<sockaddr_in>(),
+            actual: addrlen,
+        }
+        .into());
+    }
+
+    let Some((recv_len, addr, port)) = net::recvfrom_udp_v4(socket_id, buf_mut)? else {
+        return Ok(0);
+    };
+
+    unsafe {
+        (src_addr as *mut sockaddr_in).write(sockaddr_in {
+            sin_family: SOCKET_DOMAIN_AF_INET as u16,
+            sin_port: port,
+            sin_addr: in_addr {
+                s_addr: u32::from(addr),
+            },
+            sin_zero: [0; 8],
+        });
+    }
+
+    Ok(recv_len)
 }
 
 fn sys_connect(sockfd: i32, addr: *const sockaddr, addrlen: usize) -> Result<()> {

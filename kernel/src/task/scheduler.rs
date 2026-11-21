@@ -25,7 +25,7 @@ struct TaskScheduler {
     current_task: Option<Box<Task>>,
     exited_tasks: Vec<Box<Task>>,
     sleeping_tasks: Vec<Box<Task>>,
-    exit_codes: BTreeMap<TaskId, i32>,
+    wait_statuses: BTreeMap<TaskId, i32>,
 }
 
 impl TaskScheduler {
@@ -35,7 +35,7 @@ impl TaskScheduler {
             current_task: None,
             exited_tasks: Vec::new(),
             sleeping_tasks: Vec::new(),
-            exit_codes: BTreeMap::new(),
+            wait_statuses: BTreeMap::new(),
         }
     }
 
@@ -107,12 +107,12 @@ impl TaskScheduler {
     #[allow(clippy::vec_box)] // see TaskScheduler
     fn pick_next_task_on_exit(
         &mut self,
-        exit_code: i32,
+        wait_status: i32,
     ) -> (*const Task, *const Task, Vec<Box<Task>>) {
         let mut current = self.current_task.take().expect("No current task to exit");
         let exiting_id = current.id;
 
-        current.state = TaskState::Exited(exit_code);
+        current.state = TaskState::Exited(wait_status);
 
         if let Some(parent_id) = current.parent {
             if let Some(parent_task) = self.find_task_mut(parent_id) {
@@ -132,7 +132,7 @@ impl TaskScheduler {
 
         let old = core::mem::take(&mut self.exited_tasks);
         self.exited_tasks.push(current);
-        self.exit_codes.insert(exiting_id, exit_code);
+        self.wait_statuses.insert(exiting_id, wait_status);
 
         if let Some(i) = self
             .sleeping_tasks
@@ -181,7 +181,7 @@ impl TaskScheduler {
         &mut self,
         child_id: TaskId,
     ) -> Option<(*const Task, *const Task)> {
-        if self.exit_codes.contains_key(&child_id) {
+        if self.wait_statuses.contains_key(&child_id) {
             return None;
         }
         Some(self.sleep_current(WaitReason::Child(child_id)))
@@ -362,8 +362,16 @@ pub fn current_task_id() -> Option<TaskId> {
 }
 
 pub fn exit_current(exit_code: i32) -> ! {
+    terminate_current((exit_code & 0xff) << 8)
+}
+
+pub fn kill_current(signal: u32) -> ! {
+    terminate_current((signal & 0x7f) as i32)
+}
+
+fn terminate_current(wait_status: i32) -> ! {
     Rflags::read_with_cli();
-    let (prev, next, old) = TASK_SCHED.spin_lock().pick_next_task_on_exit(exit_code);
+    let (prev, next, old) = TASK_SCHED.spin_lock().pick_next_task_on_exit(wait_status);
     drop(old);
 
     unsafe {
@@ -374,8 +382,8 @@ pub fn exit_current(exit_code: i32) -> ! {
     unreachable!();
 }
 
-pub fn take_exit_code(id: TaskId) -> Option<i32> {
-    TASK_SCHED.spin_lock().exit_codes.remove(&id)
+pub fn take_wait_status(id: TaskId) -> Option<i32> {
+    TASK_SCHED.spin_lock().wait_statuses.remove(&id)
 }
 
 pub fn current_debug_print() -> bool {

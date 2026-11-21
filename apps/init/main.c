@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <syscalls.h>
 #include <unistd.h>
 
@@ -121,17 +122,21 @@ int main(int argc, char* argv[]) {
                 printf("init: started %s in background (pid %d)\n", services[i].name, (int)pid);
             }
         } else {
-            int exit_code = system(services[i].cmd);
-            if (exit_code == -1) {
+            int status = system(services[i].cmd);
+            if (status == -1 || (WIFEXITED(status) && WEXITSTATUS(status) == 127)) {
                 printf("init: failed to start %s\n", services[i].name);
                 if (services[i].required) {
                     break;
                 }
                 continue;
             }
-            printf("init: %s exited with %d\n", services[i].name, exit_code);
+            if (WIFSIGNALED(status)) {
+                printf("init: %s killed by signal %d\n", services[i].name, WTERMSIG(status));
+            } else {
+                printf("init: %s exited with %d\n", services[i].name, WEXITSTATUS(status));
+            }
 
-            if (services[i].required && exit_code != 0) {
+            if (services[i].required && status != 0) {
                 printf("init: required service '%s' failed, halting\n", services[i].name);
                 break;
             }

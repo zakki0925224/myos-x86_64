@@ -2,43 +2,53 @@ use crate::{
     error::Error,
     net::checksum::{checksum_words, fold_checksum, pseudo_header_sum},
 };
-use alloc::{
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{collections::VecDeque, vec::Vec};
 use core::net::Ipv4Addr;
 
-#[derive(Debug)]
+struct UdpDatagram {
+    src_addr: Ipv4Addr,
+    src_port: u16,
+    data: Vec<u8>,
+}
+
 pub struct UdpSocket {
-    buf: Vec<u8>,
+    queue: VecDeque<UdpDatagram>,
 }
 
 impl UdpSocket {
+    const QUEUE_LEN: usize = 64;
+
     pub fn new() -> Self {
-        Self { buf: Vec::new() }
-    }
-
-    pub fn receive(&mut self, data: &[u8]) {
-        self.buf.extend_from_slice(data);
-    }
-
-    pub fn buf_to_string_utf8_lossy(&self) -> String {
-        String::from_utf8_lossy(&self.buf).to_string()
-    }
-
-    pub fn read_buf(&mut self, buf: &mut [u8]) -> usize {
-        let read_len = buf.len().min(self.buf.len());
-        if read_len > 0 {
-            buf[..read_len].copy_from_slice(&self.buf[..read_len]);
-            self.buf.drain(..read_len);
+        Self {
+            queue: VecDeque::new(),
         }
-        read_len
+    }
+
+    pub fn push_queue(&mut self, src_addr: Ipv4Addr, src_port: u16, data: &[u8]) {
+        self.queue.push_back(UdpDatagram {
+            src_addr,
+            src_port,
+            data: data.to_vec(),
+        });
+
+        if self.queue.len() > Self::QUEUE_LEN {
+            // drop latest queue
+            let _ = self.queue.pop_back();
+        }
+    }
+
+    pub fn recv(&mut self, buf: &mut [u8]) -> Option<(usize, Ipv4Addr, u16)> {
+        let datag = self.queue.pop_front()?;
+        let recv_len = buf.len().min(datag.data.len());
+
+        buf[..recv_len].copy_from_slice(&datag.data[..recv_len]);
+        Some((recv_len, datag.src_addr, datag.src_port))
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct UdpPacket {
-    src_port: u16,
+    pub src_port: u16,
     pub dst_port: u16,
     len: u16,
     checksum: u16,

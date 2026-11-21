@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
+#include <sys/wait.h>
 #include <syscalls.h>
 
 #define BUF_LEN 128
@@ -205,9 +207,9 @@ static void exec_pipe(char* cmd, char* pipe_pos) {
         printf("lush: pipe: exec failed\n");
     }
 
-    if (pid1 >= 0) sys_wait(pid1);
+    if (pid1 >= 0) sys_wait(pid1, NULL);
     sys_close(pipefd[1]);  // EOF for the reader
-    if (pid2 >= 0) sys_wait(pid2);
+    if (pid2 >= 0) sys_wait(pid2, NULL);
     sys_close(pipefd[0]);
 }
 
@@ -296,9 +298,13 @@ int main(int argc, char const* argv[]) {
                 continue;
             }
 
-            int exit_code = system(resolved);
-            if (exit_code == -1) {
+            int status = system(resolved);
+            if (status == -1) {
+                printf("lush: %s: wait failed\n", line);
+            } else if (WIFEXITED(status) && WEXITSTATUS(status) == 127) {
                 printf("lush: %s: command not found\n", line);
+            } else if (WIFSIGNALED(status) && WTERMSIG(status) != SIGINT) {
+                printf("lush: %s: killed by signal %d\n", line, WTERMSIG(status));
             }
         }
     }

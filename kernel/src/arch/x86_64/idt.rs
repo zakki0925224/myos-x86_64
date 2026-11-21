@@ -329,7 +329,7 @@ extern "x86-interrupt" fn general_protection_fault_handler(
     }
 
     if task::scheduler::current_debug_print() {
-        task::scheduler::exit_current(122);
+        task::scheduler::kill_current(libc_rs::SIGSEGV);
     }
 
     panic!();
@@ -361,7 +361,7 @@ extern "x86-interrupt" fn page_fault_handler(
     }
 
     if task::scheduler::current_debug_print() {
-        task::scheduler::exit_current(122);
+        task::scheduler::kill_current(libc_rs::SIGSEGV);
     }
 
     panic!();

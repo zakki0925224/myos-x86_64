@@ -42,7 +42,6 @@ impl SocketId {
     }
 }
 
-#[derive(Debug)]
 pub enum SocketInner {
     Tcp(TcpSocket),
     Udp(UdpSocket),
@@ -54,7 +53,6 @@ pub enum SocketType {
     Dgram,  // UDP
 }
 
-#[derive(Debug)]
 pub struct Socket {
     port: u16,
     pub addr: Option<Ipv4Addr>,
@@ -98,11 +96,11 @@ impl Socket {
     }
 }
 
-#[derive(Debug)]
 pub struct SocketTable {
     table: BTreeMap<SocketId, Socket>,
     udp_port_socket_id_map: BTreeMap<u16, SocketId>,
     tcp_port_socket_id_map: BTreeMap<u16, SocketId>,
+    next_ephemeral: u16,
 }
 
 impl SocketTable {
@@ -114,6 +112,7 @@ impl SocketTable {
             table: BTreeMap::new(),
             udp_port_socket_id_map: BTreeMap::new(),
             tcp_port_socket_id_map: BTreeMap::new(),
+            next_ephemeral: Self::PORT_EPHEMERAL_START,
         }
     }
 
@@ -194,18 +193,9 @@ impl SocketTable {
         let mut port = port.unwrap_or(0);
         // select port automatically
         if port == 0 {
-            for p in Self::PORT_EPHEMERAL_START..=Self::PORT_EPHEMERAL_END {
-                if !self.tcp_port_socket_id_map.contains_key(&p)
-                    && !self.udp_port_socket_id_map.contains_key(&p)
-                {
-                    port = p;
-                    break;
-                }
-            }
-
-            if port == 0 {
-                return Err(Error::BufferFull.into());
-            }
+            port = self
+                .alloc_ephemeral_port()
+                .ok_or(Error::BufferFull.with_context("ephemeral port"))?;
         } else {
             if self.tcp_port_socket_id_map.contains_key(&port) {
                 return Err(Error::AlreadyExists.with_context("TCP port"));
@@ -280,6 +270,28 @@ impl SocketTable {
                     return Some(*socket_id);
                 }
             }
+        }
+
+        None
+    }
+
+    fn alloc_ephemeral_port(&mut self) -> Option<u16> {
+        const START: u16 = SocketTable::PORT_EPHEMERAL_START;
+        const END: u16 = SocketTable::PORT_EPHEMERAL_END;
+        const RANGE: u32 = (END - START) as u32 + 1;
+
+        let offset = (self.next_ephemeral - START) as u32;
+
+        for i in 0..RANGE {
+            let p = START + ((offset + i) % RANGE) as u16;
+            if self.tcp_port_socket_id_map.contains_key(&p)
+                || self.udp_port_socket_id_map.contains_key(&p)
+            {
+                continue;
+            }
+
+            self.next_ephemeral = if p == END { START } else { p + 1 };
+            return Some(p);
         }
 
         None

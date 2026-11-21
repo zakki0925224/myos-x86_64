@@ -7,7 +7,7 @@ use crate::{
             usb_bus::*,
             xhc::{context::*, desc::*, register::*, trb::*},
         },
-        Driver, DeviceInfo,
+        DeviceInfo, Driver,
     },
     error::{Error, Result},
     kdebug, kinfo, ktrace,
@@ -241,10 +241,7 @@ impl XhcDriver {
             .dcbaa_ptr
             .write(dcbaa.inner_mut_ptr());
         self.dcbaa = Some(dcbaa);
-        kdebug!(
-            "{}: Device context base address array initialized",
-            NAME
-        );
+        kdebug!("{}: Device context base address array initialized", NAME);
 
         Ok(())
     }
@@ -828,7 +825,10 @@ impl Driver for XhcDriver {
 }
 
 pub fn probe_and_attach() -> Result<()> {
-    XHC_DRIVER.try_lock()?.attach()?;
+    let mut xhc_driver = XhcDriver::new();
+    let result = xhc_driver.attach();
+    *XHC_DRIVER.try_lock()? = xhc_driver;
+    result?;
     kinfo!("{}: Attached!", NAME);
 
     Ok(())
