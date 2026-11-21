@@ -1,4 +1,4 @@
 [toolchain]
-channel = "nightly"
+channel = "nightly-2026-09-26"
 components = ["rust-src", "rustfmt", "clippy"]
 targets = ["x86_64-unknown-uefi"]
