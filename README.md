@@ -56,9 +56,20 @@ This is a replacement project for the previous **[myos](https://github.com/zakki
 
 ## Screenshots
 
-![](https://github.com/user-attachments/assets/7cc7d545-b3ca-4042-b145-73a909834c13)
-![](https://github.com/zakki0925224/myos-x86_64/assets/49384910/b134ef0a-c94e-46f8-a578-a6e160747fae)
-![](https://github.com/zakki0925224/myos-x86_64/assets/49384910/fce1c2e4-f56b-46fa-8530-9eeec6069591)
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/01-lush.png" width="400"><br>lush (Lua shell)</td>
+    <td align="center"><img src="docs/screenshots/02-web.png" width="400"><br>Web browser</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/03-doom.png" width="400"><br>DOOM</td>
+    <td align="center"><img src="docs/screenshots/04-mandelbrot.png" width="400"><br>Mandelbrot</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/05-lifegame.png" width="400"><br>Game of Life</td>
+    <td></td>
+  </tr>
+</table>
 
 ## Third party
 
@@ -69,48 +80,82 @@ This is a replacement project for the previous **[myos](https://github.com/zakki
 - [lua-for-myos](https://github.com/zakki0925224/lua-for-myos) (forked from [lua/lua](https://github.com/lua/lua))
 - [doom1.wad](https://github.com/Akbar30Bill/DOOM_wads/blob/master/doom1.wad)
 
-## How to run
+## Getting started
 
-### Minimum packages required to build and run
+### Requirements
 
-- For build kernel
-    - git
-    - rustup (and Rust toolchain)
-    - python3
-    - build-essential
-    - lld
-    - gcc-multilib
-    - clang
-    - qemu-system
-    - qemu-utils
-    - dosfstools
-    - wget
+- Linux host (tested on Ubuntu; WSL2 works)
+- `sudo` (disk images are built with loop mounts)
+- KVM access (`/dev/kvm`; QEMU runs with `-accel kvm`)
+- [rustup](https://rustup.rs/) - the pinned nightly toolchain in `rust-toolchain.toml` is installed automatically
 
-- For build Cozette
-    - python3-venv
-    - bdf2psf (convert bdf file due to [bug in cozette.psf](https://github.com/the-moonwitch/Cozette/issues/112))
-
-- For build QEMU
-    - ninja-build
-    - meson
-    - libglib2.0-dev
-    - libsdl2-dev
-    - libslirp-dev
+### Packages
 
 ```bash
-# install required packages
-$ sudo apt update && sudo apt install git python3 build-essential lld gcc-multilib clang qemu-system qemu-utils dosfstools wget python3-venv bdf2psf ninja-build meson libglib2.0-dev libsdl2-dev libslirp-dev
+$ sudo apt update && sudo apt install \
+    git python3 wget build-essential lld libclang-dev \
+    qemu-system-x86 qemu-utils dosfstools bdf2psf
+```
 
+| Package                         | Used for                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `build-essential`               | C apps (libc, lush, DOOM, Lua), `objdump`                                                                     |
+| `lld`                           | Linking userland apps                                                                                         |
+| `libclang-dev`                  | `bindgen` in `libc-rs`                                                                                        |
+| `qemu-system-x86`, `qemu-utils` | Running the OS, creating the disk image                                                                       |
+| `dosfstools`                    | Formatting FAT32 images                                                                                       |
+| `bdf2psf`                       | Converting Cozette to PSF (workaround for [Cozette#112](https://github.com/the-moonwitch/Cozette/issues/112)) |
+
+<details>
+<summary>Optional packages</summary>
+
+- Debugging: `telnet` (QEMU monitor), `gdb` (`rust-gdb`)
+- Building QEMU from source (only when `USE_OWN_QEMU = True` in `task.py`): `ninja-build meson pkg-config python3-venv libglib2.0-dev libsdl2-dev libslirp-dev`
+
+</details>
+
+### Build and run
+
+```bash
 $ git clone https://github.com/zakki0925224/myos-x86_64.git
 $ cd myos-x86_64
 $ python3 ./task.py run
 ```
 
-## How to run kernel test
+Submodules, the Cozette font and `doom1.wad` are fetched automatically on the first build.
 
-```bash
-$ cd myos-x86_64/kernel
-$ cargo test
+After booting, `lush` (a Lua-powered shell) starts. Try:
+
+```
+[/mnt/initramfs]$ doom &
+[/mnt/initramfs]$ web example.com &
+[/mnt/initramfs]$ mandelbrot &
+[/mnt/initramfs]$ =1 + 2
 ```
 
-If you run `task.py` without an argument, you can see the list of commands.
+> [!NOTE]
+> The keyboard layout is JIS (Japanese 109 keys).
+
+## Tasks
+
+Run `python3 ./task.py <task>`. Running without an argument prints the list of tasks.
+
+| Task            | Description                                                           |
+| --------------- | --------------------------------------------------------------------- |
+| `build`         | Build the bootloader, kernel and apps                                 |
+| `run`           | Build and run in QEMU                                                 |
+| `run_nographic` | Run without a display (serial only)                                   |
+| `run_with_gdb`  | Run and wait for a GDB connection on `:3333`                          |
+| `gdb`           | Attach `rust-gdb` to a running QEMU                                   |
+| `monitor`       | Connect to the QEMU monitor (`telnet localhost 5678`)                 |
+| `make_iso`      | Create `build/myos.iso` for real hardware                             |
+| `dump`          | Disassemble the kernel and bootloader into `dump/`                    |
+| `webserver`     | Start a test HTTP server, reachable from the guest at `10.0.2.2:8888` |
+| `clean`         | Remove build artifacts                                                |
+
+## Kernel tests
+
+```bash
+$ cd kernel
+$ cargo test
+```

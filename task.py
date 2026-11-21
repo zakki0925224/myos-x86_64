@@ -2,8 +2,7 @@ import hashlib
 import os
 import subprocess
 import sys
-
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 APPS_DIR = "apps"
 APPS_LIBC_DIR = "libc"
@@ -125,7 +124,7 @@ def _build_cozette():
 
     if not os.path.exists(f"{d}/{FONT_FILE}"):
         _run_cmd(
-            f'wget -qO- https://api.github.com/repos/slavfox/Cozette/releases/latest | grep "{COZETTE_BDF}" | cut -d : -f 2,3 | tr -d \\" | wget -O ./{COZETTE_BDF} -i -',
+            f'wget -qO- https://api.github.com/repos/the-moonwitch/Cozette/releases/latest | grep "{COZETTE_BDF}" | cut -d : -f 2,3 | tr -d \\" | wget -O ./{COZETTE_BDF} -i -',
             dir=d,
             ignore_error=True,
         )
